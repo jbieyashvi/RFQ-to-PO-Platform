@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Download, Eye, Pencil, SlidersHorizontal } from 'lucide-react';
+import { Download, Eye, Pencil, SlidersHorizontal, X } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import {
   Button,
   DataTable,
   StatusBadge,
   SearchInput,
-  FilterBar,
   FilterSelect,
   Pagination,
   type Column,
@@ -27,12 +26,13 @@ export default function QuotationsList() {
   const inScope = useOfficeScope();
   const [params, setParams] = useSearchParams();
 
-  const [search, setSearch] = useState(params.get('q') ?? '');
+  const [qtnNumber, setQtnNumber] = useState(params.get('q') ?? '');
+  const [customerName, setCustomerName] = useState('');
+  const [custCode, setCustCode] = useState('');
   const [status, setStatus] = useState(params.get('status') ?? '');
   const [stage, setStage] = useState(params.get('stage') ?? '');
   const [office, setOffice] = useState('');
   const [owner, setOwner] = useState('');
-  const [custCode, setCustCode] = useState('');
   const [quoteFrom, setQuoteFrom] = useState('');
   const [quoteTo, setQuoteTo] = useState('');
   const [reviewFrom, setReviewFrom] = useState('');
@@ -42,18 +42,19 @@ export default function QuotationsList() {
   const [active, setActive] = useState<Quotation | null>(null);
   const loading = useSimulatedLoading([]);
 
-  // sync incoming query params once
+  // sync incoming query params once (dashboard deep-links pass ?status / ?stage / ?q=<QTN no>)
   useEffect(() => {
     if (params.get('status')) setStatus(params.get('status')!);
     if (params.get('stage')) setStage(params.get('stage')!);
-    if (params.get('q')) setSearch(params.get('q')!);
+    if (params.get('q')) setQtnNumber(params.get('q')!);
     // clear params so they don't stick on manual changes
     if ([...params.keys()].length) setParams({}, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filtered = useMemo(() => {
-    const s = search.trim().toLowerCase();
+    const qn = qtnNumber.trim().toLowerCase();
+    const cn = customerName.trim().toLowerCase();
     const cc = custCode.trim().toLowerCase();
     return quotations.filter((q) => {
       if (!inScope(q.officeId)) return false;
@@ -61,32 +62,34 @@ export default function QuotationsList() {
       if (stage && q.stage !== stage) return false;
       if (office && q.officeId !== office) return false;
       if (owner && q.owner !== owner) return false;
+      if (qn && !q.number.toLowerCase().includes(qn)) return false;
+      if (cn && !q.customerName.toLowerCase().includes(cn)) return false;
       if (cc && !q.customerCode.toLowerCase().includes(cc)) return false;
       if (quoteFrom && q.quoteDate < quoteFrom) return false;
       if (quoteTo && q.quoteDate > quoteTo) return false;
       if (reviewFrom && q.reviewDate < reviewFrom) return false;
       if (reviewTo && q.reviewDate > reviewTo) return false;
-      if (s && !`${q.number} ${q.customerName} ${q.customerCode} ${q.owner}`.toLowerCase().includes(s))
-        return false;
       return true;
     });
-  }, [quotations, inScope, search, status, stage, office, owner, custCode, quoteFrom, quoteTo, reviewFrom, reviewTo]);
+  }, [quotations, inScope, qtnNumber, customerName, custCode, status, stage, office, owner, quoteFrom, quoteTo, reviewFrom, reviewTo]);
 
   const { page, pageSize, setPage, setPageSize, pageRows, total } = usePaginated(filtered, 10);
 
   const chips: FilterChip[] = [];
+  if (qtnNumber) chips.push({ key: 'qn', label: `QTN No: "${qtnNumber}"`, onRemove: () => setQtnNumber('') });
+  if (customerName) chips.push({ key: 'cn', label: `Customer: "${customerName}"`, onRemove: () => setCustomerName('') });
+  if (custCode) chips.push({ key: 'cc', label: `Cust code: "${custCode}"`, onRemove: () => setCustCode('') });
   if (status) chips.push({ key: 'st', label: `Status: ${QUOTATION_STATUS[status as keyof typeof QUOTATION_STATUS]?.label ?? status}`, onRemove: () => setStatus('') });
   if (stage) chips.push({ key: 'sg', label: `Stage: ${QUOTATION_STAGE[stage as keyof typeof QUOTATION_STAGE]?.label ?? stage}`, onRemove: () => setStage('') });
   if (office) chips.push({ key: 'of', label: `Office: ${officeName(office)}`, onRemove: () => setOffice('') });
-  if (owner) chips.push({ key: 'ow', label: `Owner: ${owner}`, onRemove: () => setOwner('') });
-  if (custCode) chips.push({ key: 'cc', label: `Cust code: ${custCode}`, onRemove: () => setCustCode('') });
-  if (quoteFrom || quoteTo) chips.push({ key: 'qd', label: `Quote: ${quoteFrom || '…'} → ${quoteTo || '…'}`, onRemove: () => { setQuoteFrom(''); setQuoteTo(''); } });
   if (reviewFrom || reviewTo) chips.push({ key: 'rd', label: `Review: ${reviewFrom || '…'} → ${reviewTo || '…'}`, onRemove: () => { setReviewFrom(''); setReviewTo(''); } });
-  if (search) chips.push({ key: 'q', label: `Search: "${search}"`, onRemove: () => setSearch('') });
+  if (owner) chips.push({ key: 'ow', label: `Owner: ${owner}`, onRemove: () => setOwner('') });
+  if (quoteFrom || quoteTo) chips.push({ key: 'qd', label: `Quote: ${quoteFrom || '…'} → ${quoteTo || '…'}`, onRemove: () => { setQuoteFrom(''); setQuoteTo(''); } });
 
   const clearAll = () => {
-    setSearch(''); setStatus(''); setStage(''); setOffice(''); setOwner('');
-    setCustCode(''); setQuoteFrom(''); setQuoteTo(''); setReviewFrom(''); setReviewTo('');
+    setQtnNumber(''); setCustomerName(''); setCustCode('');
+    setStatus(''); setStage(''); setOffice(''); setOwner('');
+    setQuoteFrom(''); setQuoteTo(''); setReviewFrom(''); setReviewTo('');
   };
 
   const exportCSV = () => {
@@ -135,11 +138,11 @@ export default function QuotationsList() {
       align: 'right',
       render: (r) => (
         <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-          <button onClick={() => setActive(r)} title="View" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 hover:text-surface-800">
+          <button onClick={() => setActive(r)} title="View" aria-label={`View ${r.number}`} className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 hover:text-surface-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50">
             <Eye className="h-4 w-4" />
           </button>
           {can('quotations', 'edit') && (
-            <button onClick={() => setActive(r)} title="Edit" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 hover:text-surface-800">
+            <button onClick={() => setActive(r)} title="Edit" aria-label={`Edit ${r.number}`} className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 hover:text-surface-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50">
               <Pencil className="h-4 w-4" />
             </button>
           )}
@@ -157,7 +160,7 @@ export default function QuotationsList() {
         actions={
           can('quotations', 'download') && (
             <Button variant="secondary" leftIcon={<Download className="h-4 w-4" />} onClick={exportCSV}>
-              Download CSV ({filtered.length})
+              Download Filtered List ({filtered.length})
             </Button>
           )
         }
@@ -165,30 +168,77 @@ export default function QuotationsList() {
 
       <div className="card">
         <div className="space-y-4 border-b border-surface-100 p-4">
-          <FilterBar
-            chips={chips}
-            onClearAll={clearAll}
-            right={
-              <Button variant="ghost" size="sm" leftIcon={<SlidersHorizontal className="h-4 w-4" />} onClick={() => setShowAdvanced((v) => !v)}>
-                {showAdvanced ? 'Hide' : 'More'} filters
-              </Button>
-            }
-          >
-            <SearchInput value={search} onChange={setSearch} placeholder="Search quotation no, customer, owner…" className="w-full sm:w-72" />
-            <FilterSelect value={status} onChange={setStatus} placeholder="All statuses" options={Object.entries(QUOTATION_STATUS).map(([k, v]) => ({ value: k, label: v.label }))} />
-            <FilterSelect value={stage} onChange={setStage} placeholder="All stages" options={Object.entries(QUOTATION_STAGE).map(([k, v]) => ({ value: k, label: v.label }))} />
-            {role === 'super_admin' && <FilterSelect value={office} onChange={setOffice} placeholder="All offices" options={OFFICES.map((o) => ({ value: o.id, label: o.name }))} />}
-          </FilterBar>
+          {/* Required Excel filters — each a distinct, independently functional control */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <Labeled label="QTN Number">
+              <SearchInput value={qtnNumber} onChange={setQtnNumber} placeholder="e.g. QTN/2026/1001" className="w-full" />
+            </Labeled>
+            <Labeled label="Customer Name">
+              <SearchInput value={customerName} onChange={setCustomerName} placeholder="Search customer…" className="w-full" />
+            </Labeled>
+            <Labeled label="Customer Code">
+              <SearchInput value={custCode} onChange={setCustCode} placeholder="e.g. CUST-1001" className="w-full" />
+            </Labeled>
+            <Labeled label="Status">
+              <FilterSelect className="w-full" value={status} onChange={setStatus} placeholder="All statuses" options={Object.entries(QUOTATION_STATUS).map(([k, v]) => ({ value: k, label: v.label }))} />
+            </Labeled>
+            <Labeled label="Stage">
+              <FilterSelect className="w-full" value={stage} onChange={setStage} placeholder="All stages" options={Object.entries(QUOTATION_STAGE).map(([k, v]) => ({ value: k, label: v.label }))} />
+            </Labeled>
+            {role === 'super_admin' && (
+              <Labeled label="Sales Office">
+                <FilterSelect className="w-full" value={office} onChange={setOffice} placeholder="All offices" options={OFFICES.map((o) => ({ value: o.id, label: o.name }))} />
+              </Labeled>
+            )}
+            <DateRange label="Review Date" from={reviewFrom} to={reviewTo} onFrom={setReviewFrom} onTo={setReviewTo} className="sm:col-span-2" />
+          </div>
 
+          {/* Additional filters */}
           {showAdvanced && (
             <div className="grid grid-cols-1 gap-3 rounded-xl border border-surface-100 bg-surface-50/60 p-3 sm:grid-cols-2 lg:grid-cols-3">
-              <FilterSelect value={owner} onChange={setOwner} placeholder="All owners" options={OWNERS.map((o) => ({ value: o, label: o }))} />
-              <div>
-                <SearchInput value={custCode} onChange={setCustCode} placeholder="Customer code…" />
-              </div>
-              <div />
-              <DateRange label="Quote Date" from={quoteFrom} to={quoteTo} onFrom={setQuoteFrom} onTo={setQuoteTo} />
-              <DateRange label="Review Date" from={reviewFrom} to={reviewTo} onFrom={setReviewFrom} onTo={setReviewTo} />
+              <Labeled label="Owner">
+                <FilterSelect className="w-full" value={owner} onChange={setOwner} placeholder="All owners" options={OWNERS.map((o) => ({ value: o, label: o }))} />
+              </Labeled>
+              <DateRange label="Quote Date" from={quoteFrom} to={quoteTo} onFrom={setQuoteFrom} onTo={setQuoteTo} className="sm:col-span-2" />
+            </div>
+          )}
+
+          {/* Toolbar: result count · more filters · clear all · download */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-surface-600">
+                <span className="font-semibold text-surface-900">{filtered.length}</span> result{filtered.length === 1 ? '' : 's'}
+              </span>
+              <Button variant="ghost" size="sm" leftIcon={<SlidersHorizontal className="h-4 w-4" />} onClick={() => setShowAdvanced((v) => !v)}>
+                {showAdvanced ? 'Hide' : 'More'} Filters
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              {chips.length > 0 && (
+                <Button variant="ghost" size="sm" onClick={clearAll}>
+                  Clear All Filters
+                </Button>
+              )}
+              {can('quotations', 'download') && (
+                <Button variant="secondary" size="sm" leftIcon={<Download className="h-4 w-4" />} onClick={exportCSV}>
+                  Download Filtered List ({filtered.length})
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Applied-filter chips */}
+          {chips.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium text-surface-400">Active filters:</span>
+              {chips.map((chip) => (
+                <span key={chip.key} className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 py-1 pl-2.5 pr-1.5 text-xs font-medium text-brand-700">
+                  {chip.label}
+                  <button onClick={chip.onRemove} aria-label={`Remove ${chip.label}`} className="rounded-full p-0.5 text-brand-400 hover:bg-brand-100 hover:text-brand-700">
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
             </div>
           )}
         </div>
@@ -211,26 +261,37 @@ export default function QuotationsList() {
   );
 }
 
+function Labeled({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs font-medium text-surface-500">{label}</label>
+      {children}
+    </div>
+  );
+}
+
 function DateRange({
   label,
   from,
   to,
   onFrom,
   onTo,
+  className,
 }: {
   label: string;
   from: string;
   to: string;
   onFrom: (v: string) => void;
   onTo: (v: string) => void;
+  className?: string;
 }) {
   return (
-    <div>
+    <div className={className}>
       <label className="mb-1 block text-xs font-medium text-surface-500">{label} range</label>
       <div className="flex items-center gap-2">
-        <input type="date" value={from} onChange={(e) => onFrom(e.target.value)} className="input py-1.5 text-sm" />
+        <input type="date" aria-label={`${label} from`} value={from} onChange={(e) => onFrom(e.target.value)} className="input py-1.5 text-sm" />
         <span className="text-surface-400">→</span>
-        <input type="date" value={to} onChange={(e) => onTo(e.target.value)} className="input py-1.5 text-sm" />
+        <input type="date" aria-label={`${label} to`} value={to} onChange={(e) => onTo(e.target.value)} className="input py-1.5 text-sm" />
       </div>
     </div>
   );

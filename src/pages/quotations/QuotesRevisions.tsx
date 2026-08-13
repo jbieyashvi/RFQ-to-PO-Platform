@@ -94,9 +94,9 @@ export default function QuotesRevisions() {
       align: 'right',
       render: (r) => (
         <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-          <button onClick={() => setActive(r)} title="View original" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100"><Eye className="h-4 w-4" /></button>
-          {can('quotations', 'edit') && <button onClick={() => setActive(r)} title="Edit revision" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100"><Pencil className="h-4 w-4" /></button>}
-          {can('quotations', 'edit') && <button onClick={() => { setUploadFor(r); setUploaded([]); }} title="Upload revised quote" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100"><UploadCloud className="h-4 w-4" /></button>}
+          <button onClick={() => setActive(r)} title="View original" aria-label="View original" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"><Eye className="h-4 w-4" /></button>
+          {can('quotations', 'edit') && <button onClick={() => setActive(r)} title="Edit revision" aria-label="Edit revision" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"><Pencil className="h-4 w-4" /></button>}
+          {can('quotations', 'edit') && <button onClick={() => { setUploadFor(r); setUploaded([]); }} title="Upload revised quote" aria-label="Upload revised quote" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"><UploadCloud className="h-4 w-4" /></button>}
           {can('quotations', 'edit') && <Button size="sm" variant="primary" leftIcon={<CheckCheck className="h-3.5 w-3.5" />} onClick={() => setMarkSent(r)}>Mark Sent</Button>}
         </div>
       ),

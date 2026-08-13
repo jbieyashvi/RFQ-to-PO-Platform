@@ -57,16 +57,21 @@ export const MODULE_ORDER: ModuleKey[] = [
 
 export const ACTION_ORDER: ActionKey[] = ['view', 'create', 'edit', 'delete', 'download'];
 
+// PM terminology: quotation status values are Open / Close / Receive.
+// ("Receive" is the quotation status; "PO Received" on the dashboard is a
+// separate customer-PO workflow KPI.) Internal keys are left unchanged so
+// deep-links (?status=…), mock data, and filtering logic stay stable.
 export const QUOTATION_STATUS: Record<QuotationStatus, { label: string; tone: BadgeTone }> = {
   open: { label: 'Open', tone: 'blue' },
-  closed: { label: 'Closed', tone: 'slate' },
-  received: { label: 'Received', tone: 'green' },
+  closed: { label: 'Close', tone: 'slate' },
+  received: { label: 'Receive', tone: 'green' },
 };
 
+// Excel terminology: stages are No Follow-up / Budgetary / Negotiations / Finalised.
 export const QUOTATION_STAGE: Record<QuotationStage, { label: string; tone: BadgeTone }> = {
   no_followup: { label: 'No Follow-up', tone: 'gray' },
   budgetary: { label: 'Budgetary', tone: 'teal' },
-  negotiation: { label: 'Negotiation', tone: 'amber' },
+  negotiation: { label: 'Negotiations', tone: 'amber' },
   finalised: { label: 'Finalised', tone: 'violet' },
 };
 

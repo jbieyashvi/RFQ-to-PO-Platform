@@ -97,8 +97,8 @@ export default function QuotesPending() {
       align: 'right',
       render: (r) => (
         <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-          <button onClick={() => setActive(r)} title="View" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100"><Eye className="h-4 w-4" /></button>
-          {can('quotations', 'edit') && <button onClick={() => setActive(r)} title="Prepare / Edit quote" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100"><Pencil className="h-4 w-4" /></button>}
+          <button onClick={() => setActive(r)} title="View" aria-label="View" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"><Eye className="h-4 w-4" /></button>
+          {can('quotations', 'edit') && <button onClick={() => setActive(r)} title="Prepare / Edit quote" aria-label="Prepare / Edit quote" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"><Pencil className="h-4 w-4" /></button>}
           {can('quotations', 'edit') && (
             <Button size="sm" variant="primary" leftIcon={<Send className="h-3.5 w-3.5" />} onClick={() => setMarkSent(r)}>
               Mark Sent

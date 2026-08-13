@@ -114,7 +114,7 @@ export default function TermsMaster() {
           <FilterBar chips={chips} onClearAll={() => { setCategory(''); setDocType(''); setSearch(''); }}>
             <SearchInput value={search} onChange={setSearch} placeholder="Search terms…" className="w-full sm:w-72" />
             <FilterSelect value={category} onChange={setCategory} placeholder="All categories" options={TC_CATEGORIES.map((c) => ({ value: c, label: c }))} />
-            <FilterSelect value={docType} onChange={setDocType} placeholder="All document types" options={[{ value: 'quotation', label: 'Quotation' }, { value: 'sales_order', label: 'Sales Order' }]} />
+            <FilterSelect value={docType} onChange={setDocType} placeholder="All document types" options={[{ value: 'quotation', label: 'Quotation' }, { value: 'sales_order', label: 'Sales Order' }, { value: 'both', label: 'Both' }]} />
           </FilterBar>
         </div>
         <DataTable columns={columns} rows={pageRows} rowKey={(r) => r.id} loading={loading} emptyTitle="No terms found" />

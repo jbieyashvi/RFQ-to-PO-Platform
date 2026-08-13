@@ -9,7 +9,7 @@ import {
   Phone,
   Trash2,
   ShieldCheck,
-  ChevronRight,
+  Eye,
 } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import {
@@ -96,13 +96,26 @@ export default function OfficeMaster() {
     { key: 'status', header: 'Status', render: (r) => <StatusBadge tone={r.active ? 'green' : 'gray'} label={r.active ? 'Active' : 'Inactive'} /> },
     {
       key: 'actions',
-      header: '',
+      header: 'Actions',
       align: 'right',
       render: (r) => (
-        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-          <IconBtn title="Manage users" onClick={() => setDetail(r)}><ChevronRight className="h-4 w-4" /></IconBtn>
-          {can('office_master', 'edit') && <IconBtn title="Edit office" onClick={() => { setEditingOffice({ ...r }); setIsNewOffice(false); }}><Pencil className="h-4 w-4" /></IconBtn>}
-          {can('office_master', 'edit') && <IconBtn title={r.active ? 'Deactivate' : 'Activate'} onClick={() => setConfirmOffice(r)}><Power className={r.active ? 'h-4 w-4 text-emerald-500' : 'h-4 w-4 text-surface-400'} /></IconBtn>}
+        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <Button variant="secondary" size="sm" leftIcon={<Eye className="h-3.5 w-3.5" />} onClick={() => setDetail(r)} aria-label={`View office ${r.name}`}>
+            View Office
+          </Button>
+          <Button variant="primary" size="sm" leftIcon={<Users className="h-3.5 w-3.5" />} onClick={() => setDetail(r)} aria-label={`Manage users and permissions for ${r.name}`}>
+            Manage Users &amp; Permissions
+          </Button>
+          {can('office_master', 'edit') && (
+            <Button variant="secondary" size="sm" leftIcon={<Pencil className="h-3.5 w-3.5" />} onClick={() => { setEditingOffice({ ...r }); setIsNewOffice(false); }} aria-label={`Edit office ${r.name}`}>
+              Edit Office
+            </Button>
+          )}
+          {can('office_master', 'edit') && (
+            <IconBtn title={r.active ? 'Deactivate office' : 'Activate office'} onClick={() => setConfirmOffice(r)}>
+              <Power className={r.active ? 'h-4 w-4 text-emerald-500' : 'h-4 w-4 text-surface-400'} />
+            </IconBtn>
+          )}
         </div>
       ),
     },

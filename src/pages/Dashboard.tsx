@@ -237,9 +237,9 @@ export default function Dashboard() {
       {/* KPI cards */}
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard label="Total Quotations" value={m.total} icon={<FileText className="h-4 w-4" />} accent="brand" onClick={() => goto('/quotations')} />
-        <KpiCard label="Open Quotations" value={m.open} icon={<FolderOpen className="h-4 w-4" />} accent="blue" onClick={() => goto('/quotations?status=open')} />
-        <KpiCard label="Closed Quotations" value={m.closed} icon={<CheckCircle2 className="h-4 w-4" />} accent="slate" onClick={() => goto('/quotations?status=closed')} />
-        <KpiCard label="PO Received" value={m.received} icon={<Inbox className="h-4 w-4" />} accent="emerald" onClick={() => goto('/quotations?status=received')} />
+        <KpiCard label="Open Quotations" value={m.open} icon={<FolderOpen className="h-4 w-4" />} accent="blue" sub="Status: Open" onClick={() => goto('/quotations?status=open')} />
+        <KpiCard label="Close Quotations" value={m.closed} icon={<CheckCircle2 className="h-4 w-4" />} accent="slate" sub="Status: Close" onClick={() => goto('/quotations?status=closed')} />
+        <KpiCard label="PO Received" value={m.received} icon={<Inbox className="h-4 w-4" />} accent="emerald" sub="Customer PO received" onClick={() => goto('/quotations?status=received')} />
         <KpiCard label="SO Sent" value={m.soSent} icon={<Send className="h-4 w-4" />} accent="violet" sub="Sales-order state" onClick={() => goto('/sales-orders?status=so_sent')} />
         <KpiCard label="Quotes Pending to be Sent" value={m.pendingSend} icon={<Clock className="h-4 w-4" />} accent="amber" onClick={() => goto('/quotations/pending')} />
         <KpiCard label="Quotes Needing Revision" value={m.needsRevision} icon={<RefreshCw className="h-4 w-4" />} accent="blue" onClick={() => goto('/quotations/revisions')} />

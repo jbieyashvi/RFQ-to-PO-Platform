@@ -293,7 +293,8 @@ export function IconBtn({
     <button
       onClick={onClick}
       title={title}
-      className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 hover:text-surface-800"
+      aria-label={title}
+      className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 hover:text-surface-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 disabled:opacity-40"
     >
       {children}
     </button>

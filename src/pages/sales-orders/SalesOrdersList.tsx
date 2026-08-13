@@ -112,10 +112,10 @@ export default function SalesOrdersList() {
       align: 'right',
       render: (r) => (
         <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-          <button onClick={() => setActive(r)} title="View" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100"><Eye className="h-4 w-4" /></button>
-          {can('sales_orders', 'download') && <button onClick={() => downloadOne(r)} title="Download" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100"><Download className="h-4 w-4" /></button>}
-          {can('sales_orders', 'edit') && r.status !== 'so_sent' && r.status !== 'finalised' && <button onClick={() => setMarkSent(r)} title="Mark as sent" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100"><Send className="h-4 w-4" /></button>}
-          {can('sales_orders', 'edit') && r.status !== 'revision_required' && <button onClick={() => { setReqRevision(r); setRevReason(''); }} title="Request revision" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100"><RotateCcw className="h-4 w-4" /></button>}
+          <button onClick={() => setActive(r)} title="View" aria-label="View" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"><Eye className="h-4 w-4" /></button>
+          {can('sales_orders', 'download') && <button onClick={() => downloadOne(r)} title="Download" aria-label="Download" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"><Download className="h-4 w-4" /></button>}
+          {can('sales_orders', 'edit') && r.status !== 'so_sent' && r.status !== 'finalised' && <button onClick={() => setMarkSent(r)} title="Mark as sent" aria-label="Mark as sent" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"><Send className="h-4 w-4" /></button>}
+          {can('sales_orders', 'edit') && r.status !== 'revision_required' && <button onClick={() => { setReqRevision(r); setRevReason(''); }} title="Request revision" aria-label="Request revision" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"><RotateCcw className="h-4 w-4" /></button>}
         </div>
       ),
     },
