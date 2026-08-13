@@ -76,7 +76,7 @@ export function Sidebar({
                 key={item.key}
                 to={item.to!}
                 onClick={onCloseMobile}
-                title={collapsed && isInbox && inboxCounts.review > 0 ? `${inboxCounts.review} need review` : undefined}
+                title={collapsed && isInbox && (inboxCounts.unread > 0 || inboxCounts.review > 0) ? `${inboxCounts.unread} unread emails · ${inboxCounts.review} emails need review` : undefined}
                 className={({ isActive }) =>
                   classNames(
                     'group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
@@ -88,9 +88,13 @@ export function Sidebar({
               >
                 <span className="relative flex-none">
                   <Icon className="h-[18px] w-[18px]" />
-                  {collapsed && isInbox && inboxCounts.unread > 0 && (
-                    <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-600 px-1 text-[9px] font-bold text-white">
-                      {inboxCounts.unread > 9 ? '9+' : inboxCounts.unread}
+                  {collapsed && isInbox && inboxCounts.review > 0 && (
+                    <span
+                      role="status"
+                      aria-label={`${inboxCounts.review} emails need review`}
+                      className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-bold text-white"
+                    >
+                      {inboxCounts.review > 9 ? '9+' : inboxCounts.review}
                     </span>
                   )}
                 </span>
@@ -99,7 +103,9 @@ export function Sidebar({
                   <span className="ml-auto flex items-center gap-1">
                     {inboxCounts.unread > 0 && (
                       <span
-                        title={`${inboxCounts.unread} unread`}
+                        role="status"
+                        title={`${inboxCounts.unread} unread emails`}
+                        aria-label={`${inboxCounts.unread} unread emails`}
                         className="flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold text-white"
                       >
                         {inboxCounts.unread}
@@ -107,7 +113,9 @@ export function Sidebar({
                     )}
                     {inboxCounts.review > 0 && (
                       <span
-                        title={`${inboxCounts.review} need review`}
+                        role="status"
+                        title={`${inboxCounts.review} emails need review`}
+                        aria-label={`${inboxCounts.review} emails need review`}
                         className="flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-100 px-1.5 text-[11px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-200"
                       >
                         {inboxCounts.review}

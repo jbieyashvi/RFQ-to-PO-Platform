@@ -54,7 +54,7 @@ function templateFor(email: InboxEmail): OutgoingDraft {
 let attSeq = 0;
 
 export function EmailActionPanel({ email }: { email: InboxEmail }) {
-  const { updateEmail, canInbox, addToast, quotations, salesOrders, updateQuotation, updateSalesOrder, users, currentUser } = useApp();
+  const { updateEmail, canInbox, addToast, quotations, salesOrders, updateQuotation, updateSalesOrder, users, currentUser, role } = useApp();
   const navigate = useNavigate();
 
   const [draft, setDraft] = useState<OutgoingDraft>(email.draft ?? templateFor(email));
@@ -70,10 +70,24 @@ export function EmailActionPanel({ email }: { email: InboxEmail }) {
   const canApprove = canInbox('approve');
   const canReassign = canInbox('reassign');
 
+  // Approve & Send needs BOTH approve and send permission (role-enforced, not just cosmetic).
+  const permissionOk = canSend && canApprove;
+  const permissionMessage =
+    role === 'sales_user'
+      ? 'Approval required from Office Admin or Super Admin.'
+      : 'You do not have permission to approve & send this email.';
+
   // Build the working email (with the in-progress draft) for validation
   const workingEmail: InboxEmail = { ...email, draft };
-  const blockers = useMemo(() => sendBlockers(workingEmail, canSend && canApprove), [workingEmail, canSend, canApprove]);
+  const validationBlockers = useMemo(() => sendBlockers(workingEmail), [workingEmail]);
+  const blockers = permissionOk ? validationBlockers : [...validationBlockers, permissionMessage];
   const canFinalSend = blockers.length === 0;
+  // One clear, concise reason to show next to the disabled button.
+  const blockReason = !permissionOk
+    ? permissionMessage
+    : validationBlockers.length > 0
+    ? 'Complete classification and confirm the extracted details before sending.'
+    : '';
 
   const setD = <K extends keyof OutgoingDraft>(k: K, v: OutgoingDraft[K]) => setDraft((d) => ({ ...d, [k]: v }));
 
@@ -253,11 +267,21 @@ export function EmailActionPanel({ email }: { email: InboxEmail }) {
             <Button variant="secondary" size="sm" leftIcon={<Save className="h-4 w-4" />} onClick={saveDraft} disabled={!canDraft}>Save Draft</Button>
             <Button variant="secondary" size="sm" leftIcon={<Eye className="h-4 w-4" />} onClick={() => setPreview(true)} disabled={!canDraft}>Preview</Button>
           </div>
-          <Button variant="primary" size="sm" className="mt-2 w-full" leftIcon={canFinalSend ? <Send className="h-4 w-4" /> : <Ban className="h-4 w-4" />} onClick={() => setPreview(true)} disabled={!canDraft}>
+          <Button
+            variant="primary"
+            size="sm"
+            className="mt-2 w-full"
+            leftIcon={canFinalSend ? <Send className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
+            onClick={() => setPreview(true)}
+            disabled={!canFinalSend}
+            title={blockReason || 'Open final review and send'}
+          >
             Approve &amp; Send
           </Button>
-          {!canSend && (
-            <p className="mt-1.5 text-center text-[11px] text-surface-400">You can prepare drafts, but sending requires Send permission.</p>
+          {!canFinalSend && blockReason && (
+            <p className={classNames('mt-1.5 text-center text-[11px]', !permissionOk ? 'font-medium text-rose-600' : 'text-amber-600')}>
+              {blockReason}
+            </p>
           )}
         </div>
       )}

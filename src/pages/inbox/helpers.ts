@@ -16,24 +16,27 @@ export function unresolvedMandatory(email: InboxEmail): string[] {
     .map((f) => f.label);
 }
 
-/** Every reason Approve & Send must be disabled. Empty array = safe to send. */
-export function sendBlockers(email: InboxEmail, canSend: boolean): string[] {
+/**
+ * Validation reasons Approve & Send must be disabled (permission is handled
+ * separately by the caller). Empty array = content is safe to send.
+ */
+export function sendBlockers(email: InboxEmail): string[] {
   const b: string[] = [];
   const d = email.draft;
   if (!d) {
     b.push('No draft has been prepared');
-    if (!canSend) b.push('You do not have Send permission');
     return b;
   }
   if (!isValidEmail(d.to)) b.push('Recipient is missing or invalid');
   if (!d.subject.trim()) b.push('Subject is empty');
   if (!d.body.trim()) b.push('Email body is empty');
   if (email.requiredAttachment && d.attachments.length === 0) b.push('Required attachment is missing');
-  const um = unresolvedMandatory(email);
-  if (um.length) b.push(`Unresolved required field(s): ${um.join(', ')}`);
   if (email.classification === 'unclassified') b.push('Email must be classified before sending');
-  if (email.validationFailed) b.push('Commercial validation failed (PO vs Quote) — resolve before sending');
-  if (!canSend) b.push('You do not have Send permission');
+  const um = unresolvedMandatory(email);
+  if (um.length) b.push(`Missing / low-confidence required field(s): ${um.join(', ')}`);
+  if (email.extraction.length > 0 && !email.extractionConfirmed) b.push('Confirm the AI-extracted details before sending');
+  if (email.needsReview) b.push('Low-confidence fields still need review');
+  if (email.validationFailed) b.push('PO / commercial validation is still pending');
   return b;
 }
 
