@@ -1,7 +1,12 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from '@/layout/AppShell';
 import { RequirePermission, RequireInbox } from '@/components/RequirePermission';
+import { RequireAuth } from '@/components/RequireAuth';
 
+import Login from '@/pages/auth/Login';
+import ForgotPassword from '@/pages/auth/ForgotPassword';
+import Profile from '@/pages/Profile';
+import Settings from '@/pages/Settings';
 import Dashboard from '@/pages/Dashboard';
 import GlobalInbox from '@/pages/inbox/GlobalInbox';
 import ItemMaster from '@/pages/master/ItemMaster';
@@ -21,8 +26,16 @@ import NotFound from '@/pages/NotFound';
 export default function App() {
   return (
     <Routes>
-      <Route element={<AppShell />}>
-        <Route index element={<Navigate to="/dashboard" replace />} />
+      {/* Public auth routes */}
+      <Route path="/login" element={<Login />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+
+      {/* Everything below requires a mock session */}
+      <Route element={<RequireAuth />}>
+        <Route element={<AppShell />}>
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="/profile" element={<Profile />} />
+          <Route path="/settings" element={<Settings />} />
         <Route
           path="/dashboard"
           element={
@@ -142,7 +155,8 @@ export default function App() {
           }
         />
 
-        <Route path="*" element={<NotFound />} />
+          <Route path="*" element={<NotFound />} />
+        </Route>
       </Route>
     </Routes>
   );

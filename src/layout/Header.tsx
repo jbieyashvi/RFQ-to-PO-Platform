@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Menu,
   PanelLeftClose,
@@ -8,10 +9,14 @@ import {
   Building2,
   Eye,
   Check,
-  UserCircle2,
+  UserRound,
+  Settings as SettingsIcon,
+  LogOut,
 } from 'lucide-react';
 import type { Role } from '@/types';
 import { useApp } from '@/context/AppContext';
+import { useAuth } from '@/context/AuthContext';
+import { ConfirmDialog } from '@/components/ui';
 import { ROLE_LABELS } from '@/lib/labels';
 import { classNames } from '@/lib/format';
 
@@ -39,22 +44,47 @@ export function Header({
   const {
     role,
     setRole,
-    currentUser,
     selectedOfficeId,
     setSelectedOfficeId,
     offices,
     visibleOffices,
   } = useApp();
+  const { profile, logout } = useAuth();
+  const navigate = useNavigate();
 
   const [officeOpen, setOfficeOpen] = useState(false);
   const [roleOpen, setRoleOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
+  const [signOutOpen, setSignOutOpen] = useState(false);
 
   const officeRef = useClickOutside<HTMLDivElement>(() => setOfficeOpen(false));
   const roleRef = useClickOutside<HTMLDivElement>(() => setRoleOpen(false));
   const notifRef = useClickOutside<HTMLDivElement>(() => setNotifOpen(false));
   const userRef = useClickOutside<HTMLDivElement>(() => setUserOpen(false));
+
+  // Escape closes any open header dropdown
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setOfficeOpen(false);
+      setRoleOpen(false);
+      setNotifOpen(false);
+      setUserOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
+  const initials = profile.fullName.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase();
+  const go = (path: string) => {
+    setUserOpen(false);
+    navigate(path);
+  };
+  const confirmSignOut = () => {
+    logout();
+    navigate('/login', { replace: true });
+  };
 
   const isSuper = role === 'super_admin';
   const currentOfficeLabel =
@@ -231,45 +261,55 @@ export function Header({
       <div className="relative" ref={userRef}>
         <button
           onClick={() => setUserOpen((v) => !v)}
-          className="flex items-center gap-2 rounded-lg py-1 pl-1 pr-2 hover:bg-surface-100"
+          aria-haspopup="menu"
+          aria-expanded={userOpen}
+          aria-label="Account menu"
+          className="flex items-center gap-2 rounded-lg py-1 pl-1 pr-2 hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
         >
           <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-600 text-xs font-semibold text-white">
-            {currentUser.fullName
-              .split(' ')
-              .map((n) => n[0])
-              .slice(0, 2)
-              .join('')}
+            {initials}
           </span>
           <span className="hidden text-left sm:block">
-            <span className="block text-sm font-medium leading-tight text-surface-800">
-              {currentUser.fullName}
-            </span>
-            <span className="block text-xs leading-tight text-surface-400">{ROLE_LABELS[role]}</span>
+            <span className="block text-sm font-medium leading-tight text-surface-800">{profile.fullName}</span>
+            <span className="block text-xs leading-tight text-surface-400">{ROLE_LABELS[profile.role]}</span>
           </span>
           <ChevronDown className="hidden h-4 w-4 text-surface-400 sm:block" />
         </button>
         {userOpen && (
-          <div className="absolute right-0 top-full z-30 mt-1.5 w-60 rounded-xl border border-surface-200 bg-white p-1.5 shadow-pop animate-slide-up">
-            <div className="flex items-center gap-3 px-3 py-2">
-              <UserCircle2 className="h-9 w-9 text-surface-300" />
+          <div role="menu" className="absolute right-0 top-full z-30 mt-1.5 w-64 rounded-xl border border-surface-200 bg-white p-1.5 shadow-pop animate-slide-up">
+            <div className="flex items-center gap-3 px-3 py-2.5">
+              <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-brand-600 text-sm font-semibold text-white">{initials}</span>
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-surface-800">{currentUser.fullName}</p>
-                <p className="truncate text-xs text-surface-400">{currentUser.email}</p>
+                <p className="truncate text-sm font-semibold text-surface-800">{profile.fullName}</p>
+                <p className="truncate text-xs text-surface-400">{profile.email}</p>
+                <p className="mt-0.5 text-[11px] font-medium text-brand-600">{ROLE_LABELS[profile.role]}</p>
               </div>
             </div>
             <div className="my-1 border-t border-surface-100" />
-            <div className="px-3 py-1.5 text-xs text-surface-500">
-              Role: <span className="font-medium text-surface-700">{ROLE_LABELS[role]}</span>
-            </div>
-            <button className="w-full rounded-lg px-3 py-2 text-left text-sm text-surface-600 hover:bg-surface-50">
-              Profile settings
+            <button role="menuitem" onClick={() => go('/profile')} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-surface-700 hover:bg-surface-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50">
+              <UserRound className="h-4 w-4 text-surface-400" /> My Profile
             </button>
-            <button className="w-full rounded-lg px-3 py-2 text-left text-sm text-surface-600 hover:bg-surface-50">
-              Sign out
+            <button role="menuitem" onClick={() => go('/settings')} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-surface-700 hover:bg-surface-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50">
+              <SettingsIcon className="h-4 w-4 text-surface-400" /> Account Settings
+            </button>
+            <div className="my-1 border-t border-surface-100" />
+            <button role="menuitem" onClick={() => { setUserOpen(false); setSignOutOpen(true); }} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-rose-600 hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50">
+              <LogOut className="h-4 w-4" /> Sign Out
             </button>
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={signOutOpen}
+        onClose={() => setSignOutOpen(false)}
+        onConfirm={confirmSignOut}
+        title="Sign out of Nexus RFQ?"
+        message="You will need to sign in again to access the platform."
+        confirmLabel="Sign Out"
+        cancelLabel="Cancel"
+        danger
+      />
     </header>
   );
 }
