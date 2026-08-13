@@ -13,11 +13,12 @@ import {
   InfoRow,
 } from '@/components/ui';
 import { useApp } from '@/context/AppContext';
-import { QUOTATION_STAGE, QUOTATION_STATUS } from '@/lib/labels';
+import { QUOTATION_STAGE, QUOTATION_STATUS, QUOTATION_DELIVERY } from '@/lib/labels';
 import { officeName } from '@/data/offices';
 import {
   computeTotals,
   formatDate,
+  formatDateTime,
   formatINR,
   lineTotal,
   downloadText,
@@ -178,6 +179,27 @@ export function QuotationDetailsDrawer({
                 { label: 'Last Updated', value: formatDate(q.lastUpdated) },
               ]}
             />
+
+            {/* Delivery / send state — separate from business Status & Stage */}
+            <div className="rounded-xl border border-surface-200 p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-surface-800">Send / Delivery</h4>
+                <StatusBadge tone={QUOTATION_DELIVERY[q.deliveryState].tone} label={QUOTATION_DELIVERY[q.deliveryState].label} />
+              </div>
+              {q.deliveryState === 'send_failed' && q.sendFailureReason && (
+                <p className="mb-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs text-rose-700">
+                  Failure: {q.sendFailureReason}
+                </p>
+              )}
+              <DescList
+                items={[
+                  { label: 'Sent At', value: q.sentAt ? formatDateTime(q.sentAt) : '—' },
+                  { label: 'Sent By', value: q.sentBy ?? '—' },
+                  { label: 'Channel', value: q.sendChannel ?? '—' },
+                  { label: 'Note', value: q.sendNote ?? '—' },
+                ]}
+              />
+            </div>
 
             {/* Attachments */}
             <div>

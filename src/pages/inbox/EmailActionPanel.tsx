@@ -54,7 +54,7 @@ function templateFor(email: InboxEmail): OutgoingDraft {
 let attSeq = 0;
 
 export function EmailActionPanel({ email }: { email: InboxEmail }) {
-  const { updateEmail, canInbox, addToast, quotations, salesOrders, updateQuotation, updateSalesOrder, users } = useApp();
+  const { updateEmail, canInbox, addToast, quotations, salesOrders, updateQuotation, updateSalesOrder, users, currentUser } = useApp();
   const navigate = useNavigate();
 
   const [draft, setDraft] = useState<OutgoingDraft>(email.draft ?? templateFor(email));
@@ -92,21 +92,39 @@ export function EmailActionPanel({ email }: { email: InboxEmail }) {
     if (!canFinalSend) return;
     updateEmail(email.id, { draft, draftSaved: true, sent: true, sentAt: TODAY_TS, needsReview: false });
 
-    // Log to the linked record's activity timeline
     const activity = {
       id: `act-${Date.now()}`,
       date: TODAY_TS,
-      actor: email.owner,
+      actor: currentUser.fullName,
       action: 'Email sent to customer',
       detail: `${draft.subject} → ${draft.to}`,
     };
-    if (email.linkedQuotation) {
+
+    // Outbound quotation send: set delivery state to Sent and drop it from the pending queue.
+    if (email.quotationSendId) {
+      const q = quotations.find((x) => x.id === email.quotationSendId);
+      if (q) {
+        updateQuotation(q.id, {
+          deliveryState: 'sent',
+          workState: 'sent',
+          sentAt: TODAY_TS,
+          sentBy: currentUser.fullName,
+          sendChannel: 'Email (via Global Inbox)',
+          sendFailureReason: undefined,
+          lastUpdated: '2026-08-13',
+          activity: [
+            ...q.activity,
+            { ...activity, action: 'Quotation emailed to customer', detail: `${draft.subject} → ${draft.to} · approved by ${currentUser.fullName}` },
+          ],
+        });
+      }
+    } else if (email.linkedQuotation) {
       const q = quotations.find((x) => x.number === email.linkedQuotation);
       if (q) updateQuotation(q.id, { activity: [...q.activity, activity], lastUpdated: '2026-08-13' });
     }
     if (email.linkedSO) {
       const so = salesOrders.find((x) => x.number === email.linkedSO);
-      if (so) updateSalesOrder(so.id, { internalNotes: [...so.internalNotes, { id: activity.id, date: TODAY_TS, author: email.owner, text: `Email sent: ${draft.subject}` }] });
+      if (so) updateSalesOrder(so.id, { internalNotes: [...so.internalNotes, { id: activity.id, date: TODAY_TS, author: currentUser.fullName, text: `Email sent: ${draft.subject}` }] });
     }
     setPreview(false);
     addToast({ type: 'success', title: 'Email sent & approved', message: `Sent to ${draft.to}. Added to Sent and the record timeline.` });

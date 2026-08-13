@@ -87,6 +87,7 @@ export interface TermCondition {
 }
 
 // ---------- Quotations ----------
+// Business status — NOT a send state.
 export type QuotationStatus = 'open' | 'closed' | 'received';
 export type QuotationStage =
   | 'no_followup'
@@ -94,6 +95,15 @@ export type QuotationStage =
   | 'negotiation'
   | 'finalised';
 export type QuotationWorkState = 'pending_send' | 'needs_revision' | 'sent';
+
+// Delivery / send lifecycle — tracked independently of Status and Stage.
+export type QuotationDeliveryState =
+  | 'not_sent'
+  | 'draft_ready'
+  | 'awaiting_approval'
+  | 'sent'
+  | 'sent_externally'
+  | 'send_failed';
 
 export interface LineItem {
   id: string;
@@ -142,6 +152,12 @@ export interface Quotation {
   status: QuotationStatus;
   stage: QuotationStage;
   workState: QuotationWorkState;
+  deliveryState: QuotationDeliveryState;
+  sentAt?: string;
+  sentBy?: string;
+  sendChannel?: string; // for externally-sent quotations
+  sendNote?: string;
+  sendFailureReason?: string;
   value: number;
   quoteDate: string;
   reviewDate: string;
@@ -287,6 +303,7 @@ export interface InboxEmail {
   linkedQuotation?: string;
   linkedPO?: string;
   linkedSO?: string;
+  quotationSendId?: string; // set when this is an outbound "Review & Send" for a quotation
   extraction: ExtractionField[];
   extractionConfirmed: boolean;
   requiredAttachment?: boolean; // outgoing reply must carry an attachment (e.g. quote PDF)

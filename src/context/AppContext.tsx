@@ -73,6 +73,7 @@ interface AppState {
   updateSalesOrder: (id: string, patch: Partial<SalesOrder>) => void;
   addSalesOrder: (so: SalesOrder) => void;
   updateEmail: (id: string, patch: Partial<InboxEmail>) => void;
+  addEmail: (e: InboxEmail) => void;
 
   // toasts
   toasts: Toast[];
@@ -218,6 +219,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setEmails((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));
   }, []);
 
+  const addEmail = _useCallback((e: InboxEmail) => {
+    setEmails((prev) => [e, ...prev]);
+  }, []);
+
   const value: AppState = {
     role,
     setRole,
@@ -249,6 +254,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     updateSalesOrder,
     addSalesOrder,
     updateEmail,
+    addEmail,
     toasts,
     addToast,
     dismissToast,

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Inbox, ArrowLeft, MailOpen } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import { SearchInput, FilterSelect, EmptyState } from '@/components/ui';
@@ -19,6 +20,7 @@ type Tab = 'all' | 'needs_review' | 'drafts' | 'sent';
 export default function GlobalInbox() {
   const { emails, role, updateEmail } = useApp();
   const inScope = useOfficeScope();
+  const [params, setParams] = useSearchParams();
 
   const [tab, setTab] = useState<Tab>('all');
   const [search, setSearch] = useState('');
@@ -71,6 +73,20 @@ export default function GlobalInbox() {
       })
       .sort((a, b) => ((a.sent && a.sentAt ? a.sentAt : a.receivedAt) < (b.sent && b.sentAt ? b.sentAt : b.receivedAt) ? 1 : -1));
   }, [scoped, tab, search, classification, office, owner, readState, confidence, dateFrom, dateTo]);
+
+  // Deep-link: ?email=<id> (used by "Review & Send Email" from Quotes Pending)
+  useEffect(() => {
+    const id = params.get('email');
+    if (id && emails.some((e) => e.id === id)) {
+      setTab('all');
+      setSelectedId(id);
+      setMobileView('detail');
+      const e = emails.find((x) => x.id === id);
+      if (e && !e.read) updateEmail(id, { read: true });
+      setParams({}, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Keep a valid selection
   useEffect(() => {

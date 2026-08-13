@@ -3,6 +3,7 @@ import type {
   EmailClassification,
   InboxAction,
   ModuleKey,
+  QuotationDeliveryState,
   QuotationStage,
   QuotationStatus,
   Role,
@@ -75,6 +76,16 @@ export const QUOTATION_STAGE: Record<QuotationStage, { label: string; tone: Badg
   budgetary: { label: 'Budgetary', tone: 'teal' },
   negotiation: { label: 'Negotiations', tone: 'amber' },
   finalised: { label: 'Finalised', tone: 'violet' },
+};
+
+// Send / delivery lifecycle — separate from business Status & Stage.
+export const QUOTATION_DELIVERY: Record<QuotationDeliveryState, { label: string; tone: BadgeTone }> = {
+  not_sent: { label: 'Not Sent', tone: 'gray' },
+  draft_ready: { label: 'Draft Ready', tone: 'blue' },
+  awaiting_approval: { label: 'Awaiting Approval', tone: 'amber' },
+  sent: { label: 'Sent', tone: 'green' },
+  sent_externally: { label: 'Sent Externally', tone: 'teal' },
+  send_failed: { label: 'Send Failed', tone: 'red' },
 };
 
 export const SO_STATUS: Record<SOStatus, { label: string; tone: BadgeTone }> = {

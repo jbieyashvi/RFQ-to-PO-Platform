@@ -67,10 +67,16 @@ const REVISION_REASONS = [
   'Discount approval revision',
   'Technical specification change',
 ];
+const FAIL_REASONS = [
+  'SMTP relay rejected: recipient mailbox is full',
+  'Delivery failed: customer mail server timed out',
+  'Bounced: recipient address on file is invalid',
+];
 
 function generate(): Quotation[] {
   const list: Quotation[] = [];
   const total = 34;
+  let pendingSeen = 0;
   for (let i = 0; i < total; i++) {
     const rand = rng(1000 + i * 37);
     const party = PARTIES[i % PARTIES.length];
@@ -122,6 +128,33 @@ function generate(): Quotation[] {
           ]
         : [{ id: `rev-${i}-1`, version: 1, date: quoteDate, reason: 'Initial quotation issued', by: owner }];
 
+    // Delivery / send state — independent of Status & Stage.
+    let deliveryState: Quotation['deliveryState'] = 'not_sent';
+    let sentAt: string | undefined;
+    let sentBy: string | undefined;
+    let sendFailureReason: string | undefined;
+    if (workState === 'sent') {
+      deliveryState = 'sent';
+      sentAt = `${quoteDate}T16:45:00`;
+      sentBy = owner;
+    } else if (workState === 'pending_send') {
+      pendingSeen += 1;
+      // Guarantee each pending delivery state is represented for the demo.
+      if (pendingSeen === 1) {
+        deliveryState = 'send_failed';
+        sendFailureReason = FAIL_REASONS[i % FAIL_REASONS.length];
+      } else if (pendingSeen === 2) {
+        deliveryState = 'awaiting_approval';
+      } else if (pendingSeen % 2 === 1) {
+        deliveryState = 'draft_ready';
+      } else {
+        deliveryState = 'not_sent';
+      }
+    } else {
+      // needs_revision
+      deliveryState = rand() > 0.5 ? 'draft_ready' : 'not_sent';
+    }
+
     list.push({
       id: `qtn-${pad(i + 1, 3)}`,
       number: `QTN/2026/${pad(1000 + i + 1, 4)}`,
@@ -133,6 +166,10 @@ function generate(): Quotation[] {
       status,
       stage,
       workState,
+      deliveryState,
+      sentAt,
+      sentBy,
+      sendFailureReason,
       value: grandTotal,
       quoteDate,
       reviewDate,
