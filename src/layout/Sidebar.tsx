@@ -200,22 +200,18 @@ export function Sidebar({
                       to={c.to}
                       end={c.to === '/quotations'}
                       onClick={onCloseMobile}
+                      title={c.label}
                       className={({ isActive }) =>
                         classNames(
-                          'flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
+                          'flex items-start gap-2.5 rounded-lg px-3 py-1.5 text-[13px] leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
                           isActive
                             ? 'relative bg-brand-50 font-medium text-brand-700 before:absolute before:left-0 before:top-1/2 before:h-4 before:w-[3px] before:-translate-y-1/2 before:rounded-r before:bg-brand-600'
                             : 'text-surface-600 hover:bg-surface-100 hover:text-surface-900'
                         )
                       }
                     >
-                      <span
-                        className={classNames(
-                          'h-1.5 w-1.5 flex-none rounded-full',
-                          'bg-current opacity-40'
-                        )}
-                      />
-                      <span className="truncate">{c.label}</span>
+                      <span className="mt-[5px] h-1.5 w-1.5 flex-none rounded-full bg-current opacity-40" />
+                      <span>{c.label}</span>
                     </NavLink>
                   ))}
                 </div>

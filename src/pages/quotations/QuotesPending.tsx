@@ -1,13 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, Pencil, Send, AlertCircle, Upload, RotateCcw } from 'lucide-react';
+import { Eye, Pencil, AlertCircle, AlertTriangle, Upload, Mail, Activity } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import {
   Button,
   DataTable,
   StatusBadge,
   SearchInput,
-  FilterBar,
   FilterSelect,
   Pagination,
   Modal,
@@ -17,7 +16,6 @@ import {
   FileUpload,
   RowActionMenu,
   type Column,
-  type FilterChip,
   type RowAction,
   type UploadedFile,
 } from '@/components/ui';
@@ -36,13 +34,30 @@ function officeEmail(officeId: string) {
   return `sales.${city}@nexustrade.in`;
 }
 
+const DELIVERY_FILTER_OPTIONS = [
+  { value: 'not_sent', label: 'Not Sent' },
+  { value: 'draft_ready', label: 'Draft Ready' },
+  { value: 'awaiting_approval', label: 'Awaiting Approval' },
+  { value: 'send_failed', label: 'Send Failed' },
+];
+
+const PRIMARY_LABEL: Record<string, string> = {
+  not_sent: 'Prepare Email',
+  draft_ready: 'Review & Send',
+  awaiting_approval: 'Review',
+  send_failed: 'Retry',
+};
+
 export default function QuotesPending() {
-  const { quotations, parties, role, can, currentUser, updateQuotation, addEmail, addToast } = useApp();
+  const { quotations, parties, emails, role, can, currentUser, updateQuotation, addEmail, addToast } = useApp();
   const inScope = useOfficeScope();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [office, setOffice] = useState('');
+  const [deliveryFilter, setDeliveryFilter] = useState('');
+  const [overdueOnly, setOverdueOnly] = useState(false);
   const [active, setActive] = useState<Quotation | null>(null);
+  const [activeTab, setActiveTab] = useState('overview');
   const [external, setExternal] = useState<Quotation | null>(null);
   const loading = useSimulatedLoading([]);
 
@@ -55,18 +70,25 @@ export default function QuotesPending() {
     const s = search.trim().toLowerCase();
     return base.filter((q) => {
       if (office && q.officeId !== office) return false;
+      if (deliveryFilter && q.deliveryState !== deliveryFilter) return false;
+      if (overdueOnly && daysBetween(q.createdDate) <= 1) return false;
       if (s && !`${q.number} ${q.customerName} ${q.customerCode} ${q.owner}`.toLowerCase().includes(s)) return false;
       return true;
     });
-  }, [base, search, office]);
+  }, [base, search, office, deliveryFilter, overdueOnly]);
 
   const { page, pageSize, setPage, setPageSize, pageRows, total } = usePaginated(filtered, 10);
 
-  const chips: FilterChip[] = [];
-  if (office) chips.push({ key: 'o', label: `Office: ${officeName(office)}`, onRemove: () => setOffice('') });
-  if (search) chips.push({ key: 'q', label: `Search: "${search}"`, onRemove: () => setSearch('') });
-
   const overdueCount = base.filter((q) => daysBetween(q.createdDate) > 1).length;
+  const hasFilters = !!search || !!office || !!deliveryFilter || overdueOnly;
+  const clearFilters = () => { setSearch(''); setOffice(''); setDeliveryFilter(''); setOverdueOnly(false); };
+
+  const openDrawer = (q: Quotation, tab = 'overview') => { setActiveTab(tab); setActive(q); };
+  const openEmailDraft = (q: Quotation) => {
+    const existing = emails.find((e) => e.quotationSendId === q.id && !e.sent);
+    if (existing) navigate(`/inbox?email=${existing.id}`);
+    else reviewAndSend(q);
+  };
 
   // PRIMARY: open the Global Inbox composer with the quotation & customer linked, prefilled.
   const reviewAndSend = (q: Quotation) => {
@@ -127,27 +149,40 @@ export default function QuotesPending() {
   };
 
   const columns: Column<Quotation>[] = [
-    { key: 'number', header: 'QTN No', width: '114px', sticky: 'left', sortValue: (r) => r.number, render: (r) => <span className="font-medium text-surface-800">{r.number}</span> },
     {
-      key: 'customer',
-      header: 'Customer',
+      key: 'quote',
+      header: 'Quote & Customer',
+      sticky: 'left',
+      sortValue: (r) => r.number,
       render: (r) => (
-        <div className="min-w-0"><p className="truncate font-medium text-surface-800" title={r.customerName}>{r.customerName}</p><p className="truncate text-[11px] text-surface-400">{r.customerCode}</p></div>
+        <div className="min-w-0 leading-tight">
+          <p className="truncate font-semibold text-surface-800">{r.number}</p>
+          <p className="truncate text-surface-600" title={r.customerName}>{r.customerName}</p>
+          <p className="truncate text-[11px] text-surface-400">{r.customerCode}</p>
+        </div>
       ),
     },
-    { key: 'office', header: 'Sales Office', truncate: true, title: (r) => officeName(r.officeId), render: (r) => <span className="text-surface-600">{officeName(r.officeId)}</span> },
-    { key: 'owner', header: 'Owner', width: '102px', truncate: true, title: (r) => r.owner, render: (r) => <span className="text-surface-600">{r.owner}</span> },
-    { key: 'value', header: 'Value', width: '88px', align: 'right', sortValue: (r) => r.value, render: (r) => <span className="font-medium text-surface-800">{formatINR(r.value)}</span> },
     {
-      key: 'age',
-      header: 'Age',
-      width: '76px',
+      key: 'office',
+      header: 'Office / Owner',
+      sortValue: (r) => officeName(r.officeId),
+      render: (r) => (
+        <div className="min-w-0 leading-tight">
+          <p className="truncate text-surface-700" title={officeName(r.officeId)}>{officeName(r.officeId)}</p>
+          <p className="truncate text-[11px] text-surface-400" title={r.owner}>{r.owner}</p>
+        </div>
+      ),
+    },
+    { key: 'value', header: 'Value', width: '92px', align: 'right', sortValue: (r) => r.value, render: (r) => <span className="font-medium text-surface-800">{formatINR(r.value)}</span> },
+    {
+      key: 'pending',
+      header: 'Pending Since',
+      width: '124px',
       sortValue: (r) => daysBetween(r.createdDate),
       render: (r) => {
         const over = daysBetween(r.createdDate) > 1;
         return (
-          <span className={classNames('inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium', over ? 'bg-rose-50 text-rose-600' : 'bg-surface-100 text-surface-500')} title={`Created ${formatDate(r.createdDate)}`}>
-            {over && <AlertCircle className="h-3 w-3" />}
+          <span className={classNames('font-medium', over ? 'text-rose-600' : 'text-surface-600')} title={`Created ${formatDate(r.createdDate)}`}>
             {ageLabel(r.createdDate)}
           </span>
         );
@@ -155,43 +190,49 @@ export default function QuotesPending() {
     },
     {
       key: 'delivery',
-      header: 'Delivery',
-      width: '136px',
+      header: 'Delivery Status',
+      width: '150px',
       sortValue: (r) => r.deliveryState,
-      render: (r) => (
-        <div className="min-w-0">
-          <StatusBadge tone={QUOTATION_DELIVERY[r.deliveryState].tone} label={QUOTATION_DELIVERY[r.deliveryState].label} />
-          {r.deliveryState === 'send_failed' && r.sendFailureReason && (
-            <p className="mt-0.5 truncate text-[10px] text-rose-500" title={r.sendFailureReason}>{r.sendFailureReason}</p>
-          )}
-        </div>
-      ),
+      render: (r) => {
+        const meta = QUOTATION_DELIVERY[r.deliveryState];
+        if (r.deliveryState === 'send_failed') {
+          return (
+            <span className="inline-flex items-center gap-1.5" title={r.sendFailureReason}>
+              <StatusBadge tone={meta.tone} label={meta.label} dot={false} />
+              <AlertTriangle className="h-3.5 w-3.5 flex-none text-rose-500" />
+            </span>
+          );
+        }
+        return <StatusBadge tone={meta.tone} label={meta.label} dot={false} />;
+      },
     },
-    { key: 'review', header: 'Review', width: '84px', sortValue: (r) => r.reviewDate, render: (r) => <span className="text-surface-600">{formatDate(r.reviewDate, { short: true })}</span> },
+    { key: 'review', header: 'Review Date', width: '96px', sortValue: (r) => r.reviewDate, render: (r) => <span className="text-surface-600">{formatDate(r.reviewDate, { short: true })}</span> },
     {
       key: 'actions',
-      header: 'Actions',
-      width: '158px',
+      header: 'Action',
+      width: '146px',
       align: 'right',
       sticky: 'right',
       render: (r) => {
-        const failed = r.deliveryState === 'send_failed';
-        const menu: RowAction[] = [{ label: 'View Quotation', icon: <Eye className="h-4 w-4" />, onClick: () => setActive(r) }];
-        if (can('quotations', 'edit')) {
-          menu.push({ label: 'Prepare / Edit Quote', icon: <Pencil className="h-4 w-4" />, onClick: () => setActive(r) });
+        const canEdit = can('quotations', 'edit');
+        const menu: RowAction[] = [{ label: 'View Quotation', icon: <Eye className="h-4 w-4" />, onClick: () => openDrawer(r, 'overview') }];
+        if (canEdit) {
+          menu.push({ label: 'Edit Quotation', icon: <Pencil className="h-4 w-4" />, onClick: () => openDrawer(r, 'overview') });
+          menu.push({ label: 'Open Email Draft', icon: <Mail className="h-4 w-4" />, onClick: () => openEmailDraft(r) });
           menu.push({ label: 'Mark as Sent Externally', icon: <Upload className="h-4 w-4" />, onClick: () => setExternal(r) });
         }
+        menu.push({ label: 'View Activity', icon: <Activity className="h-4 w-4" />, onClick: () => openDrawer(r, 'activity') });
         return (
           <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-            {can('quotations', 'edit') && (
+            {canEdit && (
               <Button
                 size="sm"
-                variant={failed ? 'danger' : 'primary'}
-                leftIcon={failed ? <RotateCcw className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />}
+                variant="primary"
+                className="!px-2.5"
                 onClick={() => reviewAndSend(r)}
-                title={failed ? 'Retry — previous send failed' : r.deliveryState === 'awaiting_approval' ? 'Continue review in Global Inbox' : 'Open Global Inbox to review & send'}
+                title={r.deliveryState === 'send_failed' ? 'Retry — previous send failed' : 'Open Global Inbox to review & send'}
               >
-                {failed ? 'Retry Send' : 'Review & Send'}
+                {PRIMARY_LABEL[r.deliveryState] ?? 'Review & Send'}
               </Button>
             )}
             <RowActionMenu actions={menu} label={`Actions for ${r.number}`} />
@@ -201,43 +242,87 @@ export default function QuotesPending() {
     },
   ];
 
+  // State-specific empty content
+  const empty = (() => {
+    if (base.length === 0)
+      return { title: 'Nothing pending', message: 'Every quotation has been sent or marked sent externally. 🎉' };
+    if (deliveryFilter === 'send_failed')
+      return { title: 'No failed sends', message: 'No pending quotation currently has a failed send.' };
+    if (overdueOnly)
+      return { title: 'No overdue quotations', message: 'Nothing is overdue by more than 24 hours.' };
+    if (hasFilters)
+      return {
+        title: 'No matching quotations',
+        message: 'Try adjusting the search or filters.',
+        action: <Button size="sm" variant="secondary" onClick={clearFilters}>Clear filters</Button>,
+      };
+    return { title: 'Nothing pending', message: 'Every quotation has been sent.' };
+  })();
+
   return (
     <>
       <PageHeader
         title="Quotes Pending to be Sent"
-        description="Quotations awaiting dispatch. “Sent” is a delivery state — separate from business Status (Open/Close/Receive) and Stage."
+        description="Review, approve, and send pending quotations to customers."
         crumbs={[{ label: 'Sales Quotations' }, { label: 'Quotes Pending to be Sent' }]}
       />
 
       {overdueCount > 0 && (
-        <div className="mb-4 flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          <AlertCircle className="h-5 w-5 flex-none" />
-          <span>
-            <span className="font-semibold">{overdueCount} quotation{overdueCount > 1 ? 's' : ''}</span> pending for more than 24 hours — highlighted below.
+        <div className="mb-3 flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-[13px] text-rose-700">
+          <AlertCircle className="h-4 w-4 flex-none" />
+          <span className="font-medium">
+            {overdueCount} quotation{overdueCount > 1 ? 's' : ''} overdue by more than 24 hours
           </span>
+          {!overdueOnly && (
+            <button onClick={() => setOverdueOnly(true)} className="ml-auto flex-none text-xs font-semibold underline-offset-2 hover:underline">
+              View overdue only
+            </button>
+          )}
         </div>
       )}
 
       <div className="card">
-        <div className="border-b border-surface-100 p-4">
-          <FilterBar chips={chips} onClearAll={() => { setOffice(''); setSearch(''); }}>
-            <SearchInput value={search} onChange={setSearch} placeholder="Search…" className="w-full sm:w-72" />
-            {role === 'super_admin' && <FilterSelect value={office} onChange={setOffice} placeholder="All offices" options={OFFICES.map((o) => ({ value: o.id, label: o.name }))} />}
-          </FilterBar>
+        {/* Compact filter toolbar */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-surface-100 p-3">
+          <SearchInput value={search} onChange={setSearch} placeholder="Search quotation, customer, owner…" className="w-full sm:w-64" />
+          {role === 'super_admin' && (
+            <FilterSelect value={office} onChange={setOffice} placeholder="All offices" options={OFFICES.map((o) => ({ value: o.id, label: o.name }))} />
+          )}
+          <FilterSelect value={deliveryFilter} onChange={setDeliveryFilter} placeholder="All Delivery States" options={DELIVERY_FILTER_OPTIONS} />
+          <button
+            onClick={() => setOverdueOnly((v) => !v)}
+            aria-pressed={overdueOnly}
+            className={classNames(
+              'h-9 rounded-lg border px-3 text-sm font-medium transition-colors',
+              overdueOnly ? 'border-rose-300 bg-rose-50 text-rose-700' : 'border-surface-200 text-surface-600 hover:bg-surface-50'
+            )}
+          >
+            Overdue only
+          </button>
+          {hasFilters && (
+            <button onClick={clearFilters} className="text-xs font-semibold text-surface-500 hover:text-brand-600 hover:underline">
+              Clear
+            </button>
+          )}
+          <span className="ml-auto text-xs text-surface-500">
+            <span className="font-semibold text-surface-800">{filtered.length}</span> pending
+          </span>
         </div>
+
         <DataTable
           columns={columns}
           rows={pageRows}
           rowKey={(r) => r.id}
           loading={loading}
-          onRowClick={(r) => setActive(r)}
-          emptyTitle="Nothing pending"
-          emptyMessage="All quotations have been sent or marked sent externally. 🎉"
+          onRowClick={(r) => openDrawer(r, 'overview')}
+          emptyTitle={empty.title}
+          emptyMessage={empty.message}
+          emptyAction={empty.action}
         />
         {!loading && total > 0 && <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={setPageSize} />}
       </div>
 
-      <QuotationDetailsDrawer quotation={active} onClose={() => setActive(null)} />
+      <QuotationDetailsDrawer quotation={active} initialTab={activeTab} onClose={() => setActive(null)} />
 
       {external && (
         <MarkExternalModal

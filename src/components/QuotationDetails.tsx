@@ -28,10 +28,12 @@ export function QuotationDetailsDrawer({
   quotation,
   onClose,
   onEdit,
+  initialTab = 'overview',
 }: {
   quotation: Quotation | null;
   onClose: () => void;
   onEdit?: (q: Quotation) => void;
+  initialTab?: string;
 }) {
   const { updateQuotation, can, addToast } = useApp();
   const [tab, setTab] = useState('overview');
@@ -41,12 +43,12 @@ export function QuotationDetailsDrawer({
 
   useEffect(() => {
     if (quotation) {
-      setTab('overview');
+      setTab(initialTab);
       setStatus(quotation.status);
       setStage(quotation.stage);
       setReviewDate(quotation.reviewDate);
     }
-  }, [quotation]);
+  }, [quotation, initialTab]);
 
   if (!quotation) return null;
   const q = quotation;
