@@ -38,7 +38,13 @@ jobs:
         run: npm run build
 
       - name: Configure Pages
+        # enablement: true switches the repo's Pages build type to "GitHub Actions"
+        # via the API on each run, so the built dist/ artifact is what gets served
+        # (instead of GitHub's legacy "Deploy from a branch" builder publishing the
+        # raw source tree, which was rendering /src/main.tsx -> 404 -> blank page).
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - name: Upload dist as Pages artifact
         uses: actions/upload-pages-artifact@v3

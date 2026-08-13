@@ -39,3 +39,6 @@ Thumbs.db
 # Misc temp
 *.tmp
 coverage
+
+# Local Claude Code configuration (keep local, don't track)
+.claude/
