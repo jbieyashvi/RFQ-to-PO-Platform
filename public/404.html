@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nexus RFQ — RFQ-to-PO Platform</title>
+    <!--
+      SPA fallback for GitHub Pages (single-page apps on project pages).
+      GitHub Pages returns this 404.html for any path it can't find on disk
+      (e.g. a direct hit or refresh on /RFQ-to-PO-Platform/dashboard). We encode
+      the requested route into a query string and redirect to the app root; the
+      inline script in index.html then restores the real URL before React Router
+      mounts. Adapted from rafgraph/spa-github-pages (MIT).
+      pathSegmentsToKeep = 1 keeps the "/RFQ-to-PO-Platform" project segment.
+    -->
+    <script type="text/javascript">
+      var pathSegmentsToKeep = 1;
+      var l = window.location;
+      l.replace(
+        l.protocol +
+          '//' +
+          l.hostname +
+          (l.port ? ':' + l.port : '') +
+          l.pathname
+            .split('/')
+            .slice(0, 1 + pathSegmentsToKeep)
+            .join('/') +
+          '/?/' +
+          l.pathname
+            .slice(1)
+            .split('/')
+            .slice(pathSegmentsToKeep)
+            .join('/')
+            .replace(/&/g, '~and~') +
+          (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') +
+          l.hash
+      );
+    </script>
+  </head>
+  <body></body>
+</html>

@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react'
 import { fileURLToPath, URL } from 'node:url'
 
 export default defineConfig({
+  // Served from https://<user>.github.io/RFQ-to-PO-Platform/ on GitHub Pages.
+  base: '/RFQ-to-PO-Platform/',
   plugins: [react()],
   resolve: {
     alias: {
