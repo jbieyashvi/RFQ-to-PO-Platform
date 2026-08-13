@@ -1,12 +1,60 @@
 import type {
+  ActivityEvent,
+  Attachment,
   LineItem,
+  RevisionState,
   SalesOrder,
+  SORevisionSnapshot,
+  SORevisionVersion,
   SOStatus,
   VerificationField,
   VerificationStatus,
 } from '@/types';
 import { computeTotals, formatINR } from '@/lib/format';
 import { QUOTATIONS } from './quotations';
+import { PARTIES } from './masters';
+
+const PARTY_MAP = new Map(PARTIES.map((p) => [p.id, p]));
+
+const REQUESTERS = [
+  'Rahul Chauhan (Customer)',
+  'Meera Joshi (Customer)',
+  'Priya Nair (Office Admin)',
+  'Sanjay Kulkarni (Customer)',
+];
+
+function snap(o: {
+  items: LineItem[];
+  paymentTerms: string;
+  deliveryTerms: string;
+  deliveryDate: string;
+  billingAddress: string;
+  shippingAddress: string;
+}): SORevisionSnapshot {
+  return {
+    items: o.items.map((it) => ({ ...it })),
+    paymentTerms: o.paymentTerms,
+    deliveryTerms: o.deliveryTerms,
+    deliveryDate: o.deliveryDate,
+    billingAddress: o.billingAddress,
+    shippingAddress: o.shippingAddress,
+  };
+}
+
+/** Apply the correction implied by a revision reason to a snapshot. */
+function applyReason(base: SORevisionSnapshot, reason: string): SORevisionSnapshot {
+  const next = snap(base);
+  if (/quantity/i.test(reason)) {
+    if (next.items[0]) next.items[0] = { ...next.items[0], quantity: next.items[0].quantity + 6 };
+  } else if (/address/i.test(reason)) {
+    next.shippingAddress = next.shippingAddress.replace(/\d{6}$/, '560105') + ' — Gate 3 (revised)';
+  } else if (/payment/i.test(reason)) {
+    next.paymentTerms = '50% advance, 50% on delivery (corrected per PO)';
+  } else if (/price/i.test(reason)) {
+    if (next.items[0]) next.items[0] = { ...next.items[0], unitPrice: Math.round(next.items[0].unitPrice * 0.96) };
+  }
+  return next;
+}
 
 function pad(n: number, w: number) {
   return String(n).padStart(w, '0');
@@ -93,6 +141,50 @@ function generate(): SalesOrder[] {
     const deliveryDate = addDays('2026-08-13', 15 + Math.floor(rand() * 40));
 
     const isRevision = status === 'revision_required';
+
+    const party = PARTY_MAP.get(q.partyId);
+    const billingAddress = party?.billingAddress ?? 'Corporate Office, India';
+    const shippingAddress = party?.shippingAddress ?? 'Central Warehouse, India';
+    const revisionReason = isRevision ? REVISION_REASONS[i % REVISION_REASONS.length] : undefined;
+    const revisionRequestedDate = isRevision ? addDays('2026-08-13', -Math.floor(rand() * 5)) : undefined;
+    const revisionRequestedBy = isRevision ? REQUESTERS[i % REQUESTERS.length] : undefined;
+
+    // Base (pre-revision) snapshot — becomes the immutable "Original" version.
+    const baseSnapshot: SORevisionSnapshot = snap({
+      items,
+      paymentTerms: q.paymentTerms,
+      deliveryTerms: q.deliveryTerms,
+      deliveryDate,
+      billingAddress,
+      shippingAddress,
+    });
+
+    const activity: ActivityEvent[] = [
+      { id: `act-${i}-created`, date: `${createdDate}T09:15:00`, actor: q.owner, action: 'Sales Order created', detail: `From accepted quotation ${q.number}` },
+    ];
+    if (isRevision) {
+      activity.push({
+        id: `act-${i}-revreq`,
+        date: `${revisionRequestedDate}T11:00:00`,
+        actor: revisionRequestedBy ?? q.owner,
+        action: 'Revision requested',
+        detail: revisionReason,
+      });
+    }
+
+    const versions: SORevisionVersion[] = [
+      {
+        id: `ver-${i}-0`,
+        label: 'Original',
+        version: 0,
+        createdAt: `${createdDate}T09:15:00`,
+        by: q.owner,
+        reason: 'Initial sales order',
+        snapshot: baseSnapshot,
+        attachments: [],
+      },
+    ];
+
     const value = poValue;
 
     list.push({
@@ -115,8 +207,16 @@ function generate(): SalesOrder[] {
       receivedDate,
       createdDate,
       deliveryDate,
-      revisionReason: isRevision ? REVISION_REASONS[i % REVISION_REASONS.length] : undefined,
-      revisionRequestedDate: isRevision ? addDays('2026-08-13', -Math.floor(rand() * 5)) : undefined,
+      billingAddress,
+      shippingAddress,
+      revisionReason,
+      revisionRequestedDate,
+      revisionRequestedBy,
+      revisionState: isRevision ? 'revision_required' : undefined,
+      revisionNumber: 0,
+      revisionOwner: isRevision ? q.owner : undefined,
+      revisionAttachments: [],
+      versions,
       items,
       paymentTerms: q.paymentTerms,
       deliveryTerms: q.deliveryTerms,
@@ -132,10 +232,95 @@ function generate(): SalesOrder[] {
             },
           ]
         : [],
+      activity,
       verificationFields: buildVerificationFields(rand, quoteValue, poValue, mismatch),
     });
   });
+
+  seedRevisionSubStates(list);
   return list;
+}
+
+/**
+ * Distribute the revision-required SOs across the workflow sub-states so every
+ * state → action mapping is demoable, and promote one sent SO to a completed
+ * "Rev 1" so the Revised-SO-Sent state and the SO-list revision number show up.
+ */
+function seedRevisionSubStates(list: SalesOrder[]) {
+  const rotation: RevisionState[] = ['revision_required', 'draft_in_progress', 'awaiting_approval', 'revision_approved'];
+  let r = 0;
+  for (const so of list) {
+    if (so.status !== 'revision_required' || !so.revisionReason) continue;
+    const state = rotation[r % rotation.length];
+    r += 1;
+    so.revisionState = state;
+    if (state === 'revision_required') continue;
+
+    const original = so.versions[0].snapshot;
+    const draft = applyReason(original, so.revisionReason);
+    const notes = `Correction applied: ${so.revisionReason}.`;
+    so.revisionDraft = draft;
+    so.revisionNotes = notes;
+    so.revisionPreviewed = true;
+    const stamp = so.revisionRequestedDate ?? so.createdDate;
+
+    if (state === 'draft_in_progress') {
+      so.activity.push({ id: `act-${so.id}-draft`, date: `${stamp}T14:20:00`, actor: so.owner, action: 'Revision draft saved', detail: notes });
+    } else if (state === 'awaiting_approval') {
+      so.activity.push({ id: `act-${so.id}-draft`, date: `${stamp}T14:20:00`, actor: so.owner, action: 'Revision draft saved', detail: notes });
+      so.activity.push({ id: `act-${so.id}-submit`, date: `${stamp}T15:05:00`, actor: so.owner, action: 'Submitted for approval', detail: 'Revised Sales Order sent for approval.' });
+    } else if (state === 'revision_approved') {
+      so.activity.push({ id: `act-${so.id}-draft`, date: `${stamp}T14:20:00`, actor: so.owner, action: 'Revision draft saved', detail: notes });
+      so.activity.push({ id: `act-${so.id}-submit`, date: `${stamp}T15:05:00`, actor: so.owner, action: 'Submitted for approval', detail: 'Revised Sales Order sent for approval.' });
+      so.activity.push({ id: `act-${so.id}-approve`, date: `${stamp}T16:30:00`, actor: 'Priya Nair', action: 'Revision approved', detail: 'Approved and ready to send.' });
+    }
+  }
+
+  // Promote one already-sent SO to a completed Rev 1 for the "Revised SO Sent" demo.
+  const sent = list.find((s) => s.status === 'so_sent' && s.revisionReason === undefined);
+  if (sent) {
+    const original = sent.versions[0].snapshot;
+    const reason = 'Line item price corrected per customer PO';
+    const revised = applyReason(original, 'price');
+    const stamp = sent.createdDate;
+    const attachments: Attachment[] = [
+      { id: `att-${sent.id}-po`, name: 'Revised-PO-signed.pdf', size: '218 KB', uploadedOn: stamp },
+    ];
+    sent.revisionReason = reason;
+    sent.revisionRequestedBy = 'Meera Joshi (Customer)';
+    sent.revisionRequestedDate = addDays(stamp, 2);
+    sent.revisionOwner = sent.owner;
+    sent.revisionState = 'revised_sent';
+    sent.revisionNumber = 1;
+    sent.revisionNotes = 'Unit price corrected to match the customer PO.';
+    sent.revisionPreviewed = true;
+    sent.revisionDraft = revised;
+    sent.revisionAttachments = attachments;
+    // Apply the revised snapshot to the live SO (original preserved in versions[0]).
+    sent.items = revised.items.map((it) => ({ ...it }));
+    sent.paymentTerms = revised.paymentTerms;
+    sent.deliveryTerms = revised.deliveryTerms;
+    sent.deliveryDate = revised.deliveryDate;
+    sent.billingAddress = revised.billingAddress;
+    sent.shippingAddress = revised.shippingAddress;
+    sent.value = computeTotals(revised.items, sent.packingCharges).grandTotal;
+    sent.versions.push({
+      id: `ver-${sent.id}-1`,
+      label: 'Rev 1',
+      version: 1,
+      createdAt: `${addDays(stamp, 3)}T12:00:00`,
+      by: sent.owner,
+      reason,
+      notes: sent.revisionNotes,
+      snapshot: revised,
+      attachments,
+    });
+    sent.activity.push(
+      { id: `act-${sent.id}-revreq`, date: `${addDays(stamp, 2)}T11:00:00`, actor: 'Meera Joshi (Customer)', action: 'Revision requested', detail: reason },
+      { id: `act-${sent.id}-approve`, date: `${addDays(stamp, 3)}T10:00:00`, actor: 'Priya Nair', action: 'Revision approved', detail: 'Approved.' },
+      { id: `act-${sent.id}-sent`, date: `${addDays(stamp, 3)}T12:00:00`, actor: sent.owner, action: 'Revised SO sent', detail: 'Rev 1 dispatched to customer.' },
+    );
+  }
 }
 
 export const SALES_ORDERS: SalesOrder[] = generate();

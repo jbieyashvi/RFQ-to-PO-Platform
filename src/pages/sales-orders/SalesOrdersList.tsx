@@ -27,7 +27,7 @@ import { downloadCSV, downloadText, formatDate, formatINR } from '@/lib/format';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 
 export default function SalesOrdersList() {
-  const { salesOrders, role, can, updateSalesOrder, addToast } = useApp();
+  const { salesOrders, role, currentUser, can, updateSalesOrder, addToast } = useApp();
   const inScope = useOfficeScope();
   const [params, setParams] = useSearchParams();
 
@@ -87,7 +87,22 @@ export default function SalesOrdersList() {
 
   const doRequestRevision = () => {
     if (!reqRevision) return;
-    updateSalesOrder(reqRevision.id, { status: 'revision_required', revisionReason: revReason || 'Revision requested', revisionRequestedDate: '2026-08-13' });
+    updateSalesOrder(reqRevision.id, {
+      status: 'revision_required',
+      revisionState: 'revision_required',
+      revisionReason: revReason || 'Revision requested',
+      revisionRequestedDate: '2026-08-13',
+      revisionRequestedBy: currentUser.fullName,
+      revisionOwner: reqRevision.owner,
+      revisionDraft: undefined,
+      revisionNotes: undefined,
+      revisionAttachments: [],
+      revisionPreviewed: false,
+      activity: [
+        ...reqRevision.activity,
+        { id: `act-${reqRevision.id}-${Date.now()}`, date: new Date().toISOString(), actor: currentUser.fullName, action: 'Revision requested', detail: revReason || 'Revision requested' },
+      ],
+    });
     addToast({ type: 'success', title: 'Revision requested', message: `${reqRevision.number} moved to revision queue.` });
     setReqRevision(null);
     setRevReason('');
@@ -99,7 +114,23 @@ export default function SalesOrdersList() {
   };
 
   const columns: Column<SalesOrder>[] = [
-    { key: 'so', header: 'SO No', width: '118px', sticky: 'left', sortValue: (r) => r.number, render: (r) => <span className="font-medium text-surface-800">{r.number}</span> },
+    {
+      key: 'so',
+      header: 'SO No',
+      width: '132px',
+      sticky: 'left',
+      sortValue: (r) => r.number,
+      render: (r) => (
+        <span className="flex items-center gap-1.5">
+          <span className="font-medium text-surface-800">{r.number}</span>
+          {r.revisionNumber > 0 && (
+            <span className="rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-semibold text-brand-700" title={`Latest revision: Rev ${r.revisionNumber}`}>
+              Rev {r.revisionNumber}
+            </span>
+          )}
+        </span>
+      ),
+    },
     {
       key: 'po',
       header: 'PO No',

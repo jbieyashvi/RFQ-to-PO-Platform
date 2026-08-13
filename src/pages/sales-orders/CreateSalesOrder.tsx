@@ -179,12 +179,38 @@ export default function CreateSalesOrder() {
       receivedDate: form.poDate,
       createdDate: '2026-08-13',
       deliveryDate: form.expectedDelivery,
+      billingAddress: form.billingAddress,
+      shippingAddress: form.shippingAddress,
+      revisionNumber: 0,
+      revisionAttachments: [],
+      versions: [
+        {
+          id: `ver-${Date.now()}-0`,
+          label: 'Original',
+          version: 0,
+          createdAt: '2026-08-13T09:00:00',
+          by: form.owner,
+          reason: 'Initial sales order',
+          snapshot: {
+            items: lines.map((it) => ({ ...it })),
+            paymentTerms: form.paymentTerms,
+            deliveryTerms: form.deliveryTerms,
+            deliveryDate: form.expectedDelivery,
+            billingAddress: form.billingAddress,
+            shippingAddress: form.shippingAddress,
+          },
+          attachments: [],
+        },
+      ],
       items: lines,
       paymentTerms: form.paymentTerms,
       deliveryTerms: form.deliveryTerms,
       warranty: form.warranty,
       packingCharges: form.packingCharges,
       internalNotes: [],
+      activity: [
+        { id: `act-${Date.now()}-created`, date: '2026-08-13T09:00:00', actor: form.owner, action: 'Sales Order created', detail: q ? `From quotation ${q.number}` : 'Created manually' },
+      ],
       verificationFields: [],
     };
   };

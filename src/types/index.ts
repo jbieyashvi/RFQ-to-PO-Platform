@@ -177,6 +177,37 @@ export interface Quotation {
 
 // ---------- Sales Orders ----------
 export type SOStatus = 'draft' | 'so_sent' | 'revision_required' | 'finalised';
+
+// Sales Order revision lifecycle — sub-workflow while an SO is being corrected.
+export type RevisionState =
+  | 'revision_required'
+  | 'draft_in_progress'
+  | 'awaiting_approval'
+  | 'revision_approved'
+  | 'revised_sent';
+
+// The editable Sales Order fields captured as a comparable version.
+export interface SORevisionSnapshot {
+  items: LineItem[];
+  paymentTerms: string;
+  deliveryTerms: string;
+  deliveryDate: string;
+  billingAddress: string;
+  shippingAddress: string;
+}
+
+// An immutable point-in-time version in the revision history.
+export interface SORevisionVersion {
+  id: string;
+  label: string; // 'Original', 'Rev 1', 'Rev 2'…
+  version: number; // 0 = original
+  createdAt: string; // ISO datetime
+  by: string;
+  reason: string;
+  notes?: string;
+  snapshot: SORevisionSnapshot;
+  attachments: Attachment[];
+}
 export type VerificationStatus =
   | 'pending'
   | 'matched'
@@ -211,14 +242,27 @@ export interface SalesOrder {
   receivedDate: string;
   createdDate: string;
   deliveryDate: string;
+  billingAddress: string;
+  shippingAddress: string;
   revisionReason?: string;
   revisionRequestedDate?: string;
+  revisionRequestedBy?: string;
+  // Revision workflow
+  revisionState?: RevisionState;
+  revisionNumber: number; // latest applied revision number (0 = original)
+  revisionOwner?: string;
+  revisionNotes?: string;
+  revisionDraft?: SORevisionSnapshot; // working edits before approval/send
+  revisionAttachments: Attachment[];
+  revisionPreviewed?: boolean;
+  versions: SORevisionVersion[]; // [Original, Rev 1, …] — original never overwritten
   items: LineItem[];
   paymentTerms: string;
   deliveryTerms: string;
   warranty: string;
   packingCharges: number;
   internalNotes: { id: string; date: string; author: string; text: string }[];
+  activity: ActivityEvent[];
   verificationFields: VerificationField[];
 }
 

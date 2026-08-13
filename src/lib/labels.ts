@@ -6,6 +6,7 @@ import type {
   QuotationDeliveryState,
   QuotationStage,
   QuotationStatus,
+  RevisionState,
   Role,
   SOStatus,
   TCDocument,
@@ -94,6 +95,25 @@ export const SO_STATUS: Record<SOStatus, { label: string; tone: BadgeTone }> = {
   revision_required: { label: 'Revision Required', tone: 'amber' },
   finalised: { label: 'Finalised', tone: 'green' },
 };
+
+export const REVISION_STATE: Record<
+  RevisionState,
+  { label: string; tone: BadgeTone; action: string }
+> = {
+  revision_required: { label: 'Revision Required', tone: 'amber', action: 'Start Revision' },
+  draft_in_progress: { label: 'Draft in Progress', tone: 'blue', action: 'Continue Revision' },
+  awaiting_approval: { label: 'Awaiting Approval', tone: 'violet', action: 'Review Revision' },
+  revision_approved: { label: 'Revision Approved', tone: 'teal', action: 'Send Revised SO' },
+  revised_sent: { label: 'Revised SO Sent', tone: 'green', action: 'View Revision' },
+};
+
+export const REVISION_STATE_ORDER: RevisionState[] = [
+  'revision_required',
+  'draft_in_progress',
+  'awaiting_approval',
+  'revision_approved',
+  'revised_sent',
+];
 
 export const VERIFICATION_STATUS: Record<
   VerificationStatus,
