@@ -34,21 +34,21 @@ export function Sidebar({
   const items = NAV.filter((item) => visibleModule(can as any, item.module));
 
   const content = (
-    <div className="flex h-full flex-col bg-surface-900 text-surface-300">
+    <div className="flex h-full flex-col border-r border-surface-200 bg-white text-surface-700">
       {/* brand */}
-      <div className="flex h-16 flex-none items-center gap-2.5 border-b border-white/5 px-4">
-        <div className="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-brand-600 text-white shadow-lg shadow-brand-900/40">
+      <div className="flex h-16 flex-none items-center gap-2.5 border-b border-surface-100 px-4">
+        <div className="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-brand-600 text-white shadow-sm">
           <Boxes className="h-5 w-5" />
         </div>
         {!collapsed && (
           <div className="min-w-0">
-            <p className="truncate text-sm font-bold text-white">Nexus RFQ</p>
+            <p className="truncate text-sm font-bold text-surface-800">Nexus RFQ</p>
             <p className="truncate text-[11px] text-surface-400">RFQ → PO Platform</p>
           </div>
         )}
         <button
           onClick={onCloseMobile}
-          className="ml-auto rounded-lg p-1.5 text-surface-400 hover:bg-white/10 lg:hidden"
+          className="ml-auto rounded-lg p-1.5 text-surface-400 hover:bg-surface-100 hover:text-surface-600 lg:hidden"
         >
           <X className="h-5 w-5" />
         </button>
@@ -66,10 +66,10 @@ export function Sidebar({
                 onClick={onCloseMobile}
                 className={({ isActive }) =>
                   classNames(
-                    'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
                     isActive
-                      ? 'bg-brand-600 text-white shadow-sm'
-                      : 'text-surface-300 hover:bg-white/5 hover:text-white'
+                      ? 'relative bg-brand-50 text-brand-700 before:absolute before:left-0 before:top-1/2 before:h-5 before:w-[3px] before:-translate-y-1/2 before:rounded-r before:bg-brand-600'
+                      : 'text-surface-700 hover:bg-surface-100 hover:text-surface-900'
                   )
                 }
               >
@@ -96,17 +96,19 @@ export function Sidebar({
 
           if (collapsed) {
             return (
-              <div key={item.key} className="group relative">
+              <div key={item.key} className="group relative border-t border-surface-100 pt-1">
                 <button
                   className={classNames(
-                    'flex w-full items-center justify-center rounded-lg px-3 py-2 transition-colors',
-                    groupActive ? 'bg-white/10 text-white' : 'text-surface-300 hover:bg-white/5 hover:text-white'
+                    'flex w-full items-center justify-center rounded-lg px-3 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
+                    groupActive
+                      ? 'relative bg-brand-50 text-brand-700 before:absolute before:left-0 before:top-1/2 before:h-5 before:w-[3px] before:-translate-y-1/2 before:rounded-r before:bg-brand-600'
+                      : 'text-surface-700 hover:bg-surface-100 hover:text-surface-900'
                   )}
                 >
                   <Icon className="h-[18px] w-[18px]" />
                 </button>
                 {/* flyout */}
-                <div className="pointer-events-none absolute left-full top-0 z-30 ml-2 hidden w-56 rounded-xl border border-surface-700 bg-surface-800 p-2 shadow-pop group-hover:pointer-events-auto group-hover:block">
+                <div className="pointer-events-none absolute left-full top-0 z-30 ml-2 hidden w-56 rounded-xl border border-surface-200 bg-white p-2 shadow-pop group-hover:pointer-events-auto group-hover:block">
                   <p className="px-2 py-1 text-xs font-semibold text-surface-400">{item.label}</p>
                   {children.map((c) => (
                     <NavLink
@@ -116,8 +118,8 @@ export function Sidebar({
                       onClick={onCloseMobile}
                       className={({ isActive }) =>
                         classNames(
-                          'block rounded-lg px-3 py-1.5 text-sm',
-                          isActive ? 'bg-brand-600 text-white' : 'text-surface-300 hover:bg-white/5 hover:text-white'
+                          'block rounded-lg px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
+                          isActive ? 'bg-brand-50 font-medium text-brand-700' : 'text-surface-600 hover:bg-surface-100 hover:text-surface-900'
                         )
                       }
                     >
@@ -130,18 +132,24 @@ export function Sidebar({
           }
 
           return (
-            <div key={item.key}>
+            <div key={item.key} className="border-t border-surface-100 pt-2">
               <button
                 onClick={() => toggleGroup(item.key)}
                 className={classNames(
-                  'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                  groupActive ? 'text-white' : 'text-surface-300 hover:bg-white/5 hover:text-white'
+                  'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
+                  groupActive
+                    ? 'text-brand-700 hover:bg-brand-50/60'
+                    : 'text-surface-700 hover:bg-surface-100 hover:text-surface-900'
                 )}
               >
                 <Icon className="h-[18px] w-[18px] flex-none" />
                 <span className="flex-1 truncate text-left">{item.label}</span>
                 <ChevronRight
-                  className={classNames('h-4 w-4 transition-transform', isOpen && 'rotate-90')}
+                  className={classNames(
+                    'h-4 w-4 flex-none text-surface-400 transition-transform',
+                    groupActive && 'text-brand-500',
+                    isOpen && 'rotate-90'
+                  )}
                 />
               </button>
               {isOpen && (
@@ -154,10 +162,10 @@ export function Sidebar({
                       onClick={onCloseMobile}
                       className={({ isActive }) =>
                         classNames(
-                          'flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-[13px] transition-colors',
+                          'flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
                           isActive
-                            ? 'bg-brand-600/90 font-medium text-white'
-                            : 'text-surface-400 hover:bg-white/5 hover:text-white'
+                            ? 'relative bg-brand-50 font-medium text-brand-700 before:absolute before:left-0 before:top-1/2 before:h-4 before:w-[3px] before:-translate-y-1/2 before:rounded-r before:bg-brand-600'
+                            : 'text-surface-600 hover:bg-surface-100 hover:text-surface-900'
                         )
                       }
                     >
@@ -178,10 +186,10 @@ export function Sidebar({
       </nav>
 
       {!collapsed && (
-        <div className="flex-none border-t border-white/5 p-3">
-          <div className="rounded-lg bg-white/5 px-3 py-2.5">
-            <p className="text-[11px] font-medium text-surface-400">Prototype build</p>
-            <p className="text-[11px] text-surface-500">v1.0 • Frontend demo</p>
+        <div className="flex-none border-t border-surface-100 p-3">
+          <div className="rounded-lg bg-brand-50/50 px-3 py-2.5">
+            <p className="text-[11px] font-medium text-surface-500">Prototype build</p>
+            <p className="text-[11px] text-surface-400">v1.0 • Frontend demo</p>
           </div>
         </div>
       )}
