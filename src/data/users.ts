@@ -1,5 +1,5 @@
 import type { User } from '@/types';
-import { defaultPermissionsFor } from '@/lib/permissions';
+import { defaultPermissionsFor, defaultInboxPermissionsFor } from '@/lib/permissions';
 
 export const USERS: User[] = [
   {
@@ -11,6 +11,7 @@ export const USERS: User[] = [
     officeId: 'off-mum',
     active: true,
     permissions: defaultPermissionsFor('super_admin'),
+    inboxPermissions: defaultInboxPermissionsFor('super_admin'),
   },
   {
     id: 'usr-002',
@@ -21,6 +22,7 @@ export const USERS: User[] = [
     officeId: 'off-mum',
     active: true,
     permissions: defaultPermissionsFor('office_admin'),
+    inboxPermissions: defaultInboxPermissionsFor('office_admin'),
   },
   {
     id: 'usr-003',
@@ -31,6 +33,7 @@ export const USERS: User[] = [
     officeId: 'off-mum',
     active: true,
     permissions: defaultPermissionsFor('sales_user'),
+    inboxPermissions: defaultInboxPermissionsFor('sales_user'),
   },
   {
     id: 'usr-004',
@@ -41,6 +44,7 @@ export const USERS: User[] = [
     officeId: 'off-mum',
     active: false,
     permissions: defaultPermissionsFor('sales_user'),
+    inboxPermissions: defaultInboxPermissionsFor('sales_user'),
   },
   {
     id: 'usr-005',
@@ -51,6 +55,7 @@ export const USERS: User[] = [
     officeId: 'off-del',
     active: true,
     permissions: defaultPermissionsFor('office_admin'),
+    inboxPermissions: defaultInboxPermissionsFor('office_admin'),
   },
   {
     id: 'usr-006',
@@ -61,6 +66,7 @@ export const USERS: User[] = [
     officeId: 'off-del',
     active: true,
     permissions: defaultPermissionsFor('sales_user'),
+    inboxPermissions: defaultInboxPermissionsFor('sales_user'),
   },
   {
     id: 'usr-007',
@@ -71,6 +77,7 @@ export const USERS: User[] = [
     officeId: 'off-blr',
     active: true,
     permissions: defaultPermissionsFor('office_admin'),
+    inboxPermissions: defaultInboxPermissionsFor('office_admin'),
   },
   {
     id: 'usr-008',
@@ -81,6 +88,7 @@ export const USERS: User[] = [
     officeId: 'off-blr',
     active: true,
     permissions: defaultPermissionsFor('sales_user'),
+    inboxPermissions: defaultInboxPermissionsFor('sales_user'),
   },
   {
     id: 'usr-009',
@@ -91,6 +99,7 @@ export const USERS: User[] = [
     officeId: 'off-ahm',
     active: true,
     permissions: defaultPermissionsFor('office_admin'),
+    inboxPermissions: defaultInboxPermissionsFor('office_admin'),
   },
   {
     id: 'usr-010',
@@ -101,6 +110,7 @@ export const USERS: User[] = [
     officeId: 'off-ahm',
     active: true,
     permissions: defaultPermissionsFor('sales_user'),
+    inboxPermissions: defaultInboxPermissionsFor('sales_user'),
   },
   {
     id: 'usr-011',
@@ -111,6 +121,7 @@ export const USERS: User[] = [
     officeId: 'off-che',
     active: false,
     permissions: defaultPermissionsFor('sales_user'),
+    inboxPermissions: defaultInboxPermissionsFor('sales_user'),
   },
 ];
 

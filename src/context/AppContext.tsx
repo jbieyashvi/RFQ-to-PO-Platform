@@ -9,6 +9,8 @@ import {
 import type {
   ActionKey,
   Hsn,
+  InboxAction,
+  InboxEmail,
   Item,
   ModuleKey,
   Party,
@@ -24,7 +26,8 @@ import { USERS } from '@/data/users';
 import { HSN, ITEMS, PARTIES, TERMS } from '@/data/masters';
 import { QUOTATIONS } from '@/data/quotations';
 import { SALES_ORDERS } from '@/data/salesOrders';
-import { can as canCheck } from '@/lib/permissions';
+import { EMAILS } from '@/data/emails';
+import { can as canCheck, canInboxDo } from '@/lib/permissions';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
 export interface Toast {
@@ -42,6 +45,7 @@ interface AppState {
   selectedOfficeId: string; // 'all' or office id (super admin only for 'all')
   setSelectedOfficeId: (id: string) => void;
   can: (module: ModuleKey, action: ActionKey) => boolean;
+  canInbox: (action: InboxAction) => boolean;
   visibleOffices: SalesOffice[];
 
   // data
@@ -53,6 +57,7 @@ interface AppState {
   terms: TermCondition[];
   quotations: Quotation[];
   salesOrders: SalesOrder[];
+  emails: InboxEmail[];
 
   // mutations
   upsertOffice: (o: SalesOffice) => void;
@@ -67,6 +72,7 @@ interface AppState {
   addQuotation: (q: Quotation) => void;
   updateSalesOrder: (id: string, patch: Partial<SalesOrder>) => void;
   addSalesOrder: (so: SalesOrder) => void;
+  updateEmail: (id: string, patch: Partial<InboxEmail>) => void;
 
   // toasts
   toasts: Toast[];
@@ -96,6 +102,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [terms, setTerms] = useState<TermCondition[]>(TERMS);
   const [quotations, setQuotations] = useState<Quotation[]>(QUOTATIONS);
   const [salesOrders, setSalesOrders] = useState<SalesOrder[]>(SALES_ORDERS);
+  const [emails, setEmails] = useState<InboxEmail[]>(EMAILS);
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const currentUser = useMemo(() => {
@@ -116,6 +123,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const can = _useCallback(
     (module: ModuleKey, action: ActionKey) => canCheck(currentUser?.permissions, module, action),
+    [currentUser]
+  );
+
+  const canInbox = _useCallback(
+    (action: InboxAction) => canInboxDo(currentUser?.inboxPermissions, action),
     [currentUser]
   );
 
@@ -202,6 +214,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSalesOrders((prev) => [so, ...prev]);
   }, []);
 
+  const updateEmail = _useCallback((id: string, patch: Partial<InboxEmail>) => {
+    setEmails((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));
+  }, []);
+
   const value: AppState = {
     role,
     setRole,
@@ -209,6 +225,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     selectedOfficeId,
     setSelectedOfficeId,
     can,
+    canInbox,
     visibleOffices,
     offices,
     users,
@@ -218,6 +235,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     terms,
     quotations,
     salesOrders,
+    emails,
     upsertOffice,
     upsertUser,
     removeUser,
@@ -230,6 +248,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     addQuotation,
     updateSalesOrder,
     addSalesOrder,
+    updateEmail,
     toasts,
     addToast,
     dismissToast,

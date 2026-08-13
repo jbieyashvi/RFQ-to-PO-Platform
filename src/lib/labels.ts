@@ -1,5 +1,7 @@
 import type {
   ActionKey,
+  EmailClassification,
+  InboxAction,
   ModuleKey,
   QuotationStage,
   QuotationStatus,
@@ -97,6 +99,48 @@ export const TC_DOCUMENT: Record<TCDocument, string> = {
   quotation: 'Quotation',
   sales_order: 'Sales Order',
   both: 'Both',
+};
+
+// ---------- Global Inbox ----------
+export const INBOX_CLASSIFICATION: Record<EmailClassification, { label: string; tone: BadgeTone }> = {
+  inquiry: { label: 'Inquiry', tone: 'blue' },
+  quotation_revision: { label: 'Quotation Revision', tone: 'amber' },
+  purchase_order: { label: 'Purchase Order', tone: 'violet' },
+  so_query: { label: 'Sales Order Query', tone: 'teal' },
+  finance_other: { label: 'Finance / Other', tone: 'slate' },
+  unclassified: { label: 'Unclassified', tone: 'gray' },
+};
+
+export const INBOX_ACTION_LABELS: Record<InboxAction, string> = {
+  view: 'View',
+  classify: 'Classify',
+  edit_extraction: 'Edit Extraction',
+  draft_reply: 'Draft Reply',
+  approve: 'Approve',
+  send: 'Send',
+  reassign: 'Reassign',
+  download_attachment: 'Download Attachment',
+};
+
+export const INBOX_ACTION_ORDER: InboxAction[] = [
+  'view',
+  'classify',
+  'edit_extraction',
+  'draft_reply',
+  'approve',
+  'send',
+  'reassign',
+  'download_attachment',
+];
+
+export const CONFIDENCE_META: Record<
+  'high' | 'medium' | 'low' | 'missing',
+  { label: string; tone: BadgeTone }
+> = {
+  high: { label: 'High', tone: 'green' },
+  medium: { label: 'Medium', tone: 'amber' },
+  low: { label: 'Low', tone: 'red' },
+  missing: { label: 'Missing', tone: 'red' },
 };
 
 export const ITEM_CATEGORIES = [

@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { ChevronRight, Boxes, X } from 'lucide-react';
 import type { ModuleKey } from '@/types';
-import { useApp } from '@/context/AppContext';
+import { useApp, useOfficeScope } from '@/context/AppContext';
 import { NAV, MASTER_CHILD_MODULE } from './nav';
 import { classNames } from '@/lib/format';
 
@@ -20,7 +20,8 @@ export function Sidebar({
   mobileOpen: boolean;
   onCloseMobile: () => void;
 }) {
-  const { can } = useApp();
+  const { can, canInbox, emails } = useApp();
+  const inScope = useOfficeScope();
   const location = useLocation();
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     master: true,
@@ -31,7 +32,17 @@ export function Sidebar({
   const toggleGroup = (key: string) =>
     setOpenGroups((g) => ({ ...g, [key]: !g[key] }));
 
-  const items = NAV.filter((item) => visibleModule(can as any, item.module));
+  const inboxCounts = useMemo(() => {
+    const scoped = emails.filter((e) => inScope(e.officeId));
+    return {
+      unread: scoped.filter((e) => !e.read && !e.sent).length,
+      review: scoped.filter((e) => e.needsReview && !e.sent).length,
+    };
+  }, [emails, inScope]);
+
+  const items = NAV.filter((item) =>
+    item.special === 'inbox' ? canInbox('view') : visibleModule(can as any, item.module)
+  );
 
   const content = (
     <div className="flex h-full flex-col border-r border-surface-200 bg-white text-surface-700">
@@ -59,22 +70,51 @@ export function Sidebar({
         {items.map((item) => {
           const Icon = item.icon;
           if (!item.children) {
+            const isInbox = item.special === 'inbox';
             return (
               <NavLink
                 key={item.key}
                 to={item.to!}
                 onClick={onCloseMobile}
+                title={collapsed && isInbox && inboxCounts.review > 0 ? `${inboxCounts.review} need review` : undefined}
                 className={({ isActive }) =>
                   classNames(
-                    'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
+                    'group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
                     isActive
-                      ? 'relative bg-brand-50 text-brand-700 before:absolute before:left-0 before:top-1/2 before:h-5 before:w-[3px] before:-translate-y-1/2 before:rounded-r before:bg-brand-600'
+                      ? 'bg-brand-50 text-brand-700 before:absolute before:left-0 before:top-1/2 before:h-5 before:w-[3px] before:-translate-y-1/2 before:rounded-r before:bg-brand-600'
                       : 'text-surface-700 hover:bg-surface-100 hover:text-surface-900'
                   )
                 }
               >
-                <Icon className="h-[18px] w-[18px] flex-none" />
+                <span className="relative flex-none">
+                  <Icon className="h-[18px] w-[18px]" />
+                  {collapsed && isInbox && inboxCounts.unread > 0 && (
+                    <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-600 px-1 text-[9px] font-bold text-white">
+                      {inboxCounts.unread > 9 ? '9+' : inboxCounts.unread}
+                    </span>
+                  )}
+                </span>
                 {!collapsed && <span className="truncate">{item.label}</span>}
+                {!collapsed && isInbox && (
+                  <span className="ml-auto flex items-center gap-1">
+                    {inboxCounts.unread > 0 && (
+                      <span
+                        title={`${inboxCounts.unread} unread`}
+                        className="flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold text-white"
+                      >
+                        {inboxCounts.unread}
+                      </span>
+                    )}
+                    {inboxCounts.review > 0 && (
+                      <span
+                        title={`${inboxCounts.review} need review`}
+                        className="flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-100 px-1.5 text-[11px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-200"
+                      >
+                        {inboxCounts.review}
+                      </span>
+                    )}
+                  </span>
+                )}
               </NavLink>
             );
           }

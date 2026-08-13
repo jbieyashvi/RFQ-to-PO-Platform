@@ -8,6 +8,7 @@ import {
   ScrollText,
   FileSpreadsheet,
   ClipboardCheck,
+  Inbox,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -23,6 +24,7 @@ export interface NavItem {
   to?: string;
   module: ModuleKey | ModuleKey[]; // module(s) that gate visibility (view)
   children?: NavChild[];
+  special?: 'inbox'; // gated on inbox permissions instead of the module matrix
 }
 
 export const NAV: NavItem[] = [
@@ -32,6 +34,14 @@ export const NAV: NavItem[] = [
     icon: LayoutDashboard,
     to: '/dashboard',
     module: 'dashboard',
+  },
+  {
+    key: 'global_inbox',
+    label: 'Global Inbox',
+    icon: Inbox,
+    to: '/inbox',
+    module: 'dashboard', // placeholder; visibility gated via inbox permissions
+    special: 'inbox',
   },
   {
     key: 'master',

@@ -10,6 +10,7 @@ import {
   Trash2,
   ShieldCheck,
   Eye,
+  Inbox,
 } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import {
@@ -33,9 +34,9 @@ import {
 } from '@/components/ui';
 import { IconBtn } from './ItemMaster';
 import { useApp } from '@/context/AppContext';
-import { ROLE_LABELS } from '@/lib/labels';
-import { defaultPermissionsFor, cloneMatrix } from '@/lib/permissions';
-import type { PermissionMatrix as PMatrix, Role, SalesOffice, User } from '@/types';
+import { ROLE_LABELS, INBOX_ACTION_LABELS, INBOX_ACTION_ORDER } from '@/lib/labels';
+import { defaultPermissionsFor, defaultInboxPermissionsFor, cloneMatrix, cloneInbox } from '@/lib/permissions';
+import type { InboxAction, PermissionMatrix as PMatrix, Role, SalesOffice, User } from '@/types';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 
 const emptyOffice = (): SalesOffice => ({
@@ -232,6 +233,7 @@ function OfficeDetailDrawer({ office, onClose }: { office: SalesOffice; onClose:
                     officeId: office.id,
                     active: true,
                     permissions: defaultPermissionsFor('sales_user'),
+                    inboxPermissions: defaultInboxPermissionsFor('sales_user'),
                   });
                   setIsNewUser(true);
                 }}
@@ -265,7 +267,7 @@ function OfficeDetailDrawer({ office, onClose }: { office: SalesOffice; onClose:
                   <StatusBadge tone="blue" dot={false} label={ROLE_LABELS[u.role]} />
                   {can('office_master', 'edit') && (
                     <div className="flex items-center gap-1">
-                      <IconBtn title="Edit user & permissions" onClick={() => { setEditingUser({ ...u, permissions: cloneMatrix(u.permissions) }); setIsNewUser(false); }}>
+                      <IconBtn title="Edit user & permissions" onClick={() => { setEditingUser({ ...u, permissions: cloneMatrix(u.permissions), inboxPermissions: cloneInbox(u.inboxPermissions) }); setIsNewUser(false); }}>
                         <Pencil className="h-4 w-4" />
                       </IconBtn>
                       <IconBtn title="Remove user" onClick={() => setRemoveConfirm(u)}>
@@ -320,10 +322,21 @@ function UserFormModal({ user, isNew, onClose, onSave }: { user: User; isNew: bo
   const set = <K extends keyof User>(k: K, v: User[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   const applyRoleTemplate = (role: Role) => {
-    setForm((f) => ({ ...f, role, permissions: defaultPermissionsFor(role) }));
+    setForm((f) => ({
+      ...f,
+      role,
+      permissions: defaultPermissionsFor(role),
+      inboxPermissions: defaultInboxPermissionsFor(role),
+    }));
   };
 
   const setPermissions = (permissions: PMatrix) => setForm((f) => ({ ...f, permissions }));
+
+  const toggleInbox = (action: InboxAction) =>
+    setForm((f) => ({
+      ...f,
+      inboxPermissions: { ...f.inboxPermissions, [action]: !f.inboxPermissions[action] },
+    }));
 
   const submit = () => {
     const e: Record<string, string> = {};
@@ -383,6 +396,32 @@ function UserFormModal({ user, isNew, onClose, onSave }: { user: User; isNew: bo
             Configure View, Create, Edit, Delete and Download access per module. The sidebar and action buttons respect these settings.
           </p>
           <PermissionMatrix value={form.permissions} onChange={setPermissions} />
+        </div>
+
+        {/* Global Inbox — action-level permissions */}
+        <div>
+          <div className="mb-2 flex items-center gap-2">
+            <Inbox className="h-4 w-4 text-brand-500" />
+            <h4 className="text-sm font-semibold text-surface-800">Global Inbox — Action Permissions</h4>
+          </div>
+          <p className="mb-3 text-xs text-surface-400">
+            AI may classify, extract and draft. Sending an external email always requires a user with{' '}
+            <span className="font-medium text-surface-600">Approve</span> and{' '}
+            <span className="font-medium text-surface-600">Send</span> permission.
+          </p>
+          <div className="grid grid-cols-2 gap-2 rounded-xl border border-surface-200 p-3 sm:grid-cols-4">
+            {INBOX_ACTION_ORDER.map((action) => (
+              <label key={action} className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-surface-50">
+                <input
+                  type="checkbox"
+                  checked={form.inboxPermissions[action]}
+                  onChange={() => toggleInbox(action)}
+                  className="h-4 w-4 rounded border-surface-300 text-brand-600 focus:ring-brand-500/40"
+                />
+                <span className="text-[13px] text-surface-700">{INBOX_ACTION_LABELS[action]}</span>
+              </label>
+            ))}
+          </div>
         </div>
       </div>
     </Modal>

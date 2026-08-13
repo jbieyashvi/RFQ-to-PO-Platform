@@ -36,6 +36,7 @@ export interface User {
   officeId: string;
   active: boolean;
   permissions: PermissionMatrix;
+  inboxPermissions: InboxPermissions;
 }
 
 // ---------- Masters ----------
@@ -203,4 +204,95 @@ export interface SalesOrder {
   packingCharges: number;
   internalNotes: { id: string; date: string; author: string; text: string }[];
   verificationFields: VerificationField[];
+}
+
+// ---------- Global Inbox ----------
+export type EmailClassification =
+  | 'inquiry'
+  | 'quotation_revision'
+  | 'purchase_order'
+  | 'so_query'
+  | 'finance_other'
+  | 'unclassified';
+
+export type FieldConfidence = 'high' | 'medium' | 'low' | 'missing';
+
+export type InboxAction =
+  | 'view'
+  | 'classify'
+  | 'edit_extraction'
+  | 'draft_reply'
+  | 'approve'
+  | 'send'
+  | 'reassign'
+  | 'download_attachment';
+
+export type InboxPermissions = Record<InboxAction, boolean>;
+
+export interface EmailAttachment {
+  id: string;
+  name: string;
+  size: string;
+  type: string; // PDF, XLSX, PNG, DOCX …
+}
+
+export interface ThreadMessage {
+  id: string;
+  from: string;
+  date: string; // ISO datetime
+  snippet: string;
+}
+
+export interface ExtractionField {
+  key: string;
+  label: string;
+  value: string;
+  confidence: FieldConfidence;
+  required?: boolean;
+  edited?: boolean;
+}
+
+export interface OutgoingDraft {
+  from: string;
+  to: string;
+  cc: string;
+  subject: string;
+  body: string;
+  attachments: EmailAttachment[];
+  relatedDoc?: string;
+  amount?: number;
+  aiGenerated: boolean;
+}
+
+export interface InboxEmail {
+  id: string;
+  senderName: string;
+  senderEmail: string;
+  recipient: string;
+  cc: string[];
+  subject: string;
+  receivedAt: string; // ISO datetime
+  body: string;
+  thread: ThreadMessage[];
+  attachments: EmailAttachment[];
+  classification: EmailClassification;
+  aiConfidence: number; // 0–100 overall
+  read: boolean;
+  needsReview: boolean;
+  officeId: string;
+  owner: string;
+  partyId?: string;
+  customerName?: string;
+  customerCode?: string;
+  linkedQuotation?: string;
+  linkedPO?: string;
+  linkedSO?: string;
+  extraction: ExtractionField[];
+  extractionConfirmed: boolean;
+  requiredAttachment?: boolean; // outgoing reply must carry an attachment (e.g. quote PDF)
+  validationFailed?: boolean; // commercial validation failed (e.g. PO vs quote mismatch)
+  draft?: OutgoingDraft;
+  draftSaved: boolean;
+  sent: boolean;
+  sentAt?: string;
 }

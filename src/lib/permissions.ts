@@ -1,5 +1,5 @@
-import type { ActionKey, ModuleKey, PermissionMatrix, Role } from '@/types';
-import { MODULE_ORDER, ACTION_ORDER } from './labels';
+import type { ActionKey, InboxAction, InboxPermissions, ModuleKey, PermissionMatrix, Role } from '@/types';
+import { MODULE_ORDER, ACTION_ORDER, INBOX_ACTION_ORDER } from './labels';
 
 export function makeMatrix(fill: boolean): PermissionMatrix {
   const m = {} as PermissionMatrix;
@@ -50,4 +50,40 @@ export function can(
 ): boolean {
   if (!perms) return false;
   return !!perms[module]?.[action];
+}
+
+// ---------- Global Inbox permissions ----------
+export function makeInbox(fill: boolean): InboxPermissions {
+  const p = {} as InboxPermissions;
+  for (const a of INBOX_ACTION_ORDER) p[a] = fill;
+  return p;
+}
+
+export function cloneInbox(src: InboxPermissions): InboxPermissions {
+  return { ...src };
+}
+
+export function defaultInboxPermissionsFor(role: Role): InboxPermissions {
+  if (role === 'super_admin') return makeInbox(true);
+  // Office Admin: full inbox control for the assigned office (approve/send granted)
+  if (role === 'office_admin') return makeInbox(true);
+  // Sales User: can triage, classify, edit extraction and draft — but NOT approve/send/reassign
+  return {
+    view: true,
+    classify: true,
+    edit_extraction: true,
+    draft_reply: true,
+    approve: false,
+    send: false,
+    reassign: false,
+    download_attachment: true,
+  };
+}
+
+export function canInboxDo(
+  perms: InboxPermissions | undefined,
+  action: InboxAction
+): boolean {
+  if (!perms) return false;
+  return !!perms[action];
 }

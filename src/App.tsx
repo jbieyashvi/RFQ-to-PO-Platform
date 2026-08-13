@@ -1,8 +1,9 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from '@/layout/AppShell';
-import { RequirePermission } from '@/components/RequirePermission';
+import { RequirePermission, RequireInbox } from '@/components/RequirePermission';
 
 import Dashboard from '@/pages/Dashboard';
+import GlobalInbox from '@/pages/inbox/GlobalInbox';
 import ItemMaster from '@/pages/master/ItemMaster';
 import PartyMaster from '@/pages/master/PartyMaster';
 import OfficeMaster from '@/pages/master/OfficeMaster';
@@ -28,6 +29,14 @@ export default function App() {
             <RequirePermission module="dashboard">
               <Dashboard />
             </RequirePermission>
+          }
+        />
+        <Route
+          path="/inbox"
+          element={
+            <RequireInbox>
+              <GlobalInbox />
+            </RequireInbox>
           }
         />
 
