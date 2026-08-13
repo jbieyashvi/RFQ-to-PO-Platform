@@ -162,7 +162,7 @@ export function Sidebar({
                     <NavLink
                       key={c.to}
                       to={c.to}
-                      end={c.to === '/quotations'}
+                      end={c.to === '/quotations' || c.to === '/sales-orders'}
                       onClick={onCloseMobile}
                       className={({ isActive }) =>
                         classNames(
@@ -206,7 +206,7 @@ export function Sidebar({
                     <NavLink
                       key={c.to}
                       to={c.to}
-                      end={c.to === '/quotations'}
+                      end={c.to === '/quotations' || c.to === '/sales-orders'}
                       onClick={onCloseMobile}
                       title={c.label}
                       className={({ isActive }) =>
