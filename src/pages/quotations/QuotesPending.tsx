@@ -63,40 +63,42 @@ export default function QuotesPending() {
   };
 
   const columns: Column<Quotation>[] = [
-    { key: 'number', header: 'Quotation No', sortValue: (r) => r.number, render: (r) => <span className="font-medium text-surface-800">{r.number}</span> },
+    { key: 'number', header: 'QTN No', width: '116px', sticky: 'left', sortValue: (r) => r.number, render: (r) => <span className="font-medium text-surface-800">{r.number}</span> },
     {
       key: 'customer',
       header: 'Customer',
       render: (r) => (
-        <div className="max-w-[200px]"><p className="truncate font-medium text-surface-800">{r.customerName}</p><p className="text-xs text-surface-400">{r.customerCode}</p></div>
+        <div className="min-w-0"><p className="truncate font-medium text-surface-800" title={r.customerName}>{r.customerName}</p><p className="truncate text-[11px] text-surface-400">{r.customerCode}</p></div>
       ),
     },
-    { key: 'office', header: 'Sales Office', render: (r) => <span className="text-surface-600">{officeName(r.officeId)}</span> },
-    { key: 'owner', header: 'Owner', render: (r) => <span className="text-surface-600">{r.owner}</span> },
-    { key: 'value', header: 'Value', align: 'right', sortValue: (r) => r.value, render: (r) => <span className="font-medium text-surface-800">{formatINR(r.value)}</span> },
-    { key: 'created', header: 'Created', sortValue: (r) => r.createdDate, render: (r) => formatDate(r.createdDate) },
+    { key: 'office', header: 'Sales Office', truncate: true, title: (r) => officeName(r.officeId), render: (r) => <span className="text-surface-600">{officeName(r.officeId)}</span> },
+    { key: 'owner', header: 'Owner', width: '110px', truncate: true, title: (r) => r.owner, render: (r) => <span className="text-surface-600">{r.owner}</span> },
+    { key: 'value', header: 'Value', width: '94px', align: 'right', sortValue: (r) => r.value, render: (r) => <span className="font-medium text-surface-800">{formatINR(r.value)}</span> },
     {
       key: 'age',
       header: 'Age',
+      width: '84px',
       sortValue: (r) => daysBetween(r.createdDate),
       render: (r) => {
         const over = daysBetween(r.createdDate) > 1;
         return (
-          <span className={classNames('inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium', over ? 'bg-rose-50 text-rose-600' : 'bg-surface-100 text-surface-500')}>
+          <span className={classNames('inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium', over ? 'bg-rose-50 text-rose-600' : 'bg-surface-100 text-surface-500')} title={`Created ${formatDate(r.createdDate)}`}>
             {over && <AlertCircle className="h-3 w-3" />}
             {ageLabel(r.createdDate)}
           </span>
         );
       },
     },
-    { key: 'stage', header: 'Stage', render: (r) => <StatusBadge tone={QUOTATION_STAGE[r.stage].tone} label={QUOTATION_STAGE[r.stage].label} dot={false} /> },
-    { key: 'review', header: 'Review', sortValue: (r) => r.reviewDate, render: (r) => formatDate(r.reviewDate) },
+    { key: 'stage', header: 'Stage', width: '116px', render: (r) => <StatusBadge tone={QUOTATION_STAGE[r.stage].tone} label={QUOTATION_STAGE[r.stage].label} dot={false} /> },
+    { key: 'review', header: 'Review', width: '90px', sortValue: (r) => r.reviewDate, render: (r) => <span className="text-surface-600">{formatDate(r.reviewDate, { short: true })}</span> },
     {
       key: 'actions',
-      header: 'Action',
+      header: 'Actions',
+      width: '150px',
       align: 'right',
+      sticky: 'right',
       render: (r) => (
-        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
           <button onClick={() => setActive(r)} title="View" aria-label="View" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"><Eye className="h-4 w-4" /></button>
           {can('quotations', 'edit') && <button onClick={() => setActive(r)} title="Prepare / Edit quote" aria-label="Prepare / Edit quote" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"><Pencil className="h-4 w-4" /></button>}
           {can('quotations', 'edit') && (

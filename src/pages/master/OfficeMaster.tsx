@@ -27,7 +27,9 @@ import {
   ConfirmDialog,
   PermissionMatrix,
   DescList,
+  RowActionMenu,
   type Column,
+  type RowAction,
 } from '@/components/ui';
 import { IconBtn } from './ItemMaster';
 import { useApp } from '@/context/AppContext';
@@ -70,21 +72,22 @@ export default function OfficeMaster() {
       header: 'Office',
       sortValue: (r) => r.name,
       render: (r) => (
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-brand-50 text-xs font-bold text-brand-600">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-brand-50 text-[11px] font-bold text-brand-600">
             {r.code.slice(0, 3)}
           </div>
-          <div>
-            <p className="font-medium text-surface-800">{r.name}</p>
-            <p className="text-xs text-surface-400">{r.code}</p>
+          <div className="min-w-0">
+            <p className="truncate font-medium text-surface-800" title={r.name}>{r.name}</p>
+            <p className="truncate text-[11px] text-surface-400">{r.code}</p>
           </div>
         </div>
       ),
     },
-    { key: 'address', header: 'Address', render: (r) => <span className="text-surface-600">{r.city}, {r.state}</span> },
+    { key: 'address', header: 'Address', truncate: true, title: (r) => `${r.city}, ${r.state}`, render: (r) => <span className="text-surface-600">{r.city}, {r.state}</span> },
     {
       key: 'users',
       header: 'Users',
+      width: '84px',
       align: 'right',
       sortValue: (r) => userCount(r.id),
       render: (r) => (
@@ -93,31 +96,28 @@ export default function OfficeMaster() {
         </span>
       ),
     },
-    { key: 'status', header: 'Status', render: (r) => <StatusBadge tone={r.active ? 'green' : 'gray'} label={r.active ? 'Active' : 'Inactive'} /> },
+    { key: 'status', header: 'Status', width: '104px', render: (r) => <StatusBadge tone={r.active ? 'green' : 'gray'} label={r.active ? 'Active' : 'Inactive'} /> },
     {
       key: 'actions',
       header: 'Actions',
+      width: '84px',
       align: 'right',
-      render: (r) => (
-        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-          <Button variant="secondary" size="sm" leftIcon={<Eye className="h-3.5 w-3.5" />} onClick={() => setDetail(r)} aria-label={`View office ${r.name}`}>
-            View Office
-          </Button>
-          <Button variant="primary" size="sm" leftIcon={<Users className="h-3.5 w-3.5" />} onClick={() => setDetail(r)} aria-label={`Manage users and permissions for ${r.name}`}>
-            Manage Users &amp; Permissions
-          </Button>
-          {can('office_master', 'edit') && (
-            <Button variant="secondary" size="sm" leftIcon={<Pencil className="h-3.5 w-3.5" />} onClick={() => { setEditingOffice({ ...r }); setIsNewOffice(false); }} aria-label={`Edit office ${r.name}`}>
-              Edit Office
-            </Button>
-          )}
-          {can('office_master', 'edit') && (
-            <IconBtn title={r.active ? 'Deactivate office' : 'Activate office'} onClick={() => setConfirmOffice(r)}>
-              <Power className={r.active ? 'h-4 w-4 text-emerald-500' : 'h-4 w-4 text-surface-400'} />
-            </IconBtn>
-          )}
-        </div>
-      ),
+      sticky: 'right',
+      render: (r) => {
+        const actions: RowAction[] = [
+          { label: 'View Office', icon: <Eye className="h-4 w-4" />, onClick: () => setDetail(r) },
+          { label: 'Manage Users & Permissions', icon: <Users className="h-4 w-4" />, onClick: () => setDetail(r) },
+        ];
+        if (can('office_master', 'edit')) {
+          actions.push({ label: 'Edit Office', icon: <Pencil className="h-4 w-4" />, onClick: () => { setEditingOffice({ ...r }); setIsNewOffice(false); } });
+          actions.push({ label: r.active ? 'Deactivate Office' : 'Activate Office', icon: <Power className="h-4 w-4" />, onClick: () => setConfirmOffice(r) });
+        }
+        return (
+          <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
+            <RowActionMenu actions={actions} label={`Actions for ${r.name}`} />
+          </div>
+        );
+      },
     },
   ];
 

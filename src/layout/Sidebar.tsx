@@ -202,7 +202,7 @@ export function Sidebar({
       <aside
         className={classNames(
           'fixed inset-y-0 left-0 z-30 hidden flex-none transition-all duration-200 lg:block',
-          collapsed ? 'w-[68px]' : 'w-64'
+          collapsed ? 'w-[68px]' : 'w-60'
         )}
       >
         {content}

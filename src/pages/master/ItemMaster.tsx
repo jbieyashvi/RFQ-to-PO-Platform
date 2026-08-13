@@ -111,21 +111,26 @@ export default function ItemMaster() {
     {
       key: 'code',
       header: 'Item Code',
+      width: '118px',
+      sticky: 'left',
       sortValue: (r) => r.code,
       render: (r) => <span className="font-medium text-surface-800">{r.code}</span>,
     },
     {
       key: 'name',
       header: 'Item Name / Description',
+      truncate: true,
+      title: (r) => r.name,
       sortValue: (r) => r.name,
       render: (r) => <span className="text-surface-700">{r.name}</span>,
     },
-    { key: 'category', header: 'Category', sortValue: (r) => r.category, render: (r) => <span className="chip">{r.category}</span> },
-    { key: 'hsn', header: 'HSN', render: (r) => <span className="text-surface-500">{r.hsnCode}</span> },
-    { key: 'unit', header: 'Unit', render: (r) => r.unit },
+    { key: 'category', header: 'Category', width: '132px', truncate: true, title: (r) => r.category, sortValue: (r) => r.category, render: (r) => <span className="chip">{r.category}</span> },
+    { key: 'hsn', header: 'HSN', width: '76px', render: (r) => <span className="text-surface-500">{r.hsnCode}</span> },
+    { key: 'unit', header: 'Unit', width: '68px', render: (r) => r.unit },
     {
       key: 'price',
       header: 'Unit Price',
+      width: '104px',
       align: 'right',
       sortValue: (r) => r.unitPrice,
       render: (r) => <span className="font-medium text-surface-800">{formatINR(r.unitPrice)}</span>,
@@ -133,16 +138,19 @@ export default function ItemMaster() {
     {
       key: 'status',
       header: 'Status',
+      width: '104px',
       render: (r) => (
         <StatusBadge tone={r.active ? 'green' : 'gray'} label={r.active ? 'Active' : 'Inactive'} />
       ),
     },
     {
       key: 'actions',
-      header: '',
+      header: 'Actions',
+      width: '108px',
       align: 'right',
+      sticky: 'right',
       render: (r) => (
-        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
           <IconBtn title="View" onClick={() => setViewing(r)}>
             <Eye className="h-4 w-4" />
           </IconBtn>

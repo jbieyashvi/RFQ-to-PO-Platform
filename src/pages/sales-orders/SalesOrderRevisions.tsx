@@ -12,8 +12,10 @@ import {
   Modal,
   TextAreaField,
   ConfirmDialog,
+  RowActionMenu,
   type Column,
   type FilterChip,
+  type RowAction,
 } from '@/components/ui';
 import { SalesOrderDetailsDrawer } from '@/components/SalesOrderDetails';
 import { useApp, useOfficeScope } from '@/context/AppContext';
@@ -73,25 +75,30 @@ export default function SalesOrderRevisions() {
   };
 
   const columns: Column<SalesOrder>[] = [
-    { key: 'so', header: 'SO Number', sortValue: (r) => r.number, render: (r) => <span className="font-medium text-surface-800">{r.number}</span> },
-    { key: 'customer', header: 'Customer', render: (r) => <div className="max-w-[180px] truncate font-medium text-surface-800">{r.customerName}</div> },
-    { key: 'office', header: 'Sales Office', render: (r) => <span className="text-surface-600">{officeName(r.officeId)}</span> },
-    { key: 'reason', header: 'Revision Reason', render: (r) => <span className="block max-w-[220px] truncate text-surface-700" title={r.revisionReason}>{r.revisionReason}</span> },
-    { key: 'requested', header: 'Requested', sortValue: (r) => r.revisionRequestedDate ?? '', render: (r) => formatDate(r.revisionRequestedDate ?? '') },
-    { key: 'owner', header: 'Owner', render: (r) => <span className="text-surface-600">{r.owner}</span> },
-    { key: 'status', header: 'Status', render: (r) => <StatusBadge tone={SO_STATUS[r.status].tone} label={SO_STATUS[r.status].label} /> },
+    { key: 'so', header: 'SO No', width: '118px', sticky: 'left', sortValue: (r) => r.number, render: (r) => <span className="font-medium text-surface-800">{r.number}</span> },
+    { key: 'customer', header: 'Customer', truncate: true, title: (r) => r.customerName, render: (r) => <span className="font-medium text-surface-800">{r.customerName}</span> },
+    { key: 'office', header: 'Sales Office', width: '150px', truncate: true, title: (r) => officeName(r.officeId), render: (r) => <span className="text-surface-600">{officeName(r.officeId)}</span> },
+    { key: 'reason', header: 'Revision Reason', truncate: true, title: (r) => r.revisionReason ?? '', render: (r) => <span className="text-surface-700">{r.revisionReason}</span> },
+    { key: 'requested', header: 'Requested', width: '92px', sortValue: (r) => r.revisionRequestedDate ?? '', render: (r) => <span className="text-surface-600">{formatDate(r.revisionRequestedDate ?? '', { short: true })}</span> },
+    { key: 'owner', header: 'Owner', width: '110px', truncate: true, title: (r) => r.owner, render: (r) => <span className="text-surface-600">{r.owner}</span> },
+    { key: 'status', header: 'Status', width: '140px', render: (r) => <StatusBadge tone={SO_STATUS[r.status].tone} label={SO_STATUS[r.status].label} /> },
     {
       key: 'actions',
-      header: 'Action',
+      header: 'Actions',
+      width: '142px',
       align: 'right',
-      render: (r) => (
-        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-          <button onClick={() => setActive(r)} title="View existing SO" aria-label="View existing SO" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"><Eye className="h-4 w-4" /></button>
-          {can('sales_orders', 'edit') && <button onClick={() => { setEditing(r); setNotes(''); }} title="Edit SO / revision notes" aria-label="Edit SO / revision notes" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"><Pencil className="h-4 w-4" /></button>}
-          {can('sales_orders', 'download') && <button onClick={() => downloadRevised(r)} title="Download revised SO" aria-label="Download revised SO" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"><Download className="h-4 w-4" /></button>}
-          {can('sales_orders', 'edit') && <Button size="sm" variant="primary" leftIcon={<CheckCheck className="h-3.5 w-3.5" />} onClick={() => setComplete(r)}>Complete</Button>}
-        </div>
-      ),
+      sticky: 'right',
+      render: (r) => {
+        const menu: RowAction[] = [{ label: 'View Existing SO', icon: <Eye className="h-4 w-4" />, onClick: () => setActive(r) }];
+        if (can('sales_orders', 'edit')) menu.push({ label: 'Edit SO / Notes', icon: <Pencil className="h-4 w-4" />, onClick: () => { setEditing(r); setNotes(''); } });
+        if (can('sales_orders', 'download')) menu.push({ label: 'Download Revised SO', icon: <Download className="h-4 w-4" />, onClick: () => downloadRevised(r) });
+        return (
+          <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+            {can('sales_orders', 'edit') && <Button size="sm" variant="primary" leftIcon={<CheckCheck className="h-3.5 w-3.5" />} onClick={() => setComplete(r)}>Complete</Button>}
+            <RowActionMenu actions={menu} label={`Actions for ${r.number}`} />
+          </div>
+        );
+      },
     },
   ];
 

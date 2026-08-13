@@ -11,6 +11,8 @@ export { SearchInput } from './SearchInput';
 export { Toaster } from './Toaster';
 export { DataTable } from './DataTable';
 export type { Column } from './DataTable';
+export { RowActionMenu } from './RowActionMenu';
+export type { RowAction } from './RowActionMenu';
 export { FilterBar, FilterSelect } from './FilterBar';
 export type { FilterChip } from './FilterBar';
 export { FileUpload } from './FileUpload';

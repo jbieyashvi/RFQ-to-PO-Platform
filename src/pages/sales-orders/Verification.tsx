@@ -63,14 +63,15 @@ export default function Verification() {
   if (search) chips.push({ key: 'q', label: `Search: "${search}"`, onRemove: () => setSearch('') });
 
   const columns: Column<SalesOrder>[] = [
-    { key: 'po', header: 'PO Number', sortValue: (r) => r.poNumber, render: (r) => <span className="font-medium text-surface-800">{r.poNumber}</span> },
-    { key: 'qtn', header: 'Quotation No', render: (r) => <span className="text-surface-600">{r.quotationNumber ?? '—'}</span> },
-    { key: 'customer', header: 'Customer', render: (r) => <div className="max-w-[180px] truncate font-medium text-surface-800">{r.customerName}</div> },
-    { key: 'office', header: 'Sales Office', render: (r) => <span className="text-surface-600">{officeName(r.officeId)}</span> },
-    { key: 'poval', header: 'PO Value', align: 'right', sortValue: (r) => r.poValue, render: (r) => <span className="font-medium text-surface-800">{formatINR(r.poValue)}</span> },
+    { key: 'po', header: 'PO Number', width: '124px', sticky: 'left', sortValue: (r) => r.poNumber, render: (r) => <span className="font-medium text-surface-800">{r.poNumber}</span> },
+    { key: 'qtn', header: 'Quotation No', width: '112px', render: (r) => <span className="text-surface-600">{r.quotationNumber ?? '—'}</span> },
+    { key: 'customer', header: 'Customer', truncate: true, title: (r) => r.customerName, sortValue: (r) => r.customerName, render: (r) => <span className="font-medium text-surface-800">{r.customerName}</span> },
+    { key: 'office', header: 'Sales Office', truncate: true, title: (r) => officeName(r.officeId), render: (r) => <span className="text-surface-600">{officeName(r.officeId)}</span> },
+    { key: 'poval', header: 'PO Value', width: '96px', align: 'right', sortValue: (r) => r.poValue, render: (r) => <span className="font-medium text-surface-800">{formatINR(r.poValue)}</span> },
     {
       key: 'qval',
       header: 'Quote Value',
+      width: '96px',
       align: 'right',
       render: (r) => (
         <span className={classNames(Math.abs(r.poValue - r.quoteValue) > 0.5 ? 'font-medium text-rose-600' : 'text-surface-600')}>
@@ -78,12 +79,14 @@ export default function Verification() {
         </span>
       ),
     },
-    { key: 'received', header: 'Received', sortValue: (r) => r.receivedDate, render: (r) => formatDate(r.receivedDate) },
-    { key: 'vstatus', header: 'Verification', render: (r) => <StatusBadge tone={VERIFICATION_STATUS[r.verificationStatus].tone} label={VERIFICATION_STATUS[r.verificationStatus].label} /> },
+    { key: 'received', header: 'Received', width: '92px', sortValue: (r) => r.receivedDate, render: (r) => <span className="text-surface-600">{formatDate(r.receivedDate, { short: true })}</span> },
+    { key: 'vstatus', header: 'Verification', width: '172px', render: (r) => <StatusBadge tone={VERIFICATION_STATUS[r.verificationStatus].tone} label={VERIFICATION_STATUS[r.verificationStatus].label} /> },
     {
       key: 'actions',
-      header: 'Action',
+      header: 'Actions',
+      width: '86px',
       align: 'right',
+      sticky: 'right',
       render: (r) => (
         <Button size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); setActive(r); }}>
           Verify

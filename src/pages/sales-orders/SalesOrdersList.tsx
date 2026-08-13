@@ -13,8 +13,10 @@ import {
   Modal,
   TextAreaField,
   ConfirmDialog,
+  RowActionMenu,
   type Column,
   type FilterChip,
+  type RowAction,
 } from '@/components/ui';
 import { SalesOrderDetailsDrawer } from '@/components/SalesOrderDetails';
 import { useApp, useOfficeScope } from '@/context/AppContext';
@@ -97,27 +99,42 @@ export default function SalesOrdersList() {
   };
 
   const columns: Column<SalesOrder>[] = [
-    { key: 'so', header: 'SO Number', sortValue: (r) => r.number, render: (r) => <span className="font-medium text-surface-800">{r.number}</span> },
-    { key: 'po', header: 'PO Number', render: (r) => <span className="text-surface-600">{r.poNumber}</span> },
-    { key: 'qtn', header: 'Quotation', render: (r) => <span className="text-surface-500">{r.quotationNumber ?? '—'}</span> },
-    { key: 'customer', header: 'Customer', render: (r) => <div className="max-w-[180px] truncate font-medium text-surface-800">{r.customerName}</div> },
-    { key: 'office', header: 'Sales Office', render: (r) => <span className="text-surface-600">{officeName(r.officeId)}</span> },
-    { key: 'value', header: 'Value', align: 'right', sortValue: (r) => r.value, render: (r) => <span className="font-medium text-surface-800">{formatINR(r.value)}</span> },
-    { key: 'status', header: 'SO Status', render: (r) => <StatusBadge tone={SO_STATUS[r.status].tone} label={SO_STATUS[r.status].label} /> },
-    { key: 'created', header: 'Created', sortValue: (r) => r.createdDate, render: (r) => formatDate(r.createdDate) },
-    { key: 'delivery', header: 'Delivery', sortValue: (r) => r.deliveryDate, render: (r) => formatDate(r.deliveryDate) },
+    { key: 'so', header: 'SO No', width: '118px', sticky: 'left', sortValue: (r) => r.number, render: (r) => <span className="font-medium text-surface-800">{r.number}</span> },
     {
-      key: 'actions',
-      header: '',
-      align: 'right',
+      key: 'po',
+      header: 'PO No',
+      width: '134px',
       render: (r) => (
-        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-          <button onClick={() => setActive(r)} title="View" aria-label="View" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"><Eye className="h-4 w-4" /></button>
-          {can('sales_orders', 'download') && <button onClick={() => downloadOne(r)} title="Download" aria-label="Download" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"><Download className="h-4 w-4" /></button>}
-          {can('sales_orders', 'edit') && r.status !== 'so_sent' && r.status !== 'finalised' && <button onClick={() => setMarkSent(r)} title="Mark as sent" aria-label="Mark as sent" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"><Send className="h-4 w-4" /></button>}
-          {can('sales_orders', 'edit') && r.status !== 'revision_required' && <button onClick={() => { setReqRevision(r); setRevReason(''); }} title="Request revision" aria-label="Request revision" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"><RotateCcw className="h-4 w-4" /></button>}
+        <div className="min-w-0">
+          <p className="truncate text-surface-700" title={r.poNumber}>{r.poNumber}</p>
+          <p className="truncate text-[11px] text-surface-400" title={r.quotationNumber ?? undefined}>{r.quotationNumber ?? '—'}</p>
         </div>
       ),
+    },
+    { key: 'customer', header: 'Customer', truncate: true, title: (r) => r.customerName, sortValue: (r) => r.customerName, render: (r) => <span className="font-medium text-surface-800">{r.customerName}</span> },
+    { key: 'office', header: 'Sales Office', truncate: true, title: (r) => officeName(r.officeId), render: (r) => <span className="text-surface-600">{officeName(r.officeId)}</span> },
+    { key: 'value', header: 'Value', width: '100px', align: 'right', sortValue: (r) => r.value, render: (r) => <span className="font-medium text-surface-800">{formatINR(r.value)}</span> },
+    { key: 'status', header: 'SO Status', width: '140px', render: (r) => <StatusBadge tone={SO_STATUS[r.status].tone} label={SO_STATUS[r.status].label} /> },
+    { key: 'delivery', header: 'Delivery', width: '96px', sortValue: (r) => r.deliveryDate, render: (r) => <span className="text-surface-600">{formatDate(r.deliveryDate, { short: true })}</span> },
+    {
+      key: 'actions',
+      header: 'Actions',
+      width: '72px',
+      align: 'right',
+      sticky: 'right',
+      render: (r) => {
+        const actions: RowAction[] = [
+          { label: 'View', icon: <Eye className="h-4 w-4" />, onClick: () => setActive(r) },
+        ];
+        if (can('sales_orders', 'download')) actions.push({ label: 'Download', icon: <Download className="h-4 w-4" />, onClick: () => downloadOne(r) });
+        if (can('sales_orders', 'edit') && r.status !== 'so_sent' && r.status !== 'finalised') actions.push({ label: 'Mark as Sent', icon: <Send className="h-4 w-4" />, onClick: () => setMarkSent(r) });
+        if (can('sales_orders', 'edit') && r.status !== 'revision_required') actions.push({ label: 'Request Revision', icon: <RotateCcw className="h-4 w-4" />, onClick: () => { setReqRevision(r); setRevReason(''); } });
+        return (
+          <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
+            <RowActionMenu actions={actions} label={`Actions for ${r.number}`} />
+          </div>
+        );
+      },
     },
   ];
 

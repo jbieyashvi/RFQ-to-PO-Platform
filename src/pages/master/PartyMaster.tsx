@@ -86,28 +86,30 @@ export default function PartyMaster() {
   };
 
   const columns: Column<Party>[] = [
-    { key: 'code', header: 'Cust. Code', sortValue: (r) => r.code, render: (r) => <span className="font-medium text-surface-800">{r.code}</span> },
+    { key: 'code', header: 'Cust. Code', width: '112px', sticky: 'left', sortValue: (r) => r.code, render: (r) => <span className="font-medium text-surface-800">{r.code}</span> },
     {
       key: 'company',
       header: 'Company Name',
       sortValue: (r) => r.companyName,
       render: (r) => (
-        <div>
-          <p className="font-medium text-surface-800">{r.companyName}</p>
-          <p className="text-xs text-surface-400">{r.contactPerson}</p>
+        <div className="min-w-0">
+          <p className="truncate font-medium text-surface-800" title={r.companyName}>{r.companyName}</p>
+          <p className="truncate text-[11px] text-surface-400" title={r.contactPerson}>{r.contactPerson}</p>
         </div>
       ),
     },
-    { key: 'gstin', header: 'GSTIN', render: (r) => <span className="font-mono text-xs text-surface-500">{r.gstin}</span> },
-    { key: 'sector', header: 'Sector', render: (r) => <span className="chip">{r.sector}</span> },
-    { key: 'office', header: 'Sales Office', sortValue: (r) => officeName(r.officeId), render: (r) => <span className="text-surface-600">{officeName(r.officeId)}</span> },
-    { key: 'status', header: 'Status', render: (r) => <StatusBadge tone={r.active ? 'green' : 'gray'} label={r.active ? 'Active' : 'Inactive'} /> },
+    { key: 'gstin', header: 'GSTIN', width: '150px', render: (r) => <span className="font-mono text-[11px] text-surface-500">{r.gstin}</span> },
+    { key: 'sector', header: 'Sector', width: '124px', truncate: true, title: (r) => r.sector, render: (r) => <span className="chip">{r.sector}</span> },
+    { key: 'office', header: 'Sales Office', truncate: true, title: (r) => officeName(r.officeId), sortValue: (r) => officeName(r.officeId), render: (r) => <span className="text-surface-600">{officeName(r.officeId)}</span> },
+    { key: 'status', header: 'Status', width: '104px', render: (r) => <StatusBadge tone={r.active ? 'green' : 'gray'} label={r.active ? 'Active' : 'Inactive'} /> },
     {
       key: 'actions',
-      header: '',
+      header: 'Actions',
+      width: '108px',
       align: 'right',
+      sticky: 'right',
       render: (r) => (
-        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
           <IconBtn title="View" onClick={() => setViewing(r)}><Eye className="h-4 w-4" /></IconBtn>
           {can('party_master', 'edit') && <IconBtn title="Edit" onClick={() => { setEditing({ ...r }); setIsNew(false); }}><Pencil className="h-4 w-4" /></IconBtn>}
           {can('party_master', 'edit') && <IconBtn title={r.active ? 'Deactivate' : 'Activate'} onClick={() => setConfirm(r)}><Power className={r.active ? 'h-4 w-4 text-emerald-500' : 'h-4 w-4 text-surface-400'} /></IconBtn>}

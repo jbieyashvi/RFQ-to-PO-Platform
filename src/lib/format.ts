@@ -17,14 +17,14 @@ export function formatNumber(value: number): string {
   return new Intl.NumberFormat('en-IN').format(value);
 }
 
-export function formatDate(iso: string): string {
+export function formatDate(iso: string, opts?: { short?: boolean }): string {
   if (!iso) return '—';
   const d = new Date(iso + 'T00:00:00');
   if (isNaN(d.getTime())) return iso;
   return d.toLocaleDateString('en-IN', {
     day: '2-digit',
     month: 'short',
-    year: 'numeric',
+    year: opts?.short ? '2-digit' : 'numeric',
   });
 }
 

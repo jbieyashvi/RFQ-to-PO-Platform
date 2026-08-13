@@ -63,11 +63,12 @@ export default function HsnMaster() {
   };
 
   const columns: Column<Hsn>[] = [
-    { key: 'code', header: 'HSN Code', sortValue: (r) => r.code, render: (r) => <span className="font-medium text-surface-800">{r.code}</span> },
-    { key: 'desc', header: 'Description', render: (r) => <span className="text-surface-700">{r.description}</span> },
+    { key: 'code', header: 'HSN Code', width: '116px', sticky: 'left', sortValue: (r) => r.code, render: (r) => <span className="font-medium text-surface-800">{r.code}</span> },
+    { key: 'desc', header: 'Description', truncate: true, title: (r) => r.description, render: (r) => <span className="text-surface-700">{r.description}</span> },
     {
       key: 'rate',
       header: 'GST Rate',
+      width: '100px',
       align: 'right',
       sortValue: (r) => r.gstRate,
       render: (r) => <span className="chip">{r.gstRate}%</span>,
@@ -75,14 +76,17 @@ export default function HsnMaster() {
     {
       key: 'status',
       header: 'Status',
+      width: '104px',
       render: (r) => <StatusBadge tone={r.active ? 'green' : 'gray'} label={r.active ? 'Active' : 'Inactive'} />,
     },
     {
       key: 'actions',
-      header: '',
+      header: 'Actions',
+      width: '92px',
       align: 'right',
+      sticky: 'right',
       render: (r) => (
-        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
           {can('hsn_master', 'edit') && (
             <IconBtn title="Edit" onClick={() => { setEditing({ ...r }); setIsNew(false); }}>
               <Pencil className="h-4 w-4" />

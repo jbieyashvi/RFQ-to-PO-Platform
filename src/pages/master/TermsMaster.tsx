@@ -67,26 +67,29 @@ export default function TermsMaster() {
       header: 'Title',
       sortValue: (r) => r.title,
       render: (r) => (
-        <div>
-          <p className="font-medium text-surface-800">{r.title}</p>
-          <p className="max-w-md truncate text-xs text-surface-400">{r.description}</p>
+        <div className="min-w-0">
+          <p className="truncate font-medium text-surface-800" title={r.title}>{r.title}</p>
+          <p className="truncate text-[11px] text-surface-400" title={r.description}>{r.description}</p>
         </div>
       ),
     },
-    { key: 'category', header: 'Category', sortValue: (r) => r.category, render: (r) => <span className="chip">{r.category}</span> },
-    { key: 'doc', header: 'Applicable To', render: (r) => <StatusBadge tone="blue" dot={false} label={TC_DOCUMENT[r.applicableTo]} /> },
+    { key: 'category', header: 'Category', width: '128px', truncate: true, title: (r) => r.category, sortValue: (r) => r.category, render: (r) => <span className="chip">{r.category}</span> },
+    { key: 'doc', header: 'Applicable To', width: '128px', render: (r) => <StatusBadge tone="blue" dot={false} label={TC_DOCUMENT[r.applicableTo]} /> },
     {
       key: 'default',
       header: 'Type',
+      width: '96px',
       render: (r) => (r.isDefault ? <StatusBadge tone="violet" dot={false} label="Default" /> : <span className="text-xs text-surface-400">Optional</span>),
     },
-    { key: 'status', header: 'Status', render: (r) => <StatusBadge tone={r.active ? 'green' : 'gray'} label={r.active ? 'Active' : 'Inactive'} /> },
+    { key: 'status', header: 'Status', width: '104px', render: (r) => <StatusBadge tone={r.active ? 'green' : 'gray'} label={r.active ? 'Active' : 'Inactive'} /> },
     {
       key: 'actions',
-      header: '',
+      header: 'Actions',
+      width: '92px',
       align: 'right',
+      sticky: 'right',
       render: (r) => (
-        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
           {can('tc_master', 'edit') && <IconBtn title="Edit" onClick={() => { setEditing({ ...r }); setIsNew(false); }}><Pencil className="h-4 w-4" /></IconBtn>}
           {can('tc_master', 'delete') && <IconBtn title="Delete" onClick={() => setConfirmDelete(r)}><Trash2 className="h-4 w-4 text-rose-400" /></IconBtn>}
         </div>

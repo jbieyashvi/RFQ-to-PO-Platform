@@ -11,9 +11,11 @@ import {
   Modal,
   FileUpload,
   ConfirmDialog,
+  RowActionMenu,
   type Column,
   type FilterChip,
   type UploadedFile,
+  type RowAction,
 } from '@/components/ui';
 import { QuotationDetailsDrawer } from '@/components/QuotationDetails';
 import { useApp, useOfficeScope } from '@/context/AppContext';
@@ -80,26 +82,33 @@ export default function QuotesRevisions() {
   };
 
   const columns: Column<Quotation>[] = [
-    { key: 'number', header: 'Quotation No', sortValue: (r) => r.number, render: (r) => <span className="font-medium text-surface-800">{r.number}</span> },
-    { key: 'customer', header: 'Customer', render: (r) => <div className="max-w-[180px]"><p className="truncate font-medium text-surface-800">{r.customerName}</p><p className="text-xs text-surface-400">{r.customerCode}</p></div> },
-    { key: 'office', header: 'Sales Office', render: (r) => <span className="text-surface-600">{officeName(r.officeId)}</span> },
-    { key: 'reason', header: 'Revision Reason', render: (r) => <span className="block max-w-[220px] truncate text-surface-700" title={r.revisionReason}>{r.revisionReason}</span> },
-    { key: 'requested', header: 'Requested', sortValue: (r) => r.revisionRequestedDate ?? '', render: (r) => formatDate(r.revisionRequestedDate ?? '') },
-    { key: 'owner', header: 'Owner', render: (r) => <span className="text-surface-600">{r.owner}</span> },
-    { key: 'value', header: 'Value', align: 'right', sortValue: (r) => r.value, render: (r) => <span className="font-medium text-surface-800">{formatINR(r.value)}</span> },
-    { key: 'review', header: 'Review', sortValue: (r) => r.reviewDate, render: (r) => formatDate(r.reviewDate) },
+    { key: 'number', header: 'QTN No', width: '116px', sticky: 'left', sortValue: (r) => r.number, render: (r) => <span className="font-medium text-surface-800">{r.number}</span> },
+    { key: 'customer', header: 'Customer', render: (r) => <div className="min-w-0"><p className="truncate font-medium text-surface-800" title={r.customerName}>{r.customerName}</p><p className="truncate text-[11px] text-surface-400">{r.customerCode}</p></div> },
+    { key: 'office', header: 'Sales Office', width: '140px', truncate: true, title: (r) => officeName(r.officeId), render: (r) => <span className="text-surface-600">{officeName(r.officeId)}</span> },
+    { key: 'reason', header: 'Revision Reason', truncate: true, title: (r) => r.revisionReason ?? '', render: (r) => <span className="text-surface-700">{r.revisionReason}</span> },
+    { key: 'requested', header: 'Requested', width: '92px', sortValue: (r) => r.revisionRequestedDate ?? '', render: (r) => <span className="text-surface-600">{formatDate(r.revisionRequestedDate ?? '', { short: true })}</span> },
+    { key: 'owner', header: 'Owner', width: '108px', truncate: true, title: (r) => r.owner, render: (r) => <span className="text-surface-600">{r.owner}</span> },
+    { key: 'value', header: 'Value', width: '92px', align: 'right', sortValue: (r) => r.value, render: (r) => <span className="font-medium text-surface-800">{formatINR(r.value)}</span> },
+    { key: 'review', header: 'Review', width: '90px', sortValue: (r) => r.reviewDate, render: (r) => <span className="text-surface-600">{formatDate(r.reviewDate, { short: true })}</span> },
     {
       key: 'actions',
-      header: 'Action',
+      header: 'Actions',
+      width: '146px',
       align: 'right',
-      render: (r) => (
-        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-          <button onClick={() => setActive(r)} title="View original" aria-label="View original" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"><Eye className="h-4 w-4" /></button>
-          {can('quotations', 'edit') && <button onClick={() => setActive(r)} title="Edit revision" aria-label="Edit revision" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"><Pencil className="h-4 w-4" /></button>}
-          {can('quotations', 'edit') && <button onClick={() => { setUploadFor(r); setUploaded([]); }} title="Upload revised quote" aria-label="Upload revised quote" className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"><UploadCloud className="h-4 w-4" /></button>}
-          {can('quotations', 'edit') && <Button size="sm" variant="primary" leftIcon={<CheckCheck className="h-3.5 w-3.5" />} onClick={() => setMarkSent(r)}>Mark Sent</Button>}
-        </div>
-      ),
+      sticky: 'right',
+      render: (r) => {
+        const menu: RowAction[] = [{ label: 'View Original', icon: <Eye className="h-4 w-4" />, onClick: () => setActive(r) }];
+        if (can('quotations', 'edit')) {
+          menu.push({ label: 'Edit Revision', icon: <Pencil className="h-4 w-4" />, onClick: () => setActive(r) });
+          menu.push({ label: 'Upload Revised Quote', icon: <UploadCloud className="h-4 w-4" />, onClick: () => { setUploadFor(r); setUploaded([]); } });
+        }
+        return (
+          <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+            {can('quotations', 'edit') && <Button size="sm" variant="primary" leftIcon={<CheckCheck className="h-3.5 w-3.5" />} onClick={() => setMarkSent(r)}>Mark Sent</Button>}
+            <RowActionMenu actions={menu} label={`Actions for ${r.number}`} />
+          </div>
+        );
+      },
     },
   ];
 

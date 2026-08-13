@@ -104,40 +104,43 @@ export default function QuotationsList() {
   };
 
   const columns: Column<Quotation>[] = [
-    { key: 'number', header: 'Quotation No', sortValue: (r) => r.number, render: (r) => <span className="font-medium text-surface-800">{r.number}</span> },
+    { key: 'number', header: 'QTN No', width: '116px', sticky: 'left', sortValue: (r) => r.number, render: (r) => <span className="font-medium text-surface-800">{r.number}</span> },
     {
       key: 'customer',
       header: 'Customer',
       sortValue: (r) => r.customerName,
       render: (r) => (
-        <div className="max-w-[200px]">
-          <p className="truncate font-medium text-surface-800">{r.customerName}</p>
-          <p className="text-xs text-surface-400">{r.customerCode}</p>
+        <div className="min-w-0">
+          <p className="truncate font-medium text-surface-800" title={r.customerName}>{r.customerName}</p>
+          <p className="truncate text-[11px] text-surface-400">{r.customerCode}</p>
         </div>
       ),
     },
-    { key: 'office', header: 'Sales Office', sortValue: (r) => officeName(r.officeId), render: (r) => <span className="text-surface-600">{officeName(r.officeId)}</span> },
-    { key: 'owner', header: 'Owner', render: (r) => <span className="text-surface-600">{r.owner}</span> },
-    { key: 'status', header: 'Status', render: (r) => <StatusBadge tone={QUOTATION_STATUS[r.status].tone} label={QUOTATION_STATUS[r.status].label} /> },
-    { key: 'stage', header: 'Stage', render: (r) => <StatusBadge tone={QUOTATION_STAGE[r.stage].tone} label={QUOTATION_STAGE[r.stage].label} dot={false} /> },
-    { key: 'value', header: 'Value', align: 'right', sortValue: (r) => r.value, render: (r) => <span className="font-medium text-surface-800">{formatINR(r.value)}</span> },
-    { key: 'quoteDate', header: 'Quote Date', sortValue: (r) => r.quoteDate, render: (r) => formatDate(r.quoteDate) },
+    { key: 'office', header: 'Sales Office', truncate: true, title: (r) => officeName(r.officeId), sortValue: (r) => officeName(r.officeId), render: (r) => <span className="text-surface-600">{officeName(r.officeId)}</span> },
+    { key: 'owner', header: 'Owner', width: '112px', truncate: true, title: (r) => r.owner, render: (r) => <span className="text-surface-600">{r.owner}</span> },
+    { key: 'status', header: 'Status', width: '90px', render: (r) => <StatusBadge tone={QUOTATION_STATUS[r.status].tone} label={QUOTATION_STATUS[r.status].label} /> },
+    { key: 'stage', header: 'Stage', width: '116px', render: (r) => <StatusBadge tone={QUOTATION_STAGE[r.stage].tone} label={QUOTATION_STAGE[r.stage].label} dot={false} /> },
+    { key: 'value', header: 'Value', width: '96px', align: 'right', sortValue: (r) => r.value, render: (r) => <span className="font-medium text-surface-800">{formatINR(r.value)}</span> },
+    { key: 'quoteDate', header: 'Quote Date', width: '92px', sortValue: (r) => r.quoteDate, render: (r) => <span className="text-surface-600">{formatDate(r.quoteDate, { short: true })}</span> },
     {
       key: 'reviewDate',
       header: 'Review Date',
+      width: '98px',
       sortValue: (r) => r.reviewDate,
       render: (r) => (
         <span className={isOverdue(r.reviewDate) && r.status === 'open' ? 'font-medium text-rose-600' : 'text-surface-600'}>
-          {formatDate(r.reviewDate)}
+          {formatDate(r.reviewDate, { short: true })}
         </span>
       ),
     },
     {
       key: 'actions',
-      header: '',
+      header: 'Actions',
+      width: '78px',
       align: 'right',
+      sticky: 'right',
       render: (r) => (
-        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
           <button onClick={() => setActive(r)} title="View" aria-label={`View ${r.number}`} className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 hover:text-surface-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50">
             <Eye className="h-4 w-4" />
           </button>

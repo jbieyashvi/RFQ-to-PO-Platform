@@ -10,19 +10,19 @@ export function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-surface-50">
+    <div className="min-h-screen overflow-x-clip bg-surface-50">
       <Sidebar
         collapsed={collapsed}
         mobileOpen={mobileOpen}
         onCloseMobile={() => setMobileOpen(false)}
       />
-      <div className={classNames('transition-all duration-200', collapsed ? 'lg:pl-[68px]' : 'lg:pl-64')}>
+      <div className={classNames('transition-all duration-200', collapsed ? 'lg:pl-[68px]' : 'lg:pl-60')}>
         <Header
           collapsed={collapsed}
           onToggleSidebar={() => setCollapsed((v) => !v)}
           onToggleMobile={() => setMobileOpen(true)}
         />
-        <main className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8">
+        <main className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6">
           <Outlet />
         </main>
       </div>
