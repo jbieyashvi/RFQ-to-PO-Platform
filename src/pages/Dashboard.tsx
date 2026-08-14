@@ -23,7 +23,11 @@ import {
   QUOTATION_STATUS,
   SO_STATUS,
 } from '@/lib/labels';
-import type { QuotationStage } from '@/types';
+import {
+  quotationMetrics,
+  salesOrderMetrics,
+  stageCounts,
+} from '@/lib/metrics';
 import {
   formatINR,
   formatDate,
@@ -66,29 +70,17 @@ export default function Dashboard() {
     [salesOrders, inScope]
   );
 
-  const m = useMemo(() => {
-    const total = filtered.length;
-    const open = filtered.filter((q) => q.status === 'open').length;
-    const closed = filtered.filter((q) => q.status === 'closed').length;
-    const received = filtered.filter((q) => q.status === 'received').length;
-    const pendingSend = filtered.filter((q) => q.workState === 'pending_send').length;
-    const needsRevision = filtered.filter((q) => q.workState === 'needs_revision').length;
-    const soSent = scopedSO.filter((s) => s.status === 'so_sent' || s.status === 'finalised').length;
-    const mismatches = scopedSO.filter(
-      (s) => s.verificationStatus === 'mismatch' || s.verificationStatus === 'corrected_awaited'
-    ).length;
-    const value = filtered.reduce((sum, q) => sum + q.value, 0);
-    return { total, open, closed, received, pendingSend, needsRevision, soSent, mismatches, value };
-  }, [filtered, scopedSO]);
+  // Quotation KPIs derive from the scoped/filtered quotations; sales-order KPIs
+  // from the scoped sales orders — all via the shared metric definitions.
+  const m = useMemo(
+    () => ({ ...quotationMetrics(filtered), ...salesOrderMetrics(scopedSO) }),
+    [filtered, scopedSO]
+  );
 
   const funnel = useMemo(() => {
-    const stages: QuotationStage[] = ['no_followup', 'budgetary', 'negotiation', 'finalised'];
-    const max = Math.max(1, ...stages.map((s) => filtered.filter((q) => q.stage === s).length));
-    return stages.map((s) => ({
-      stage: s,
-      count: filtered.filter((q) => q.stage === s).length,
-      pct: (filtered.filter((q) => q.stage === s).length / max) * 100,
-    }));
+    const counts = stageCounts(filtered);
+    const max = Math.max(1, ...counts.map((c) => c.count));
+    return counts.map((c) => ({ ...c, pct: (c.count / max) * 100 }));
   }, [filtered]);
 
   const officePerf = useMemo(() => {
@@ -96,12 +88,8 @@ export default function Dashboard() {
     return offices
       .map((o) => {
         const qs = filtered.filter((q) => q.officeId === o.id);
-        return {
-          office: o,
-          count: qs.length,
-          value: qs.reduce((s, q) => s + q.value, 0),
-          received: qs.filter((q) => q.status === 'received').length,
-        };
+        const om = quotationMetrics(qs);
+        return { office: o, count: om.total, value: om.value, received: om.received };
       })
       .filter((r) => r.count > 0)
       .sort((a, b) => b.value - a.value);
@@ -239,8 +227,8 @@ export default function Dashboard() {
         <KpiCard label="Total Quotations" value={m.total} icon={<FileText className="h-4 w-4" />} accent="brand" onClick={() => goto('/quotations')} />
         <KpiCard label="Open Quotations" value={m.open} icon={<FolderOpen className="h-4 w-4" />} accent="blue" sub="Status: Open" onClick={() => goto('/quotations?status=open')} />
         <KpiCard label="Close Quotations" value={m.closed} icon={<CheckCircle2 className="h-4 w-4" />} accent="slate" sub="Status: Close" onClick={() => goto('/quotations?status=closed')} />
-        <KpiCard label="PO Received" value={m.received} icon={<Inbox className="h-4 w-4" />} accent="emerald" sub="Customer PO received" onClick={() => goto('/quotations?status=received')} />
-        <KpiCard label="SO Sent" value={m.soSent} icon={<Send className="h-4 w-4" />} accent="violet" sub="Sales-order state" onClick={() => goto('/sales-orders?status=so_sent')} />
+        <KpiCard label="Received Quotations" value={m.received} icon={<Inbox className="h-4 w-4" />} accent="emerald" sub="Status: Receive" onClick={() => goto('/quotations?status=received')} />
+        <KpiCard label="SO Sent" value={m.soSent} icon={<Send className="h-4 w-4" />} accent="violet" sub="State: SO Sent" onClick={() => goto('/sales-orders?status=so_sent')} />
         <KpiCard label="Quotes Pending to be Sent" value={m.pendingSend} icon={<Clock className="h-4 w-4" />} accent="amber" onClick={() => goto('/quotations/pending')} />
         <KpiCard label="Quotes Needing Revision" value={m.needsRevision} icon={<RefreshCw className="h-4 w-4" />} accent="blue" onClick={() => goto('/quotations/revisions')} />
         <KpiCard label="PO vs Quote Mismatches" value={m.mismatches} icon={<AlertTriangle className="h-4 w-4" />} accent="rose" onClick={() => goto('/sales-orders/verification')} />
@@ -289,7 +277,7 @@ export default function Dashboard() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-surface-800">{r.office.name}</p>
                     <p className="text-xs text-surface-400">
-                      {r.count} quotations • {r.received} PO received
+                      {r.count} quotations • {r.received} received quotations
                     </p>
                   </div>
                   <span className="text-sm font-semibold text-surface-800">
