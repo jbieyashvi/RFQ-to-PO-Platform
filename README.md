@@ -25,6 +25,32 @@ npm run build    # type-check + production build to /dist
 npm run preview  # preview the production build
 ```
 
+## Deployment
+
+The same source deploys to two hosts. The Vite `base` path is chosen automatically
+at build time (see `vite.config.ts`):
+
+- **GitHub Pages** (project page) — served from `/RFQ-to-PO-Platform/`. This is the
+  default and is published by the `Deploy to GitHub Pages` workflow
+  (`.github/workflows/deploy.yml`) on every push to `main`. SPA deep links / refreshes
+  are handled by `public/404.html` + the restore script in `index.html`.
+- **Vercel** — served from the domain root `/`. Vercel sets `VERCEL=1` during its build,
+  which switches the base to `/`.
+
+### Deploying to Vercel
+
+1. Import the repository at [vercel.com/new](https://vercel.com/new).
+2. Vercel auto-detects Vite — no manual settings needed. `vercel.json` already pins the
+   build command (`npm run build`), output directory (`dist`), and the SPA rewrite that
+   serves `index.html` for every route (`/login`, `/dashboard`, `/inbox`, `/profile`,
+   `/settings`, `/quotations/*`, `/sales-orders/*`, `/masters/*`, …) so direct hits and
+   refreshes on any deep link work instead of 404ing.
+3. Click **Deploy**. Nothing else to configure — the `VERCEL` env var is provided by the
+   platform, so the root base path is applied automatically.
+
+Both deployments are independent; adding Vercel does not affect the existing GitHub Pages
+URL.
+
 ## Demonstrating permissions (no login required)
 
 Use the **“Preview: <role>”** selector in the top header to switch between:
