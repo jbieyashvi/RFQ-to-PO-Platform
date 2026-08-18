@@ -10,7 +10,6 @@ import {
   Trash2,
   ShieldCheck,
   Eye,
-  Inbox,
   MapPin,
 } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
@@ -25,15 +24,21 @@ import {
   TextAreaField,
   Toggle,
   ConfirmDialog,
-  PermissionMatrix,
+  PermissionGroups,
   DescList,
 } from '@/components/ui';
 import { IconBtn } from './ItemMaster';
 import { useApp } from '@/context/AppContext';
 import { classNames } from '@/lib/format';
-import { ROLE_LABELS, INBOX_ACTION_LABELS, INBOX_ACTION_ORDER } from '@/lib/labels';
-import { defaultPermissionsFor, defaultInboxPermissionsFor, cloneMatrix, cloneInbox } from '@/lib/permissions';
-import type { InboxAction, PermissionMatrix as PMatrix, Role, SalesOffice, User } from '@/types';
+import { ROLE_LABELS } from '@/lib/labels';
+import {
+  makeFeaturePermissions,
+  cloneFeature,
+  hasCustomOverrides,
+  deriveLegacyPermissions,
+  deriveInbox,
+} from '@/lib/featurePermissions';
+import type { FeaturePermissions, Role, SalesOffice, User } from '@/types';
 
 const emptyOffice = (): SalesOffice => ({
   id: '',
@@ -258,6 +263,7 @@ function OfficeDetailDrawer({ office, onClose }: { office: SalesOffice; onClose:
                 size="sm"
                 leftIcon={<Plus className="h-4 w-4" />}
                 onClick={() => {
+                  const fp = makeFeaturePermissions('sales_user');
                   setEditingUser({
                     id: '',
                     fullName: '',
@@ -266,8 +272,9 @@ function OfficeDetailDrawer({ office, onClose }: { office: SalesOffice; onClose:
                     role: 'sales_user',
                     officeId: office.id,
                     active: true,
-                    permissions: defaultPermissionsFor('sales_user'),
-                    inboxPermissions: defaultInboxPermissionsFor('sales_user'),
+                    featurePermissions: fp,
+                    permissions: deriveLegacyPermissions(fp),
+                    inboxPermissions: deriveInbox(fp),
                   });
                   setIsNewUser(true);
                 }}
@@ -301,7 +308,7 @@ function OfficeDetailDrawer({ office, onClose }: { office: SalesOffice; onClose:
                   <StatusBadge tone="blue" dot={false} label={ROLE_LABELS[u.role]} />
                   {can('office_master', 'edit') && (
                     <div className="flex items-center gap-1">
-                      <IconBtn title="Edit user & permissions" onClick={() => { setEditingUser({ ...u, permissions: cloneMatrix(u.permissions), inboxPermissions: cloneInbox(u.inboxPermissions) }); setIsNewUser(false); }}>
+                      <IconBtn title="Edit user & permissions" onClick={() => { setEditingUser({ ...u, featurePermissions: cloneFeature(u.featurePermissions ?? makeFeaturePermissions(u.role)) }); setIsNewUser(false); }}>
                         <Pencil className="h-4 w-4" />
                       </IconBtn>
                       <IconBtn title="Remove user" onClick={() => setRemoveConfirm(u)}>
@@ -347,30 +354,31 @@ function OfficeDetailDrawer({ office, onClose }: { office: SalesOffice; onClose:
   );
 }
 
-// ---------- User form with permission matrix ----------
+// ---------- User form with grouped permission editor ----------
 function UserFormModal({ user, isNew, onClose, onSave }: { user: User; isNew: boolean; onClose: () => void; onSave: (u: User) => void }) {
   const [form, setForm] = useState<User>(user);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  useEffect(() => { setForm(user); setErrors({}); }, [user]);
+  const [pendingRole, setPendingRole] = useState<Role | null>(null);
+  useEffect(() => { setForm(user); setErrors({}); setPendingRole(null); }, [user]);
 
   const set = <K extends keyof User>(k: K, v: User[K]) => setForm((f) => ({ ...f, [k]: v }));
 
-  const applyRoleTemplate = (role: Role) => {
-    setForm((f) => ({
-      ...f,
-      role,
-      permissions: defaultPermissionsFor(role),
-      inboxPermissions: defaultInboxPermissionsFor(role),
-    }));
+  const applyRoleTemplate = (role: Role) =>
+    setForm((f) => ({ ...f, role, featurePermissions: makeFeaturePermissions(role) }));
+
+  // Changing role auto-applies its default template. Warn first when the user
+  // has custom overrides that would be discarded.
+  const requestRoleChange = (role: Role) => {
+    if (role === form.role) return;
+    if (hasCustomOverrides(form.featurePermissions, form.role)) {
+      setPendingRole(role);
+    } else {
+      applyRoleTemplate(role);
+    }
   };
 
-  const setPermissions = (permissions: PMatrix) => setForm((f) => ({ ...f, permissions }));
-
-  const toggleInbox = (action: InboxAction) =>
-    setForm((f) => ({
-      ...f,
-      inboxPermissions: { ...f.inboxPermissions, [action]: !f.inboxPermissions[action] },
-    }));
+  const setFeature = (featurePermissions: FeaturePermissions) =>
+    setForm((f) => ({ ...f, featurePermissions }));
 
   const submit = () => {
     const e: Record<string, string> = {};
@@ -379,7 +387,13 @@ function UserFormModal({ user, isNew, onClose, onSave }: { user: User; isNew: bo
     if (!/^[+\d][\d\s-]{7,}$/.test(form.phone)) e.phone = 'Enter a valid phone number';
     setErrors(e);
     if (Object.keys(e).length) return;
-    onSave({ ...form, id: form.id || `usr-${Date.now()}` });
+    // Derive the coarse permission model the rest of the app reads from.
+    onSave({
+      ...form,
+      id: form.id || `usr-${Date.now()}`,
+      permissions: deriveLegacyPermissions(form.featurePermissions),
+      inboxPermissions: deriveInbox(form.featurePermissions),
+    });
   };
 
   return (
@@ -405,7 +419,7 @@ function UserFormModal({ user, isNew, onClose, onSave }: { user: User; isNew: bo
             label="Role"
             required
             value={form.role}
-            onChange={(e) => applyRoleTemplate(e.target.value as Role)}
+            onChange={(e) => requestRoleChange(e.target.value as Role)}
             options={(['super_admin', 'office_admin', 'sales_user'] as Role[]).map((r) => ({ value: r, label: ROLE_LABELS[r] }))}
             hint="Selecting a role applies its default permission template"
           />
@@ -415,49 +429,35 @@ function UserFormModal({ user, isNew, onClose, onSave }: { user: User; isNew: bo
         </div>
 
         <div>
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <ShieldCheck className="h-4 w-4 text-brand-500" />
               <h4 className="text-sm font-semibold text-surface-800">Module Permissions</h4>
             </div>
-            <div className="flex items-center gap-2 text-xs">
-              <button onClick={() => setPermissions(defaultPermissionsFor(form.role))} className="font-medium text-brand-600 hover:underline">
-                Reset to {ROLE_LABELS[form.role]} defaults
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => applyRoleTemplate(form.role)}
+              className="text-xs font-medium text-brand-600 hover:underline"
+            >
+              Reset to {ROLE_LABELS[form.role]} defaults
+            </button>
           </div>
           <p className="mb-3 text-xs text-surface-400">
-            Configure View, Create, Edit, Delete and Download access per module. The sidebar and action buttons respect these settings.
+            Selecting a role applies its default permission template. Individual permissions can then be
+            overridden below — the sidebar, routes and action buttons respect these settings.
           </p>
-          <PermissionMatrix value={form.permissions} onChange={setPermissions} />
-        </div>
-
-        {/* Global Inbox — action-level permissions */}
-        <div>
-          <div className="mb-2 flex items-center gap-2">
-            <Inbox className="h-4 w-4 text-brand-500" />
-            <h4 className="text-sm font-semibold text-surface-800">Global Inbox — Action Permissions</h4>
-          </div>
-          <p className="mb-3 text-xs text-surface-400">
-            AI may classify, extract and draft. Sending an external email always requires a user with{' '}
-            <span className="font-medium text-surface-600">Approve</span> and{' '}
-            <span className="font-medium text-surface-600">Send</span> permission.
-          </p>
-          <div className="grid grid-cols-2 gap-2 rounded-xl border border-surface-200 p-3 sm:grid-cols-4">
-            {INBOX_ACTION_ORDER.map((action) => (
-              <label key={action} className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-surface-50">
-                <input
-                  type="checkbox"
-                  checked={form.inboxPermissions[action]}
-                  onChange={() => toggleInbox(action)}
-                  className="h-4 w-4 rounded border-surface-300 text-brand-600 focus:ring-brand-500/40"
-                />
-                <span className="text-[13px] text-surface-700">{INBOX_ACTION_LABELS[action]}</span>
-              </label>
-            ))}
-          </div>
+          <PermissionGroups value={form.featurePermissions} onChange={setFeature} />
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!pendingRole}
+        onClose={() => setPendingRole(null)}
+        onConfirm={() => { if (pendingRole) applyRoleTemplate(pendingRole); }}
+        title="Replace custom permissions?"
+        message={`This user has custom permission overrides. Switching to ${pendingRole ? ROLE_LABELS[pendingRole] : ''} will replace them with that role's default template.`}
+        confirmLabel="Apply defaults"
+      />
     </Modal>
   );
 }

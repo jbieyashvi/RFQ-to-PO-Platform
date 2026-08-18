@@ -13,7 +13,7 @@ export function RequirePermission({
   module: ModuleKey;
   children: ReactNode;
 }) {
-  const { can, role } = useApp();
+  const { can, currentUser } = useApp();
   if (can(module, 'view')) return <>{children}</>;
 
   return (
@@ -22,12 +22,13 @@ export function RequirePermission({
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
           <ShieldAlert className="h-7 w-7" />
         </div>
-        <h2 className="text-lg font-semibold text-surface-800">Access restricted</h2>
+        <h2 className="text-lg font-semibold text-surface-800">Access denied</h2>
         <p className="mt-2 text-sm text-surface-500">
-          Your previewed role <span className="font-medium text-surface-700">{ROLE_LABELS[role]}</span>{' '}
+          Your role{' '}
+          {currentUser && <span className="font-medium text-surface-700">{ROLE_LABELS[currentUser.role]}</span>}{' '}
           does not have permission to view{' '}
-          <span className="font-medium text-surface-700">{MODULE_LABELS[module]}</span>. Switch the role
-          preview in the header to explore this module.
+          <span className="font-medium text-surface-700">{MODULE_LABELS[module]}</span>. Ask an
+          administrator to grant access in Sales Office Master.
         </p>
         <div className="mt-5">
           <Link to="/dashboard">
@@ -40,7 +41,7 @@ export function RequirePermission({
 }
 
 export function RequireInbox({ children }: { children: ReactNode }) {
-  const { canInbox, role } = useApp();
+  const { canInbox, currentUser } = useApp();
   if (canInbox('view')) return <>{children}</>;
 
   return (
@@ -49,12 +50,13 @@ export function RequireInbox({ children }: { children: ReactNode }) {
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
           <ShieldAlert className="h-7 w-7" />
         </div>
-        <h2 className="text-lg font-semibold text-surface-800">Access restricted</h2>
+        <h2 className="text-lg font-semibold text-surface-800">Access denied</h2>
         <p className="mt-2 text-sm text-surface-500">
-          Your previewed role <span className="font-medium text-surface-700">{ROLE_LABELS[role]}</span>{' '}
+          Your role{' '}
+          {currentUser && <span className="font-medium text-surface-700">{ROLE_LABELS[currentUser.role]}</span>}{' '}
           does not have permission to view the{' '}
-          <span className="font-medium text-surface-700">Global Inbox</span>. Switch the role preview in
-          the header to explore this module.
+          <span className="font-medium text-surface-700">Global Inbox</span>. Ask an administrator to
+          grant access in Sales Office Master.
         </p>
         <div className="mt-5">
           <Link to="/dashboard">

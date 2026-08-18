@@ -19,5 +19,6 @@ export { FileUpload } from './FileUpload';
 export type { UploadedFile } from './FileUpload';
 export { ActivityTimeline } from './ActivityTimeline';
 export { PermissionMatrix } from './PermissionMatrix';
+export { PermissionGroups } from './PermissionGroups';
 export { ItemLineEditor } from './ItemLineEditor';
 export { SectionCard, DescList, Tabs, InfoRow } from './misc';

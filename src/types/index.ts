@@ -15,6 +15,12 @@ export type ActionKey = 'view' | 'create' | 'edit' | 'delete' | 'download';
 
 export type PermissionMatrix = Record<ModuleKey, Record<ActionKey, boolean>>;
 
+// Granular, sub-section-level permissions edited in Sales Office Master.
+// Keyed by section key -> action key -> enabled. The coarse PermissionMatrix
+// and InboxPermissions above are DERIVED from this on save so existing
+// sidebar / route / action gating keeps working unchanged.
+export type FeaturePermissions = Record<string, Record<string, boolean>>;
+
 // ---------- Sales Office ----------
 export interface SalesOffice {
   id: string;
@@ -37,6 +43,7 @@ export interface User {
   active: boolean;
   permissions: PermissionMatrix;
   inboxPermissions: InboxPermissions;
+  featurePermissions: FeaturePermissions;
 }
 
 // ---------- Masters ----------
