@@ -125,9 +125,6 @@ export default function OfficeMaster() {
                   <ActionIcon title="View office" onClick={() => setDetail(o)}>
                     <Eye className="h-[18px] w-[18px]" />
                   </ActionIcon>
-                  <ActionIcon title="Manage users and permissions" onClick={() => setDetail(o)}>
-                    <ShieldCheck className="h-[18px] w-[18px]" />
-                  </ActionIcon>
                   {canEdit && (
                     <>
                       <ActionIcon title="Edit office" onClick={() => { setEditingOffice({ ...o }); setIsNewOffice(false); }}>
