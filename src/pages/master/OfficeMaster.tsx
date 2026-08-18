@@ -11,14 +11,13 @@ import {
   ShieldCheck,
   Eye,
   Inbox,
+  MapPin,
 } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import {
   Button,
-  DataTable,
   StatusBadge,
   SearchInput,
-  Pagination,
   Modal,
   Drawer,
   TextField,
@@ -28,16 +27,13 @@ import {
   ConfirmDialog,
   PermissionMatrix,
   DescList,
-  RowActionMenu,
-  type Column,
-  type RowAction,
 } from '@/components/ui';
 import { IconBtn } from './ItemMaster';
 import { useApp } from '@/context/AppContext';
+import { classNames } from '@/lib/format';
 import { ROLE_LABELS, INBOX_ACTION_LABELS, INBOX_ACTION_ORDER } from '@/lib/labels';
 import { defaultPermissionsFor, defaultInboxPermissionsFor, cloneMatrix, cloneInbox } from '@/lib/permissions';
 import type { InboxAction, PermissionMatrix as PMatrix, Role, SalesOffice, User } from '@/types';
-import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 
 const emptyOffice = (): SalesOffice => ({
   id: '',
@@ -56,71 +52,14 @@ export default function OfficeMaster() {
   const [editingOffice, setEditingOffice] = useState<SalesOffice | null>(null);
   const [isNewOffice, setIsNewOffice] = useState(false);
   const [confirmOffice, setConfirmOffice] = useState<SalesOffice | null>(null);
-  const loading = useSimulatedLoading([]);
+  const canEdit = can('office_master', 'edit');
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
     return offices.filter((o) => !s || `${o.name} ${o.code} ${o.city} ${o.state}`.toLowerCase().includes(s));
   }, [offices, search]);
 
-  const { page, pageSize, setPage, setPageSize, pageRows, total } = usePaginated(filtered, 10);
-
   const userCount = (officeId: string) => users.filter((u) => u.officeId === officeId).length;
-
-  const columns: Column<SalesOffice>[] = [
-    {
-      key: 'name',
-      header: 'Office',
-      sortValue: (r) => r.name,
-      render: (r) => (
-        <div className="flex min-w-0 items-center gap-2.5">
-          <div className="flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-brand-50 text-[11px] font-bold text-brand-600">
-            {r.code.slice(0, 3)}
-          </div>
-          <div className="min-w-0">
-            <p className="truncate font-medium text-surface-800" title={r.name}>{r.name}</p>
-            <p className="truncate text-[11px] text-surface-400">{r.code}</p>
-          </div>
-        </div>
-      ),
-    },
-    { key: 'address', header: 'Address', truncate: true, title: (r) => `${r.city}, ${r.state}`, render: (r) => <span className="text-surface-600">{r.city}, {r.state}</span> },
-    {
-      key: 'users',
-      header: 'Users',
-      width: '84px',
-      align: 'right',
-      sortValue: (r) => userCount(r.id),
-      render: (r) => (
-        <span className="inline-flex items-center gap-1.5 text-surface-700">
-          <Users className="h-4 w-4 text-surface-400" /> {userCount(r.id)}
-        </span>
-      ),
-    },
-    { key: 'status', header: 'Status', width: '104px', render: (r) => <StatusBadge tone={r.active ? 'green' : 'gray'} label={r.active ? 'Active' : 'Inactive'} /> },
-    {
-      key: 'actions',
-      header: 'Actions',
-      width: '84px',
-      align: 'right',
-      sticky: 'right',
-      render: (r) => {
-        const actions: RowAction[] = [
-          { label: 'View Office', icon: <Eye className="h-4 w-4" />, onClick: () => setDetail(r) },
-          { label: 'Manage Users & Permissions', icon: <Users className="h-4 w-4" />, onClick: () => setDetail(r) },
-        ];
-        if (can('office_master', 'edit')) {
-          actions.push({ label: 'Edit Office', icon: <Pencil className="h-4 w-4" />, onClick: () => { setEditingOffice({ ...r }); setIsNewOffice(false); } });
-          actions.push({ label: r.active ? 'Deactivate Office' : 'Activate Office', icon: <Power className="h-4 w-4" />, onClick: () => setConfirmOffice(r) });
-        }
-        return (
-          <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
-            <RowActionMenu actions={actions} label={`Actions for ${r.name}`} />
-          </div>
-        );
-      },
-    },
-  ];
 
   return (
     <>
@@ -137,12 +76,77 @@ export default function OfficeMaster() {
         }
       />
 
-      <div className="card">
-        <div className="border-b border-surface-100 p-4">
+      <div className="card overflow-hidden">
+        {/* compact search toolbar */}
+        <div className="border-b border-surface-100 px-4 py-3">
           <SearchInput value={search} onChange={setSearch} placeholder="Search offices…" className="w-full sm:w-80" />
         </div>
-        <DataTable columns={columns} rows={pageRows} rowKey={(r) => r.id} loading={loading} onRowClick={(r) => setDetail(r)} emptyTitle="No offices found" />
-        {!loading && total > 0 && <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={setPageSize} />}
+
+        {filtered.length === 0 ? (
+          <div className="px-4 py-14 text-center text-sm text-surface-400">No offices found.</div>
+        ) : (
+          <ul className="divide-y divide-surface-100">
+            {filtered.map((o) => (
+              <li
+                key={o.id}
+                className="flex flex-col gap-3 px-4 py-3 transition-colors hover:bg-surface-50/60 sm:flex-row sm:items-center sm:gap-4"
+              >
+                {/* Identity: avatar + name + code / location */}
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <div className="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-brand-50 text-[11px] font-bold text-brand-600">
+                    {o.code.slice(0, 3)}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-[14px] font-semibold text-surface-800" title={o.name}>{o.name}</p>
+                    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] text-surface-400">
+                      <span className="font-medium text-surface-500">{o.code}</span>
+                      <span className="hidden text-surface-300 sm:inline">&middot;</span>
+                      <span className="inline-flex min-w-0 items-center gap-1">
+                        <MapPin className="h-3 w-3 flex-none" />
+                        <span className="truncate">{o.city}, {o.state}</span>
+                      </span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Meta: assigned users + status */}
+                <div className="flex flex-none items-center gap-3 sm:gap-4">
+                  <span
+                    className="inline-flex items-center gap-1.5 text-[13px] text-surface-600"
+                    title={`${userCount(o.id)} assigned ${userCount(o.id) === 1 ? 'user' : 'users'}`}
+                  >
+                    <Users className="h-4 w-4 text-surface-400" /> {userCount(o.id)}
+                  </span>
+                  <StatusBadge tone={o.active ? 'green' : 'gray'} label={o.active ? 'Active' : 'Inactive'} />
+                </div>
+
+                {/* Actions: direct icon buttons (replaces three-dot menu) */}
+                <div className="flex flex-none items-center gap-1 border-t border-surface-100 pt-2 sm:border-0 sm:pt-0">
+                  <ActionIcon title="View office" onClick={() => setDetail(o)}>
+                    <Eye className="h-[18px] w-[18px]" />
+                  </ActionIcon>
+                  <ActionIcon title="Manage users and permissions" onClick={() => setDetail(o)}>
+                    <ShieldCheck className="h-[18px] w-[18px]" />
+                  </ActionIcon>
+                  {canEdit && (
+                    <>
+                      <ActionIcon title="Edit office" onClick={() => { setEditingOffice({ ...o }); setIsNewOffice(false); }}>
+                        <Pencil className="h-[18px] w-[18px]" />
+                      </ActionIcon>
+                      <ActionIcon
+                        title={o.active ? 'Deactivate office' : 'Activate office'}
+                        tone={o.active ? 'danger' : 'positive'}
+                        onClick={() => setConfirmOffice(o)}
+                      >
+                        <Power className="h-[18px] w-[18px]" />
+                      </ActionIcon>
+                    </>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {detail && <OfficeDetailDrawer office={detail} onClose={() => setDetail(null)} />}
@@ -173,6 +177,39 @@ export default function OfficeMaster() {
         danger={confirmOffice?.active}
       />
     </>
+  );
+}
+
+// ---------- Direct action icon button (tone-aware) ----------
+function ActionIcon({
+  title,
+  tone = 'neutral',
+  onClick,
+  children,
+}: {
+  title: string;
+  tone?: 'neutral' | 'danger' | 'positive';
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  const tones: Record<'neutral' | 'danger' | 'positive', string> = {
+    neutral: 'text-surface-500 hover:bg-surface-100 hover:text-surface-800 focus-visible:ring-brand-500/50',
+    danger: 'text-rose-500 hover:bg-rose-50 hover:text-rose-600 focus-visible:ring-rose-500/40',
+    positive: 'text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 focus-visible:ring-emerald-500/40',
+  };
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      className={classNames(
+        'flex h-9 w-9 flex-none items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2',
+        tones[tone]
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
