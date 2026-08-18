@@ -1,198 +1,452 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import {
+  Save,
+  RotateCcw,
+  Plus,
+  Pencil,
+  Power,
+  Package,
+  Truck,
+  Wallet,
+  ClipboardCheck,
+} from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import {
   Button,
-  DataTable,
+  SectionCard,
   StatusBadge,
-  SearchInput,
-  FilterBar,
-  FilterSelect,
-  Pagination,
-  Modal,
   TextField,
-  SelectField,
-  TextAreaField,
-  Toggle,
+  Modal,
   ConfirmDialog,
-  type Column,
-  type FilterChip,
 } from '@/components/ui';
 import { IconBtn } from './ItemMaster';
 import { useApp } from '@/context/AppContext';
-import { TC_CATEGORIES, TC_DOCUMENT } from '@/lib/labels';
-import type { TCDocument, TermCondition } from '@/types';
-import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
+import { classNames } from '@/lib/format';
+import type { CommercialTerms, DeliveryOption, PaymentTerms } from '@/types';
+import {
+  cloneCommercialTerms,
+  paymentTotal,
+  formatPaymentTerms,
+  formatWarranty,
+  defaultDeliveryOption,
+  PAYMENT_FIELDS,
+} from '@/lib/commercialTerms';
 
-const empty = (): TermCondition => ({
-  id: '',
-  title: '',
-  category: TC_CATEGORIES[0],
-  description: '',
-  applicableTo: 'both',
-  isDefault: false,
-  active: true,
-});
+const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
+const toNum = (v: string) => (v === '' ? 0 : Number(v));
 
 export default function TermsMaster() {
-  const { terms, upsertTerm, removeTerm, can, addToast } = useApp();
-  const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('');
-  const [docType, setDocType] = useState('');
-  const [editing, setEditing] = useState<TermCondition | null>(null);
-  const [isNew, setIsNew] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<TermCondition | null>(null);
-  const loading = useSimulatedLoading([]);
+  const { commercialTerms, setCommercialTerms, resetCommercialTerms, can, addToast } = useApp();
+  const canEdit = can('tc_master', 'edit');
 
-  const filtered = useMemo(() => {
-    const s = search.trim().toLowerCase();
-    return terms.filter((t) => {
-      if (category && t.category !== category) return false;
-      if (docType && t.applicableTo !== docType && t.applicableTo !== 'both') return false;
-      if (s && !`${t.title} ${t.description} ${t.category}`.toLowerCase().includes(s)) return false;
-      return true;
-    });
-  }, [terms, search, category, docType]);
+  // Local editable draft — the store is only updated on Save / Reset.
+  const [draft, setDraft] = useState<CommercialTerms>(() => cloneCommercialTerms(commercialTerms));
+  // Re-sync the draft if the store changes underneath (e.g. Reset from context).
+  useEffect(() => {
+    setDraft(cloneCommercialTerms(commercialTerms));
+  }, [commercialTerms]);
 
-  const { page, pageSize, setPage, setPageSize, pageRows, total } = usePaginated(filtered);
+  const [editingOption, setEditingOption] = useState<DeliveryOption | null>(null);
+  const [isNewOption, setIsNewOption] = useState(false);
+  const [confirmDeactivate, setConfirmDeactivate] = useState<DeliveryOption | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
 
-  const chips: FilterChip[] = [];
-  if (category) chips.push({ key: 'c', label: `Category: ${category}`, onRemove: () => setCategory('') });
-  if (docType) chips.push({ key: 'd', label: `Doc: ${TC_DOCUMENT[docType as TCDocument]}`, onRemove: () => setDocType('') });
-  if (search) chips.push({ key: 'q', label: `Search: "${search}"`, onRemove: () => setSearch('') });
+  const total = paymentTotal(draft.payment);
+  const paymentValid = total === 100;
+  const canSave = canEdit && paymentValid;
 
-  const columns: Column<TermCondition>[] = [
-    {
-      key: 'title',
-      header: 'Title',
-      sortValue: (r) => r.title,
-      render: (r) => (
-        <div className="min-w-0">
-          <p className="truncate font-medium text-surface-800" title={r.title}>{r.title}</p>
-          <p className="truncate text-[11px] text-surface-400" title={r.description}>{r.description}</p>
-        </div>
-      ),
-    },
-    { key: 'category', header: 'Category', width: '128px', truncate: true, title: (r) => r.category, sortValue: (r) => r.category, render: (r) => <span className="chip">{r.category}</span> },
-    { key: 'doc', header: 'Applicable To', width: '128px', render: (r) => <StatusBadge tone="blue" dot={false} label={TC_DOCUMENT[r.applicableTo]} /> },
-    {
-      key: 'default',
-      header: 'Type',
-      width: '96px',
-      render: (r) => (r.isDefault ? <StatusBadge tone="violet" dot={false} label="Default" /> : <span className="text-xs text-surface-400">Optional</span>),
-    },
-    { key: 'status', header: 'Status', width: '104px', render: (r) => <StatusBadge tone={r.active ? 'green' : 'gray'} label={r.active ? 'Active' : 'Inactive'} /> },
-    {
-      key: 'actions',
-      header: 'Actions',
-      width: '92px',
-      align: 'right',
-      sticky: 'right',
-      render: (r) => (
-        <div className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
-          {can('tc_master', 'edit') && <IconBtn title="Edit" onClick={() => { setEditing({ ...r }); setIsNew(false); }}><Pencil className="h-4 w-4" /></IconBtn>}
-          {can('tc_master', 'delete') && <IconBtn title="Delete" onClick={() => setConfirmDelete(r)}><Trash2 className="h-4 w-4 text-rose-400" /></IconBtn>}
-        </div>
-      ),
-    },
-  ];
+  const previewDelivery = defaultDeliveryOption(draft)?.name ?? '—';
+
+  // ---- mutators on the draft --------------------------------------------
+  const patch = (p: Partial<CommercialTerms>) => setDraft((d) => ({ ...d, ...p }));
+  const setPayment = (key: keyof PaymentTerms, value: number) =>
+    setDraft((d) => ({ ...d, payment: { ...d.payment, [key]: clamp(value, 0, 100) } }));
+
+  const setDefaultOption = (id: string) =>
+    setDraft((d) => ({
+      ...d,
+      deliveryOptions: d.deliveryOptions.map((o) => ({ ...o, isDefault: o.id === id })),
+    }));
+
+  const applyActive = (id: string, active: boolean) =>
+    setDraft((d) => ({
+      ...d,
+      deliveryOptions: d.deliveryOptions.map((o) => (o.id === id ? { ...o, active } : o)),
+    }));
+
+  const onToggleActive = (o: DeliveryOption) => {
+    if (o.active) {
+      if (o.isDefault) {
+        addToast({
+          type: 'warning',
+          title: 'Set another default first',
+          message: `Mark another active option as default before deactivating "${o.name}".`,
+        });
+        return;
+      }
+      setConfirmDeactivate(o);
+    } else {
+      applyActive(o.id, true);
+    }
+  };
+
+  const saveOption = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (editingOption && !isNewOption) {
+      setDraft((d) => ({
+        ...d,
+        deliveryOptions: d.deliveryOptions.map((o) =>
+          o.id === editingOption.id ? { ...o, name: trimmed } : o
+        ),
+      }));
+    } else {
+      setDraft((d) => ({
+        ...d,
+        deliveryOptions: [
+          ...d.deliveryOptions,
+          { id: `del-${Date.now()}`, name: trimmed, active: true, isDefault: false },
+        ],
+      }));
+    }
+    setEditingOption(null);
+  };
+
+  const onSave = () => {
+    if (!canSave) return;
+    setCommercialTerms(draft);
+    addToast({ type: 'success', title: 'Commercial terms updated', message: 'Commercial terms updated.' });
+  };
+
+  const onReset = () => {
+    resetCommercialTerms();
+    setConfirmReset(false);
+    addToast({ type: 'success', title: 'Reset to defaults', message: 'Restored the default commercial terms.' });
+  };
 
   return (
     <>
       <PageHeader
         title="T&C Master"
-        description="Reusable terms & conditions applied to quotations and sales orders."
+        description="Configure the default commercial terms used in quotations and sales orders."
         crumbs={[{ label: 'Master' }, { label: 'T&C Master' }]}
         actions={
-          can('tc_master', 'create') && (
-            <Button variant="primary" leftIcon={<Plus className="h-4 w-4" />} onClick={() => { setEditing(empty()); setIsNew(true); }}>
-              Add Term
-            </Button>
+          canEdit ? (
+            <>
+              <Button
+                variant="secondary"
+                leftIcon={<RotateCcw className="h-4 w-4" />}
+                onClick={() => setConfirmReset(true)}
+              >
+                Reset to Defaults
+              </Button>
+              <Button
+                variant="primary"
+                leftIcon={<Save className="h-4 w-4" />}
+                onClick={onSave}
+                disabled={!canSave}
+                title={!paymentValid ? 'Payment terms must total 100%' : undefined}
+              >
+                Save Changes
+              </Button>
+            </>
+          ) : (
+            <StatusBadge tone="gray" dot={false} label="View only" />
           )
         }
       />
 
-      <div className="card">
-        <div className="border-b border-surface-100 p-4">
-          <FilterBar chips={chips} onClearAll={() => { setCategory(''); setDocType(''); setSearch(''); }}>
-            <SearchInput value={search} onChange={setSearch} placeholder="Search terms…" className="w-full sm:w-72" />
-            <FilterSelect value={category} onChange={setCategory} placeholder="All categories" options={TC_CATEGORIES.map((c) => ({ value: c, label: c }))} />
-            <FilterSelect value={docType} onChange={setDocType} placeholder="All document types" options={[{ value: 'quotation', label: 'Quotation' }, { value: 'sales_order', label: 'Sales Order' }, { value: 'both', label: 'Both' }]} />
-          </FilterBar>
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+        {/* Left column */}
+        <div className="space-y-5">
+          {/* 1. Default Commercial Terms */}
+          <SectionCard title={<CardTitle icon={<Package className="h-4 w-4" />} label="Default Commercial Terms" />}>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <NumField
+                label="Packing"
+                suffix="%"
+                min={0}
+                max={100}
+                value={draft.packingPct}
+                disabled={!canEdit}
+                hint="Applied as a % of order value"
+                onChange={(v) => patch({ packingPct: clamp(v, 0, 100) })}
+              />
+              <NumField
+                label="Warranty"
+                suffix="Year(s)"
+                min={1}
+                value={draft.warrantyYears}
+                disabled={!canEdit}
+                hint="Standard warranty period"
+                onChange={(v) => patch({ warrantyYears: Math.max(1, v) })}
+              />
+            </div>
+          </SectionCard>
+
+          {/* 2. Delivery Options */}
+          <SectionCard
+            title={<CardTitle icon={<Truck className="h-4 w-4" />} label="Delivery Options" />}
+            action={
+              canEdit && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  leftIcon={<Plus className="h-4 w-4" />}
+                  onClick={() => {
+                    setEditingOption({ id: '', name: '', active: true, isDefault: false });
+                    setIsNewOption(true);
+                  }}
+                >
+                  Add Delivery Option
+                </Button>
+              )
+            }
+          >
+            <div className="space-y-2">
+              {draft.deliveryOptions.map((o) => (
+                <div
+                  key={o.id}
+                  className={classNames(
+                    'flex items-center gap-3 rounded-xl border px-3 py-2.5',
+                    o.isDefault ? 'border-brand-200 bg-brand-50/40' : 'border-surface-200'
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="delivery-default"
+                    checked={o.isDefault}
+                    disabled={!canEdit || !o.active}
+                    onChange={() => setDefaultOption(o.id)}
+                    title={o.active ? 'Set as default' : 'Activate to set as default'}
+                    className="h-4 w-4 flex-none text-brand-600 focus:ring-brand-500/40 disabled:opacity-40"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-medium text-surface-800" title={o.name}>
+                      {o.name}
+                    </p>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      {o.isDefault && <StatusBadge tone="violet" dot={false} label="Default" />}
+                      <StatusBadge tone={o.active ? 'green' : 'gray'} label={o.active ? 'Active' : 'Inactive'} />
+                    </div>
+                  </div>
+                  {canEdit && (
+                    <div className="flex flex-none items-center gap-0.5">
+                      <IconBtn
+                        title="Rename"
+                        onClick={() => {
+                          setEditingOption({ ...o });
+                          setIsNewOption(false);
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </IconBtn>
+                      <IconBtn title={o.active ? 'Deactivate' : 'Activate'} onClick={() => onToggleActive(o)}>
+                        <Power className={classNames('h-4 w-4', o.active ? 'text-emerald-500' : 'text-surface-400')} />
+                      </IconBtn>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </SectionCard>
         </div>
-        <DataTable columns={columns} rows={pageRows} rowKey={(r) => r.id} loading={loading} emptyTitle="No terms found" />
-        {!loading && total > 0 && <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={setPageSize} />}
+
+        {/* Right column */}
+        <div className="space-y-5">
+          {/* 3. Default Payment Terms */}
+          <SectionCard title={<CardTitle icon={<Wallet className="h-4 w-4" />} label="Default Payment Terms" />}>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {PAYMENT_FIELDS.map((f) => (
+                <NumField
+                  key={f.key}
+                  label={f.label}
+                  suffix="%"
+                  min={0}
+                  max={100}
+                  value={draft.payment[f.key]}
+                  disabled={!canEdit}
+                  onChange={(v) => setPayment(f.key, v)}
+                />
+              ))}
+            </div>
+            <div
+              className={classNames(
+                'mt-4 flex items-center justify-between rounded-lg px-3 py-2.5 text-[13px] font-semibold',
+                paymentValid ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+              )}
+            >
+              <span>Total: {total}%</span>
+              {!paymentValid && <span className="text-xs font-medium">Payment terms must total 100%</span>}
+            </div>
+          </SectionCard>
+
+          {/* 4. Commercial Terms Preview */}
+          <SectionCard title={<CardTitle icon={<ClipboardCheck className="h-4 w-4" />} label="Commercial Terms Preview" />}>
+            <dl className="divide-y divide-surface-100 rounded-xl border border-surface-200">
+              <PreviewRow label="Packing" value={`${draft.packingPct}%`} />
+              <PreviewRow label="Delivery" value={previewDelivery} />
+              <PreviewRow label="Warranty" value={formatWarranty(draft.warrantyYears)} />
+              <PreviewRow label="Payment" value={formatPaymentTerms(draft.payment)} />
+            </dl>
+            <p className="mt-3 text-[12px] text-surface-400">
+              These defaults prefill the Commercial Terms section when creating a sales order. They can be
+              overridden per order without changing these master defaults.
+            </p>
+          </SectionCard>
+        </div>
       </div>
 
-      <TermForm
-        term={editing}
-        isNew={isNew}
-        onClose={() => setEditing(null)}
-        onSave={(t) => {
-          upsertTerm(t);
-          addToast({ type: 'success', title: isNew ? 'Term added' : 'Term updated', message: t.title });
-          setEditing(null);
-        }}
+      {/* Add / rename delivery option */}
+      <DeliveryOptionModal
+        option={editingOption}
+        isNew={isNewOption}
+        onClose={() => setEditingOption(null)}
+        onSave={saveOption}
       />
 
+      {/* Confirm deactivation */}
       <ConfirmDialog
-        open={!!confirmDelete}
-        onClose={() => setConfirmDelete(null)}
+        open={!!confirmDeactivate}
+        onClose={() => setConfirmDeactivate(null)}
         onConfirm={() => {
-          if (confirmDelete) {
-            removeTerm(confirmDelete.id);
-            addToast({ type: 'success', title: 'Term deleted', message: confirmDelete.title });
-          }
+          if (confirmDeactivate) applyActive(confirmDeactivate.id, false);
         }}
-        title="Delete this term?"
-        message={`"${confirmDelete?.title}" will be permanently removed and can no longer be applied to documents.`}
-        confirmLabel="Delete"
+        title="Deactivate delivery option?"
+        message={`"${confirmDeactivate?.name}" will no longer be available when creating a sales order.`}
+        confirmLabel="Deactivate"
         danger
+      />
+
+      {/* Confirm reset */}
+      <ConfirmDialog
+        open={confirmReset}
+        onClose={() => setConfirmReset(false)}
+        onConfirm={onReset}
+        title="Reset to defaults?"
+        message="All commercial terms will be restored to the default values. Unsaved changes will be lost."
+        confirmLabel="Reset to Defaults"
       />
     </>
   );
 }
 
-function TermForm({ term, isNew, onClose, onSave }: { term: TermCondition | null; isNew: boolean; onClose: () => void; onSave: (t: TermCondition) => void }) {
-  const [form, setForm] = useState<TermCondition>(empty());
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  useEffect(() => { if (term) { setForm(term); setErrors({}); } }, [term]);
-  if (!term) return null;
+function CardTitle({ icon, label }: { icon: React.ReactNode; label: string }) {
+  return (
+    <span className="flex items-center gap-2">
+      <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-brand-50 text-brand-600">{icon}</span>
+      {label}
+    </span>
+  );
+}
 
-  const set = <K extends keyof TermCondition>(k: K, v: TermCondition[K]) => setForm((f) => ({ ...f, [k]: v }));
+function PreviewRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between px-3 py-2.5">
+      <dt className="text-[12px] text-surface-500">{label}</dt>
+      <dd className="text-[13px] font-medium text-surface-800">{value}</dd>
+    </div>
+  );
+}
+
+function NumField({
+  label,
+  value,
+  onChange,
+  suffix,
+  min,
+  max,
+  hint,
+  disabled,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  suffix?: string;
+  min?: number;
+  max?: number;
+  hint?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <div>
+      <label className="label">{label}</label>
+      <div className="relative">
+        <input
+          type="number"
+          className={classNames('input', suffix && 'pr-16')}
+          value={value}
+          min={min}
+          max={max}
+          disabled={disabled}
+          onChange={(e) => onChange(toNum(e.target.value))}
+        />
+        {suffix && (
+          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-surface-400">
+            {suffix}
+          </span>
+        )}
+      </div>
+      {hint && <p className="mt-1 text-xs text-surface-400">{hint}</p>}
+    </div>
+  );
+}
+
+function DeliveryOptionModal({
+  option,
+  isNew,
+  onClose,
+  onSave,
+}: {
+  option: DeliveryOption | null;
+  isNew: boolean;
+  onClose: () => void;
+  onSave: (name: string) => void;
+}) {
+  const [name, setName] = useState('');
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (option) {
+      setName(option.name);
+      setError('');
+    }
+  }, [option]);
+  if (!option) return null;
 
   const submit = () => {
-    const e: Record<string, string> = {};
-    if (!form.title.trim()) e.title = 'Title is required';
-    if (!form.description.trim()) e.description = 'Description is required';
-    setErrors(e);
-    if (Object.keys(e).length) return;
-    onSave({ ...form, id: form.id || `tc-${Date.now()}` });
+    if (!name.trim()) {
+      setError('Name is required');
+      return;
+    }
+    onSave(name);
   };
 
   return (
     <Modal
-      open={!!term}
+      open={!!option}
       onClose={onClose}
-      title={isNew ? 'Add Term & Condition' : 'Edit Term & Condition'}
-      size="lg"
+      title={isNew ? 'Add Delivery Option' : 'Rename Delivery Option'}
+      size="sm"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={submit}>{isNew ? 'Add Term' : 'Save Changes'}</Button>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={submit}>
+            {isNew ? 'Add Option' : 'Save'}
+          </Button>
         </>
       }
     >
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <TextField wrapClassName="sm:col-span-2" label="Title" required value={form.title} error={errors.title} onChange={(e) => set('title', e.target.value)} placeholder="e.g. Payment — 30% Advance" />
-        <SelectField label="Category" required value={form.category} onChange={(e) => set('category', e.target.value)} options={TC_CATEGORIES.map((c) => ({ value: c, label: c }))} />
-        <SelectField label="Applicable Document" required value={form.applicableTo} onChange={(e) => set('applicableTo', e.target.value as TCDocument)} options={[{ value: 'quotation', label: 'Quotation' }, { value: 'sales_order', label: 'Sales Order' }, { value: 'both', label: 'Both' }]} />
-        <TextAreaField wrapClassName="sm:col-span-2" label="Description" required rows={4} value={form.description} error={errors.description} onChange={(e) => set('description', e.target.value)} />
-        <div className="flex items-center gap-6 sm:col-span-2">
-          <Toggle checked={form.isDefault} onChange={(v) => set('isDefault', v)} label="Default (auto-applied)" />
-          <Toggle checked={form.active} onChange={(v) => set('active', v)} label={form.active ? 'Active' : 'Inactive'} />
-        </div>
-      </div>
+      <TextField
+        label="Option Name"
+        required
+        value={name}
+        error={error}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="e.g. FOR Destination"
+        autoFocus
+      />
     </Modal>
   );
 }

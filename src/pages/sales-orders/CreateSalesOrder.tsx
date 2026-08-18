@@ -28,8 +28,16 @@ import {
 import { useApp } from '@/context/AppContext';
 import { OFFICES, officeName } from '@/data/offices';
 import { OWNERS } from '@/data/users';
-import type { LineItem, SalesOrder } from '@/types';
-import { computeTotals, downloadText, formatINR } from '@/lib/format';
+import type { CommercialTerms, LineItem, PaymentTerms, SalesOrder } from '@/types';
+import { computeTotals, downloadText, formatINR, classNames } from '@/lib/format';
+import {
+  activeDeliveryOptions,
+  defaultDeliveryOption,
+  formatPaymentTerms,
+  formatWarranty,
+  paymentTotal,
+  PAYMENT_FIELDS,
+} from '@/lib/commercialTerms';
 
 interface FormState {
   useNewCustomer: boolean;
@@ -44,14 +52,16 @@ interface FormState {
   quotationId: string;
   officeId: string;
   owner: string;
-  packingCharges: number;
+  packingPct: number;
   deliveryTerms: string;
-  warranty: string;
-  paymentTerms: string;
+  warrantyYears: number;
+  payment: PaymentTerms;
   expectedDelivery: string;
 }
 
-const initialForm = (officeId: string): FormState => ({
+// Commercial-terms defaults are sourced from T&C Master (the single source of
+// truth) — never hardcoded here.
+const initialForm = (officeId: string, ct: CommercialTerms): FormState => ({
   useNewCustomer: false,
   partyId: '',
   newCustomerName: '',
@@ -64,19 +74,20 @@ const initialForm = (officeId: string): FormState => ({
   quotationId: '',
   officeId,
   owner: OWNERS[0],
-  packingCharges: 0,
-  deliveryTerms: '4-6 weeks Ex-Works',
-  warranty: '12 months against manufacturing defects',
-  paymentTerms: '30% advance, 70% before dispatch',
+  packingPct: ct.packingPct,
+  deliveryTerms: defaultDeliveryOption(ct)?.name ?? '',
+  warrantyYears: ct.warrantyYears,
+  payment: { ...ct.payment },
   expectedDelivery: '',
 });
 
 export default function CreateSalesOrder() {
-  const { parties, items, quotations, role, currentUser, addSalesOrder, addToast } = useApp();
+  const { parties, items, quotations, commercialTerms, role, currentUser, addSalesOrder, addToast } = useApp();
   const navigate = useNavigate();
 
   const defaultOffice = role === 'super_admin' ? OFFICES[0].id : currentUser.officeId;
-  const [form, setForm] = useState<FormState>(initialForm(defaultOffice));
+  const [form, setForm] = useState<FormState>(() => initialForm(defaultOffice, commercialTerms));
+  const deliveryChoices = useMemo(() => activeDeliveryOptions(commercialTerms), [commercialTerms]);
   const [lines, setLines] = useState<LineItem[]>([]);
   const [poFiles, setPoFiles] = useState<UploadedFile[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -113,14 +124,12 @@ export default function CreateSalesOrder() {
     const q = quotations.find((x) => x.id === id);
     if (q) {
       setLines(q.items.map((it) => ({ ...it, id: `soln-${it.id}` })));
+      // Commercial terms stay driven by T&C Master defaults (single source of
+      // truth); linking a quotation only prefills its items & customer.
       setForm((f) => ({
         ...f,
         quotationId: id,
         partyId: q.partyId,
-        paymentTerms: q.paymentTerms,
-        deliveryTerms: q.deliveryTerms,
-        warranty: q.warranty,
-        packingCharges: q.packingCharges,
         billingAddress: parties.find((p) => p.id === q.partyId)?.billingAddress ?? f.billingAddress,
         shippingAddress: parties.find((p) => p.id === q.partyId)?.shippingAddress ?? f.shippingAddress,
         gstin: parties.find((p) => p.id === q.partyId)?.gstin ?? f.gstin,
@@ -131,7 +140,11 @@ export default function CreateSalesOrder() {
     }
   };
 
-  const totals = computeTotals(lines, form.packingCharges);
+  // Packing is a % of the taxable order value; convert to an absolute amount so
+  // the shared computeTotals math is unchanged.
+  const packingAmount = Math.round((computeTotals(lines, 0).taxable * form.packingPct) / 100);
+  const totals = computeTotals(lines, packingAmount);
+  const paymentSum = paymentTotal(form.payment);
   const customerName = form.useNewCustomer ? form.newCustomerName : selectedParty?.companyName ?? '';
 
   const validate = () => {
@@ -147,6 +160,7 @@ export default function CreateSalesOrder() {
     if (!form.poDate) e.poDate = 'PO date is required';
     if (!form.officeId) e.officeId = 'Sales office is required';
     if (!form.expectedDelivery) e.expectedDelivery = 'Expected delivery date is required';
+    if (paymentSum !== 100) e.payment = 'Payment terms must total 100%';
     if (lines.length === 0) e.lines = 'Add at least one line item';
     else if (lines.some((l) => !l.itemId)) e.lines = 'Every line must have an item selected';
     else if (lines.some((l) => l.quantity <= 0)) e.lines = 'Quantities must be greater than 0';
@@ -159,6 +173,8 @@ export default function CreateSalesOrder() {
 
   const buildSO = (status: 'draft' | 'so_sent'): SalesOrder => {
     const q = quotations.find((x) => x.id === form.quotationId);
+    const paymentTermsText = formatPaymentTerms(form.payment);
+    const warrantyText = formatWarranty(form.warrantyYears);
     return {
       id: `so-${Date.now()}`,
       number: `SO/2026/${String(600 + Math.floor(Math.random() * 399)).padStart(4, '0')}`,
@@ -193,7 +209,7 @@ export default function CreateSalesOrder() {
           reason: 'Initial sales order',
           snapshot: {
             items: lines.map((it) => ({ ...it })),
-            paymentTerms: form.paymentTerms,
+            paymentTerms: paymentTermsText,
             deliveryTerms: form.deliveryTerms,
             deliveryDate: form.expectedDelivery,
             billingAddress: form.billingAddress,
@@ -203,10 +219,10 @@ export default function CreateSalesOrder() {
         },
       ],
       items: lines,
-      paymentTerms: form.paymentTerms,
+      paymentTerms: paymentTermsText,
       deliveryTerms: form.deliveryTerms,
-      warranty: form.warranty,
-      packingCharges: form.packingCharges,
+      warranty: warrantyText,
+      packingCharges: packingAmount,
       internalNotes: [],
       activity: [
         { id: `act-${Date.now()}-created`, date: '2026-08-13T09:00:00', actor: form.owner, action: 'Sales Order created', detail: q ? `From quotation ${q.number}` : 'Created manually' },
@@ -319,13 +335,66 @@ export default function CreateSalesOrder() {
           </SectionCard>
 
           {/* 4. Commercial Terms */}
-          <SectionCard title={<Section icon={<Receipt className="h-4 w-4" />} n={4} label="Commercial Terms" />}>
+          <SectionCard
+            title={<Section icon={<Receipt className="h-4 w-4" />} n={4} label="Commercial Terms" />}
+            action={<span className="text-xs text-surface-400">Defaults from T&amp;C Master</span>}
+          >
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <TextField label="Packing & Forwarding (₹)" type="number" value={form.packingCharges} onChange={(e) => set('packingCharges', Math.max(0, Number(e.target.value)))} />
+              <TextField
+                label="Packing (%)"
+                type="number"
+                min={0}
+                max={100}
+                value={form.packingPct}
+                onChange={(e) => set('packingPct', Math.max(0, Math.min(100, Number(e.target.value))))}
+                hint={`≈ ${formatINR(packingAmount)} on current items`}
+              />
               <TextField label="Expected Delivery Date" required type="date" value={form.expectedDelivery} error={errors.expectedDelivery} onChange={(e) => set('expectedDelivery', e.target.value)} />
-              <TextField wrapClassName="sm:col-span-2" label="Delivery Terms" value={form.deliveryTerms} onChange={(e) => set('deliveryTerms', e.target.value)} />
-              <TextField label="Warranty" value={form.warranty} onChange={(e) => set('warranty', e.target.value)} />
-              <TextField label="Payment Terms" value={form.paymentTerms} onChange={(e) => set('paymentTerms', e.target.value)} />
+              <SelectField
+                wrapClassName="sm:col-span-2"
+                label="Delivery Terms"
+                value={form.deliveryTerms}
+                onChange={(e) => set('deliveryTerms', e.target.value)}
+                options={deliveryChoices.map((o) => ({ value: o.name, label: o.name }))}
+                placeholder="Select delivery option"
+              />
+              <TextField
+                label="Warranty (Years)"
+                type="number"
+                min={1}
+                value={form.warrantyYears}
+                onChange={(e) => set('warrantyYears', Math.max(1, Number(e.target.value)))}
+              />
+              <div className="sm:col-span-2">
+                <label className="label">Payment Terms</label>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {PAYMENT_FIELDS.map((f) => (
+                    <div key={f.key}>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          className="input pr-8"
+                          value={form.payment[f.key]}
+                          onChange={(e) =>
+                            set('payment', {
+                              ...form.payment,
+                              [f.key]: Math.max(0, Math.min(100, Number(e.target.value))),
+                            })
+                          }
+                        />
+                        <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-sm text-surface-400">%</span>
+                      </div>
+                      <p className="mt-1 text-[11px] text-surface-500">{f.label}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className={classNames('mt-2 text-xs font-medium', paymentSum === 100 ? 'text-emerald-600' : 'text-rose-600')}>
+                  Total: {paymentSum}%{paymentSum !== 100 && ' — must total 100%'}
+                </div>
+                {errors.payment && <p className="mt-1 text-xs font-medium text-rose-600">{errors.payment}</p>}
+              </div>
             </div>
           </SectionCard>
         </div>
@@ -343,7 +412,7 @@ export default function CreateSalesOrder() {
                 <InfoRow label="Discount" value={`- ${formatINR(totals.discount)}`} />
                 <InfoRow label="Taxable Value" value={formatINR(totals.taxable)} />
                 <InfoRow label="GST" value={formatINR(totals.tax)} />
-                <InfoRow label="Packing & Forwarding" value={formatINR(form.packingCharges)} />
+                <InfoRow label={`Packing & Forwarding (${form.packingPct}%)`} value={formatINR(packingAmount)} />
                 <div className="mt-2 border-t border-surface-200 pt-3">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-semibold text-surface-800">Grand Total</span>
@@ -422,7 +491,7 @@ export default function CreateSalesOrder() {
             <InfoRow label="Subtotal" value={formatINR(totals.subtotal)} />
             <InfoRow label="Discount" value={`- ${formatINR(totals.discount)}`} />
             <InfoRow label="GST" value={formatINR(totals.tax)} />
-            <InfoRow label="Packing" value={formatINR(form.packingCharges)} />
+            <InfoRow label="Packing" value={formatINR(packingAmount)} />
             <div className="mt-1 border-t border-surface-200 pt-2">
               <div className="flex items-center justify-between">
                 <span className="font-semibold text-surface-800">Grand Total</span>

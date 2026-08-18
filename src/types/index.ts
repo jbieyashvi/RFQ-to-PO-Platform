@@ -93,6 +93,31 @@ export interface TermCondition {
   active: boolean;
 }
 
+// ---------- Commercial Terms (T&C Master) ----------
+// Structured commercial defaults edited in T&C Master and used as the single
+// source of truth for the Create SO → Commercial Terms section.
+export interface DeliveryOption {
+  id: string;
+  name: string;
+  active: boolean;
+  isDefault: boolean;
+}
+
+// Four percentage buckets — must total exactly 100%.
+export interface PaymentTerms {
+  advance: number;
+  beforeDispatch: number;
+  creditDays: number;
+  afterInstall: number;
+}
+
+export interface CommercialTerms {
+  packingPct: number; // % of order value, 0–100
+  warrantyYears: number; // > 0
+  deliveryOptions: DeliveryOption[];
+  payment: PaymentTerms;
+}
+
 // ---------- Quotations ----------
 // Business status — NOT a send state.
 export type QuotationStatus = 'open' | 'closed' | 'received';

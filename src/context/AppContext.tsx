@@ -8,6 +8,7 @@ import {
 } from 'react';
 import type {
   ActionKey,
+  CommercialTerms,
   Hsn,
   InboxAction,
   InboxEmail,
@@ -24,6 +25,7 @@ import type {
 import { OFFICES } from '@/data/offices';
 import { USERS } from '@/data/users';
 import { HSN, ITEMS, PARTIES, TERMS } from '@/data/masters';
+import { DEFAULT_COMMERCIAL_TERMS, cloneCommercialTerms } from '@/lib/commercialTerms';
 import { QUOTATIONS } from '@/data/quotations';
 import { SALES_ORDERS } from '@/data/salesOrders';
 import { EMAILS } from '@/data/emails';
@@ -55,6 +57,7 @@ interface AppState {
   parties: Party[];
   hsn: Hsn[];
   terms: TermCondition[];
+  commercialTerms: CommercialTerms;
   quotations: Quotation[];
   salesOrders: SalesOrder[];
   emails: InboxEmail[];
@@ -68,6 +71,8 @@ interface AppState {
   upsertHsn: (h: Hsn) => void;
   upsertTerm: (t: TermCondition) => void;
   removeTerm: (id: string) => void;
+  setCommercialTerms: (ct: CommercialTerms) => void;
+  resetCommercialTerms: () => void;
   updateQuotation: (id: string, patch: Partial<Quotation>) => void;
   addQuotation: (q: Quotation) => void;
   updateSalesOrder: (id: string, patch: Partial<SalesOrder>) => void;
@@ -101,6 +106,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [parties, setParties] = useState<Party[]>(PARTIES);
   const [hsn, setHsn] = useState<Hsn[]>(HSN);
   const [terms, setTerms] = useState<TermCondition[]>(TERMS);
+  const [commercialTerms, setCommercialTermsState] = useState<CommercialTerms>(() =>
+    cloneCommercialTerms(DEFAULT_COMMERCIAL_TERMS)
+  );
   const [quotations, setQuotations] = useState<Quotation[]>(QUOTATIONS);
   const [salesOrders, setSalesOrders] = useState<SalesOrder[]>(SALES_ORDERS);
   const [emails, setEmails] = useState<InboxEmail[]>(EMAILS);
@@ -199,6 +207,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTerms((prev) => prev.filter((x) => x.id !== id));
   }, []);
 
+  const setCommercialTerms = _useCallback((ct: CommercialTerms) => {
+    setCommercialTermsState(cloneCommercialTerms(ct));
+  }, []);
+
+  const resetCommercialTerms = _useCallback(() => {
+    setCommercialTermsState(cloneCommercialTerms(DEFAULT_COMMERCIAL_TERMS));
+  }, []);
+
   const updateQuotation = _useCallback((id: string, patch: Partial<Quotation>) => {
     setQuotations((prev) => prev.map((q) => (q.id === id ? { ...q, ...patch } : q)));
   }, []);
@@ -238,6 +254,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     parties,
     hsn,
     terms,
+    commercialTerms,
     quotations,
     salesOrders,
     emails,
@@ -249,6 +266,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     upsertHsn,
     upsertTerm,
     removeTerm,
+    setCommercialTerms,
+    resetCommercialTerms,
     updateQuotation,
     addQuotation,
     updateSalesOrder,
