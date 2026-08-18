@@ -51,24 +51,24 @@ at build time (see `vite.config.ts`):
 Both deployments are independent; adding Vercel does not affect the existing GitHub Pages
 URL.
 
-## Demonstrating permissions (no login required)
+## Roles & permissions
 
-Use the **“Preview: <role>”** selector in the top header to switch between:
+The signed-in user's **role** (shown as read-only text in the account menu) drives which
+sidebar modules are visible and which Add / Edit / Delete / Download actions appear:
 
 - **Super Admin** — all offices & modules
 - **Office Admin** — single office, most actions
 - **Sales User** — limited, view/edit only
 
-Switching the role instantly changes which sidebar modules are visible and which
-Add / Edit / Delete / Download buttons appear. Super Admin also gets a global
-**Sales Office** selector; office-scoped roles are pinned to their own office.
-
 Permissions are fully configurable **module-wise × action-wise** (View, Create, Edit,
 Delete, Download) from *Sales Office Master → open an office → edit a user → Permission Matrix*.
+The role/permission engine is unchanged — the earlier demo role-preview switcher and the
+global office selector were removed from the top header; the Dashboard now filters per
+section instead.
 
 ## Information architecture
 
-- **Dashboard** — KPIs, stage funnel, office performance, reviews, action list
+- **Dashboard** — Pipeline Funnel, Conversion Funnel, Action Required and Overdue Tasks, each with its own Branch / date filters
 - **Master** — Item, Party, Sales Office (+ users & permissions), HSN, T&C
 - **Sales Quotations** — Quotes Pending to be Sent, Quotes Needing Revision, List of Quotations
 - **Sales Orders** — PO vs Quote Verification, List of Sales Orders, SO Revision, Create SO Manually

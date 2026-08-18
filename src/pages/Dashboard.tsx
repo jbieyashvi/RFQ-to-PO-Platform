@@ -1,457 +1,448 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  FileText,
-  FolderOpen,
-  CheckCircle2,
-  Inbox,
-  Send,
-  Clock,
-  RefreshCw,
-  AlertTriangle,
-  ArrowRight,
-  CalendarClock,
-  CalendarX2,
+  Filter,
+  ArrowRightLeft,
   ListChecks,
+  CalendarClock,
+  RotateCcw,
 } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
-import { KpiCard, StatusBadge, FilterSelect, SectionCard } from '@/components/ui';
+import { FilterSelect } from '@/components/ui';
 import { useApp, useOfficeScope } from '@/context/AppContext';
 import { OFFICES } from '@/data/offices';
 import {
-  QUOTATION_STAGE,
-  QUOTATION_STATUS,
-  SO_STATUS,
-} from '@/lib/labels';
-import {
-  quotationMetrics,
-  salesOrderMetrics,
-  stageCounts,
+  pipelineFunnel,
+  conversionFunnel,
+  actionRequired,
+  overdueTasks,
+  scopeRecords,
+  isValidRange,
+  DEFAULT_SECTION_FILTER,
+  type SectionFilter,
+  type MetricRow,
+  type ConversionRow,
+  type ActionRow,
+  type OverdueRow,
 } from '@/lib/metrics';
-import {
-  formatINR,
-  formatDate,
-  daysBetween,
-  isOverdue,
-  classNames,
-} from '@/lib/format';
+import { classNames } from '@/lib/format';
 
-const DATE_RANGES = [
-  { value: 'all', label: 'All time' },
-  { value: '7', label: 'Last 7 days' },
-  { value: '30', label: 'Last 30 days' },
-  { value: '90', label: 'Last 90 days' },
+// Funnel-bar fills — muted navy/blue/slate/amber/violet/pink/green, in keeping
+// with the white/indigo design system (no bright gradients).
+const PIPELINE_COLORS = [
+  'bg-brand-700',
+  'bg-brand-500',
+  'bg-slate-600',
+  'bg-amber-600',
+  'bg-violet-600',
+  'bg-rose-600',
+  'bg-emerald-600',
 ];
+const CONVERSION_COLORS = ['bg-brand-700', 'bg-brand-500', 'bg-violet-600', 'bg-emerald-600'];
+
+// ---------------------------------------------------------------------------
+// Per-section independent Branch + From/To date filter.
+// Each dashboard section owns its own instance so changing one never affects
+// another. Default Branch = All Branches, default range = full dataset (open).
+// ---------------------------------------------------------------------------
+function useSectionFilter() {
+  const [branch, setBranch] = useState(DEFAULT_SECTION_FILTER.branch);
+  const [from, setFrom] = useState(DEFAULT_SECTION_FILTER.from);
+  const [to, setTo] = useState(DEFAULT_SECTION_FILTER.to);
+  const filter: SectionFilter = { branch, from, to };
+  const error = isValidRange(filter) ? '' : 'From date must be on or before To date.';
+  const dirty = branch !== 'all' || from !== '' || to !== '';
+  const reset = () => {
+    setBranch('all');
+    setFrom('');
+    setTo('');
+  };
+  return { filter, branch, setBranch, from, setFrom, to, setTo, error, dirty, reset };
+}
+
+type SectionFilterState = ReturnType<typeof useSectionFilter>;
+
+function SectionFilters({
+  state,
+  branchOptions,
+}: {
+  state: SectionFilterState;
+  branchOptions: { value: string; label: string }[];
+}) {
+  const { branch, setBranch, from, setFrom, to, setTo, error, dirty, reset } = state;
+  const dateCls =
+    'h-9 rounded-lg border border-surface-200 bg-white px-2.5 text-[13px] text-surface-700 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20';
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <FilterSelect
+          value={branch === 'all' ? '' : branch}
+          onChange={(v) => setBranch(v || 'all')}
+          placeholder="All Branches"
+          options={branchOptions}
+        />
+        <input
+          type="date"
+          aria-label="From date"
+          value={from}
+          max={to || undefined}
+          onChange={(e) => setFrom(e.target.value)}
+          className={classNames(dateCls, error && 'border-rose-400')}
+        />
+        <span className="text-xs text-surface-400">to</span>
+        <input
+          type="date"
+          aria-label="To date"
+          value={to}
+          min={from || undefined}
+          onChange={(e) => setTo(e.target.value)}
+          className={classNames(dateCls, error && 'border-rose-400')}
+        />
+        {dirty && (
+          <button
+            onClick={reset}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-surface-500 hover:text-brand-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
+          >
+            <RotateCcw className="h-3.5 w-3.5" /> Reset
+          </button>
+        )}
+      </div>
+      {error && <p className="text-xs font-medium text-rose-600">{error}</p>}
+    </div>
+  );
+}
+
+function DashSection({
+  title,
+  icon,
+  filters,
+  children,
+  className,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  filters: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={classNames('card overflow-hidden', className)}>
+      <div className="flex flex-col gap-3 border-b border-surface-100 px-4 py-3.5 sm:px-5 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-center gap-2 pt-1.5">
+          {icon}
+          <h3 className="text-sm font-semibold text-surface-800">{title}</h3>
+        </div>
+        {filters}
+      </div>
+      <div className="p-4 sm:p-5">{children}</div>
+    </section>
+  );
+}
+
+function FunnelBar({
+  row,
+  width,
+  color,
+  onOpen,
+}: {
+  row: MetricRow;
+  width: number;
+  color: string;
+  onOpen: (to: string) => void;
+}) {
+  const inner = (
+    <>
+      <span className="truncate text-sm font-medium">{row.label}</span>
+      <span className="ml-3 flex-none text-xl font-bold tabular-nums">{row.count}</span>
+    </>
+  );
+  const base = classNames(
+    'flex items-center justify-between rounded-lg px-4 py-3 text-white shadow-sm',
+    color
+  );
+  if (row.to) {
+    const to = row.to;
+    return (
+      <button
+        type="button"
+        onClick={() => onOpen(to)}
+        style={{ width: `${width}%` }}
+        aria-label={`${row.label}: ${row.count}${row.hint ? '. ' + row.hint : ''}. Open list`}
+        className={classNames(
+          base,
+          'transition hover:brightness-110 hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-1'
+        )}
+      >
+        {inner}
+      </button>
+    );
+  }
+  return (
+    <div style={{ width: `${width}%` }} className={base} aria-label={`${row.label}: ${row.count}`}>
+      {inner}
+    </div>
+  );
+}
+
+function ActionCard({ row, onOpen }: { row: ActionRow; onOpen: (to: string) => void }) {
+  const edge =
+    row.severity === 'high'
+      ? 'border-l-rose-500'
+      : row.severity === 'medium'
+      ? 'border-l-amber-500'
+      : 'border-l-brand-400';
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(row.to)}
+      aria-label={`${row.label}: ${row.count}. ${row.description}`}
+      className={classNames(
+        'flex w-full items-center gap-4 rounded-lg border border-surface-200 border-l-4 bg-white px-4 py-3 text-left shadow-sm transition hover:border-surface-300 hover:bg-surface-50 hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
+        edge
+      )}
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold text-surface-800">{row.label}</span>
+        <span className="mt-0.5 block text-[13px] leading-snug text-surface-500">
+          {row.description}
+        </span>
+        {row.sub && (
+          <span className="mt-1 inline-block text-[13px] font-medium text-surface-600">
+            {row.sub.label}: <span className="text-surface-800">{row.sub.count}</span>
+          </span>
+        )}
+      </span>
+      <span className="flex-none text-2xl font-bold tabular-nums text-surface-900">{row.count}</span>
+    </button>
+  );
+}
+
+function OverdueItem({ row, onOpen }: { row: OverdueRow; onOpen: (to: string) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(row.to)}
+      aria-label={`${row.label}: ${row.count}. ${row.note}`}
+      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-surface-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-medium text-surface-800">{row.label}</span>
+        <span className="block text-[13px] text-surface-400">{row.note}</span>
+      </span>
+      <span
+        className={classNames(
+          'flex-none rounded-md px-2 py-0.5 text-sm font-semibold tabular-nums',
+          row.count > 0 ? 'bg-rose-50 text-rose-600' : 'bg-surface-100 text-surface-500'
+        )}
+      >
+        {row.count}
+      </span>
+    </button>
+  );
+}
 
 export default function Dashboard() {
-  const { quotations, salesOrders, role, selectedOfficeId, setSelectedOfficeId } = useApp();
+  const { quotations, salesOrders, role, visibleOffices } = useApp();
   const inScope = useOfficeScope();
   const navigate = useNavigate();
+  const onOpen = (to: string) => navigate(to);
 
-  const [dateRange, setDateRange] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [stageFilter, setStageFilter] = useState('');
+  // Branch options mirror the Sales Office Master; office-scoped roles only see
+  // their own office. (The header office selector was removed — each section
+  // filters independently.)
+  const branchOptions = useMemo(
+    () =>
+      (role === 'super_admin' ? OFFICES : visibleOffices).map((o) => ({
+        value: o.id,
+        label: o.name,
+      })),
+    [role, visibleOffices]
+  );
 
-  const filtered = useMemo(() => {
-    return quotations.filter((q) => {
-      if (!inScope(q.officeId)) return false;
-      if (statusFilter && q.status !== statusFilter) return false;
-      if (stageFilter && q.stage !== stageFilter) return false;
-      if (dateRange !== 'all') {
-        const days = daysBetween(q.quoteDate);
-        if (days > Number(dateRange)) return false;
-      }
-      return true;
-    });
-  }, [quotations, inScope, statusFilter, stageFilter, dateRange]);
-
-  const scopedSO = useMemo(
+  // Role-scoped base lists — every section filters on top of these.
+  const baseQuotations = useMemo(
+    () => quotations.filter((q) => inScope(q.officeId)),
+    [quotations, inScope]
+  );
+  const baseSalesOrders = useMemo(
     () => salesOrders.filter((s) => inScope(s.officeId)),
     [salesOrders, inScope]
   );
 
-  // Quotation KPIs derive from the scoped/filtered quotations; sales-order KPIs
-  // from the scoped sales orders — all via the shared metric definitions.
-  const m = useMemo(
-    () => ({ ...quotationMetrics(filtered), ...salesOrderMetrics(scopedSO) }),
-    [filtered, scopedSO]
-  );
+  // One independent filter per section.
+  const pipelineF = useSectionFilter();
+  const conversionF = useSectionFilter();
+  const actionF = useSectionFilter();
+  const overdueF = useSectionFilter();
 
-  const funnel = useMemo(() => {
-    const counts = stageCounts(filtered);
-    const max = Math.max(1, ...counts.map((c) => c.count));
-    return counts.map((c) => ({ ...c, pct: (c.count / max) * 100 }));
-  }, [filtered]);
+  const qBy = (q: (typeof baseQuotations)[number]) => ({ officeId: q.officeId, date: q.createdDate });
+  const soBy = (s: (typeof baseSalesOrders)[number]) => ({ officeId: s.officeId, date: s.createdDate });
 
-  const officePerf = useMemo(() => {
-    const offices = role === 'super_admin' ? OFFICES : OFFICES.filter((o) => inScope(o.id));
-    return offices
-      .map((o) => {
-        const qs = filtered.filter((q) => q.officeId === o.id);
-        const om = quotationMetrics(qs);
-        return { office: o, count: om.total, value: om.value, received: om.received };
-      })
-      .filter((r) => r.count > 0)
-      .sort((a, b) => b.value - a.value);
-  }, [filtered, role, inScope]);
+  const pipeline = useMemo(() => {
+    const q = scopeRecords(baseQuotations, pipelineF.filter, qBy);
+    const so = scopeRecords(baseSalesOrders, pipelineF.filter, soBy);
+    return pipelineFunnel(q, so);
+  }, [baseQuotations, baseSalesOrders, pipelineF.filter]);
 
-  const recentlyUpdated = useMemo(
-    () => [...filtered].sort((a, b) => (a.lastUpdated < b.lastUpdated ? 1 : -1)).slice(0, 6),
-    [filtered]
-  );
+  const conversion = useMemo(() => {
+    const q = scopeRecords(baseQuotations, conversionF.filter, qBy);
+    const so = scopeRecords(baseSalesOrders, conversionF.filter, soBy);
+    return conversionFunnel(q, so);
+  }, [baseQuotations, baseSalesOrders, conversionF.filter]);
 
-  const upcomingReviews = useMemo(
-    () =>
-      filtered
-        .filter((q) => q.status === 'open' && daysBetween(q.reviewDate) <= 0)
-        .sort((a, b) => (a.reviewDate < b.reviewDate ? -1 : 1))
-        .slice(0, 5),
-    [filtered]
-  );
+  const actions = useMemo(() => {
+    const q = scopeRecords(baseQuotations, actionF.filter, qBy);
+    const so = scopeRecords(baseSalesOrders, actionF.filter, soBy);
+    return actionRequired(q, so);
+  }, [baseQuotations, baseSalesOrders, actionF.filter]);
 
-  const overdueReviews = useMemo(
-    () =>
-      filtered
-        .filter((q) => q.status === 'open' && isOverdue(q.reviewDate))
-        .sort((a, b) => daysBetween(b.reviewDate) - daysBetween(a.reviewDate))
-        .slice(0, 5),
-    [filtered]
-  );
-
-  const actionRequired = useMemo(() => {
-    const list: { id: string; label: string; sub: string; tone: string; to: string }[] = [];
-    filtered
-      .filter((q) => q.workState === 'pending_send' && daysBetween(q.createdDate) > 1)
-      .slice(0, 3)
-      .forEach((q) =>
-        list.push({
-          id: `p-${q.id}`,
-          label: `${q.number} pending to be sent`,
-          sub: `${q.customerName} • ${daysBetween(q.createdDate)} days old`,
-          tone: 'amber',
-          to: '/quotations/pending',
-        })
-      );
-    scopedSO
-      .filter((s) => s.verificationStatus === 'mismatch')
-      .slice(0, 3)
-      .forEach((s) =>
-        list.push({
-          id: `m-${s.id}`,
-          label: `${s.number} — PO vs Quote mismatch`,
-          sub: `${s.customerName} • flagged for correction`,
-          tone: 'rose',
-          to: '/sales-orders/verification',
-        })
-      );
-    filtered
-      .filter((q) => q.workState === 'needs_revision')
-      .slice(0, 2)
-      .forEach((q) =>
-        list.push({
-          id: `r-${q.id}`,
-          label: `${q.number} needs revision`,
-          sub: `${q.customerName} • ${q.revisionReason ?? 'Revision requested'}`,
-          tone: 'blue',
-          to: '/quotations/revisions',
-        })
-      );
-    return list.slice(0, 6);
-  }, [filtered, scopedSO]);
-
-  const recentSO = useMemo(
-    () => [...scopedSO].sort((a, b) => (a.createdDate < b.createdDate ? 1 : -1)).slice(0, 5),
-    [scopedSO]
-  );
-
-  const goto = (path: string) => navigate(path);
+  const overdue = useMemo(() => {
+    const q = scopeRecords(baseQuotations, overdueF.filter, qBy);
+    const so = scopeRecords(baseSalesOrders, overdueF.filter, soBy);
+    return overdueTasks(q, so);
+  }, [baseQuotations, baseSalesOrders, overdueF.filter]);
 
   return (
     <>
       <PageHeader
         title="Operations Dashboard"
-        description="Live view of the quotation-to-purchase-order pipeline across your sales offices."
+        description="Pipeline, conversion and the tasks that need attention across your sales offices."
       />
 
-      {/* Filters */}
-      <div className="card mb-5 flex flex-wrap items-center gap-2 p-3">
-        <span className="px-1 text-xs font-semibold uppercase tracking-wide text-surface-400">
-          Filters
-        </span>
-        {role === 'super_admin' && (
-          <FilterSelect
-            value={selectedOfficeId === 'all' ? '' : selectedOfficeId}
-            onChange={(v) => setSelectedOfficeId(v || 'all')}
-            placeholder="All Sales Offices"
-            options={OFFICES.map((o) => ({ value: o.id, label: o.name }))}
-          />
-        )}
-        <FilterSelect
-          value={dateRange === 'all' ? '' : dateRange}
-          onChange={(v) => setDateRange(v || 'all')}
-          placeholder="All time"
-          options={DATE_RANGES.filter((d) => d.value !== 'all')}
-        />
-        <FilterSelect
-          value={statusFilter}
-          onChange={setStatusFilter}
-          placeholder="All statuses"
-          options={Object.entries(QUOTATION_STATUS).map(([k, v]) => ({ value: k, label: v.label }))}
-        />
-        <FilterSelect
-          value={stageFilter}
-          onChange={setStageFilter}
-          placeholder="All stages"
-          options={Object.entries(QUOTATION_STAGE).map(([k, v]) => ({ value: k, label: v.label }))}
-        />
-        {(statusFilter || stageFilter || dateRange !== 'all') && (
-          <button
-            onClick={() => {
-              setStatusFilter('');
-              setStageFilter('');
-              setDateRange('all');
-            }}
-            className="text-xs font-semibold text-surface-500 hover:text-brand-600 hover:underline"
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        {/* LEFT COLUMN — Pipeline + Conversion funnels */}
+        <div className="flex flex-col gap-5 lg:col-span-2">
+          <DashSection
+            title="Pipeline Funnel"
+            icon={<Filter className="h-4 w-4 text-brand-500" />}
+            filters={<SectionFilters state={pipelineF} branchOptions={branchOptions} />}
           >
-            Clear filters
-          </button>
-        )}
-        <span className="ml-auto px-1 text-sm text-surface-500">
-          Pipeline value:{' '}
-          <span className="font-semibold text-surface-800">{formatINR(m.value, { compact: true })}</span>
-        </span>
-      </div>
+            <div className="space-y-2">
+              {pipeline.map((row, i) => (
+                <FunnelBar
+                  key={row.key}
+                  row={row}
+                  width={100 - i * 9}
+                  color={PIPELINE_COLORS[i]}
+                  onOpen={onOpen}
+                />
+              ))}
+            </div>
+          </DashSection>
 
-      {/* KPI cards */}
-      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <KpiCard label="Total Quotations" value={m.total} icon={<FileText className="h-4 w-4" />} accent="brand" onClick={() => goto('/quotations')} />
-        <KpiCard label="Open Quotations" value={m.open} icon={<FolderOpen className="h-4 w-4" />} accent="blue" sub="Status: Open" onClick={() => goto('/quotations?status=open')} />
-        <KpiCard label="Close Quotations" value={m.closed} icon={<CheckCircle2 className="h-4 w-4" />} accent="slate" sub="Status: Close" onClick={() => goto('/quotations?status=closed')} />
-        <KpiCard label="Received Quotations" value={m.received} icon={<Inbox className="h-4 w-4" />} accent="emerald" sub="Status: Receive" onClick={() => goto('/quotations?status=received')} />
-        <KpiCard label="SO Sent" value={m.soSent} icon={<Send className="h-4 w-4" />} accent="violet" sub="State: SO Sent" onClick={() => goto('/sales-orders?status=so_sent')} />
-        <KpiCard label="Quotes Pending to be Sent" value={m.pendingSend} icon={<Clock className="h-4 w-4" />} accent="amber" onClick={() => goto('/quotations/pending')} />
-        <KpiCard label="Quotes Needing Revision" value={m.needsRevision} icon={<RefreshCw className="h-4 w-4" />} accent="blue" onClick={() => goto('/quotations/revisions')} />
-        <KpiCard label="PO vs Quote Mismatches" value={m.mismatches} icon={<AlertTriangle className="h-4 w-4" />} accent="rose" onClick={() => goto('/sales-orders/verification')} />
-      </div>
-
-      {/* Funnel + Office performance */}
-      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <SectionCard title="Quotation Stage Funnel" description="Distribution of quotations by current stage">
-          <div className="space-y-4">
-            {funnel.map((f) => (
-              <button
-                key={f.stage}
-                onClick={() => {
-                  setStageFilter(f.stage);
-                }}
-                className="block w-full text-left"
-              >
-                <div className="mb-1 flex items-center justify-between text-sm">
-                  <StatusBadge tone={QUOTATION_STAGE[f.stage].tone} label={QUOTATION_STAGE[f.stage].label} />
-                  <span className="font-semibold text-surface-800">{f.count}</span>
-                </div>
-                <div className="h-2.5 w-full overflow-hidden rounded-full bg-surface-100">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-brand-400 to-brand-600 transition-all"
-                    style={{ width: `${f.pct}%` }}
-                  />
-                </div>
-              </button>
-            ))}
-          </div>
-        </SectionCard>
-
-        <SectionCard
-          title="Sales-Office-wise Performance"
-          description="Quotation count and value by office"
-        >
-          {officePerf.length === 0 ? (
-            <p className="py-6 text-center text-sm text-surface-400">No data for the current filters.</p>
-          ) : (
-            <div className="space-y-3">
-              {officePerf.map((r) => (
-                <div key={r.office.id} className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-brand-50 text-xs font-bold text-brand-600">
-                    {r.office.code.slice(0, 3)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-surface-800">{r.office.name}</p>
-                    <p className="text-xs text-surface-400">
-                      {r.count} quotations • {r.received} received quotations
-                    </p>
-                  </div>
-                  <span className="text-sm font-semibold text-surface-800">
-                    {formatINR(r.value, { compact: true })}
-                  </span>
+          <DashSection
+            title="Conversion Funnel"
+            icon={<ArrowRightLeft className="h-4 w-4 text-brand-500" />}
+            filters={<SectionFilters state={conversionF} branchOptions={branchOptions} />}
+          >
+            <div className="space-y-2">
+              {conversion.map((row: ConversionRow, i) => (
+                <div key={row.key}>
+                  <FunnelBar row={row} width={100 - i * 13} color={CONVERSION_COLORS[i]} onOpen={onOpen} />
+                  {row.breakdown && (
+                    <div
+                      className="mt-1.5 flex flex-wrap gap-2"
+                      style={{ width: `${100 - i * 13}%` }}
+                    >
+                      {row.breakdown.map((b) =>
+                        b.to ? (
+                          <button
+                            key={b.label}
+                            type="button"
+                            onClick={() => onOpen(b.to!)}
+                            className="chip transition hover:border-brand-300 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
+                          >
+                            {b.label}: <span className="font-semibold text-surface-800">{b.count}</span>
+                          </button>
+                        ) : (
+                          <span key={b.label} className="chip">
+                            {b.label}: <span className="font-semibold text-surface-800">{b.count}</span>
+                          </span>
+                        )
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
-          )}
-        </SectionCard>
+          </DashSection>
+        </div>
+
+        {/* RIGHT COLUMN — Action Required */}
+        <DashSection
+          title="Action Required"
+          icon={<ListChecks className="h-4 w-4 text-amber-500" />}
+          filters={<SectionFilters state={actionF} branchOptions={branchOptions} />}
+          className="lg:col-span-1"
+        >
+          <div className="space-y-2.5">
+            {actions.map((row) => (
+              <ActionCard key={row.key} row={row} onOpen={onOpen} />
+            ))}
+          </div>
+        </DashSection>
       </div>
 
-      {/* Reviews + Action required */}
-      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <SectionCard
-          title={
-            <span className="flex items-center gap-2">
-              <CalendarClock className="h-4 w-4 text-blue-500" /> Upcoming Review Dates
+      {/* LOWER — Overdue Tasks (full width) */}
+      <div className="mt-5">
+        <DashSection
+          title="Overdue Tasks"
+          icon={<CalendarClock className="h-4 w-4 text-rose-500" />}
+          filters={<SectionFilters state={overdueF} branchOptions={branchOptions} />}
+        >
+          <div className="mb-4 flex flex-wrap items-center gap-2 text-[13px]">
+            <span className="chip">
+              Internal Ops: <span className="font-semibold text-surface-800">{overdue.internalTotal}</span>
             </span>
-          }
-        >
-          <ReviewList items={upcomingReviews} emptyText="No upcoming reviews." onClick={() => goto('/quotations')} />
-        </SectionCard>
-        <SectionCard
-          title={
-            <span className="flex items-center gap-2">
-              <CalendarX2 className="h-4 w-4 text-rose-500" /> Overdue Reviews
+            <span className="chip">
+              Sales Team: <span className="font-semibold text-surface-800">{overdue.salesTotal}</span>
             </span>
-          }
-        >
-          <ReviewList items={overdueReviews} overdue emptyText="No overdue reviews. 🎉" onClick={() => goto('/quotations')} />
-        </SectionCard>
-        <SectionCard
-          title={
-            <span className="flex items-center gap-2">
-              <ListChecks className="h-4 w-4 text-amber-500" /> Action Required
-            </span>
-          }
-        >
-          {actionRequired.length === 0 ? (
-            <p className="py-6 text-center text-sm text-surface-400">Nothing needs attention.</p>
-          ) : (
-            <ul className="space-y-2">
-              {actionRequired.map((a) => (
-                <li key={a.id}>
-                  <button
-                    onClick={() => goto(a.to)}
-                    className="flex w-full items-start gap-2.5 rounded-lg border border-surface-100 px-3 py-2 text-left hover:border-surface-200 hover:bg-surface-50"
-                  >
-                    <span
-                      className={classNames(
-                        'mt-1 h-2 w-2 flex-none rounded-full',
-                        a.tone === 'amber' ? 'bg-amber-500' : a.tone === 'rose' ? 'bg-rose-500' : 'bg-blue-500'
-                      )}
-                    />
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium text-surface-800">{a.label}</span>
-                      <span className="block truncate text-xs text-surface-400">{a.sub}</span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </SectionCard>
-      </div>
-
-      {/* Recently updated quotations + Recent SO */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <SectionCard
-          title="Recently Updated Quotations"
-          action={
-            <button onClick={() => goto('/quotations')} className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:underline">
-              View all <ArrowRight className="h-3.5 w-3.5" />
-            </button>
-          }
-          bodyClassName="divide-y divide-surface-100"
-        >
-          {recentlyUpdated.map((q) => (
-            <button
-              key={q.id}
-              onClick={() => goto(`/quotations?q=${encodeURIComponent(q.number)}`)}
-              className="flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-surface-50"
+            <span
+              className={classNames(
+                'inline-flex items-center gap-1.5 rounded-md px-2 py-1 font-semibold',
+                overdue.total > 0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'
+              )}
             >
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-surface-800">
-                  {q.number} · {q.customerName}
-                </p>
-                <p className="text-xs text-surface-400">Updated {formatDate(q.lastUpdated)} • {q.owner}</p>
-              </div>
-              <StatusBadge tone={QUOTATION_STATUS[q.status].tone} label={QUOTATION_STATUS[q.status].label} />
-              <span className="w-24 text-right text-sm font-semibold text-surface-800">
-                {formatINR(q.value, { compact: true })}
-              </span>
-            </button>
-          ))}
-        </SectionCard>
+              Total overdue: {overdue.total}
+            </span>
+          </div>
 
-        <SectionCard
-          title="Recent Sales Orders"
-          action={
-            <button onClick={() => goto('/sales-orders')} className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:underline">
-              View all <ArrowRight className="h-3.5 w-3.5" />
-            </button>
-          }
-          bodyClassName="divide-y divide-surface-100"
-        >
-          {recentSO.length === 0 ? (
-            <p className="px-5 py-6 text-center text-sm text-surface-400">No sales orders yet.</p>
+          {overdue.total === 0 ? (
+            <p className="rounded-lg border border-dashed border-surface-200 py-8 text-center text-sm text-surface-400">
+              Nothing is overdue for the selected branch and date range. 🎉
+            </p>
           ) : (
-            recentSO.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => goto('/sales-orders')}
-                className="flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-surface-50"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-surface-800">
-                    {s.number} · {s.customerName}
-                  </p>
-                  <p className="text-xs text-surface-400">
-                    PO {s.poNumber} • {formatDate(s.createdDate)}
-                  </p>
+            <div className="grid grid-cols-1 gap-x-8 gap-y-5 md:grid-cols-2">
+              <div>
+                <div className="mb-2 flex items-center justify-between border-b border-surface-100 pb-1.5">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-surface-500">
+                    Internal Ops
+                  </h4>
+                  <span className="text-xs font-semibold text-surface-600">{overdue.internalTotal}</span>
                 </div>
-                <StatusBadge tone={SO_STATUS[s.status].tone} label={SO_STATUS[s.status].label} />
-                <span className="w-24 text-right text-sm font-semibold text-surface-800">
-                  {formatINR(s.value, { compact: true })}
-                </span>
-              </button>
-            ))
+                <div className="space-y-1">
+                  {overdue.internalOps.map((row) => (
+                    <OverdueItem key={row.key} row={row} onOpen={onOpen} />
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="mb-2 flex items-center justify-between border-b border-surface-100 pb-1.5">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-surface-500">
+                    Sales Team
+                  </h4>
+                  <span className="text-xs font-semibold text-surface-600">{overdue.salesTotal}</span>
+                </div>
+                <div className="space-y-1">
+                  {overdue.salesTeam.map((row) => (
+                    <OverdueItem key={row.key} row={row} onOpen={onOpen} />
+                  ))}
+                </div>
+              </div>
+            </div>
           )}
-        </SectionCard>
+        </DashSection>
       </div>
     </>
-  );
-}
-
-function ReviewList({
-  items,
-  overdue,
-  emptyText,
-  onClick,
-}: {
-  items: { id: string; number: string; customerName: string; reviewDate: string }[];
-  overdue?: boolean;
-  emptyText: string;
-  onClick: () => void;
-}) {
-  if (items.length === 0) {
-    return <p className="py-6 text-center text-sm text-surface-400">{emptyText}</p>;
-  }
-  return (
-    <ul className="space-y-2">
-      {items.map((q) => {
-        const days = daysBetween(q.reviewDate);
-        return (
-          <li key={q.id}>
-            <button onClick={onClick} className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-surface-50">
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-medium text-surface-800">{q.number}</span>
-                <span className="block truncate text-xs text-surface-400">{q.customerName}</span>
-              </span>
-              <span
-                className={classNames(
-                  'flex-none rounded-md px-2 py-0.5 text-xs font-medium',
-                  overdue ? 'bg-rose-50 text-rose-600' : 'bg-blue-50 text-blue-600'
-                )}
-              >
-                {overdue ? `${days}d overdue` : formatDate(q.reviewDate)}
-              </span>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
   );
 }
