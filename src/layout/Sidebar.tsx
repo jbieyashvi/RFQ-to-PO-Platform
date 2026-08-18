@@ -79,7 +79,7 @@ export function Sidebar({
                 title={collapsed && isInbox && (inboxCounts.unread > 0 || inboxCounts.review > 0) ? `${inboxCounts.unread} unread emails · ${inboxCounts.review} emails need review` : undefined}
                 className={({ isActive }) =>
                   classNames(
-                    'group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
+                    'group relative flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
                     isActive
                       ? 'bg-brand-50 text-brand-700 before:absolute before:left-0 before:top-1/2 before:h-5 before:w-[3px] before:-translate-y-1/2 before:rounded-r before:bg-brand-600'
                       : 'text-surface-700 hover:bg-surface-100 hover:text-surface-900'
@@ -166,7 +166,7 @@ export function Sidebar({
                       onClick={onCloseMobile}
                       className={({ isActive }) =>
                         classNames(
-                          'block rounded-lg px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
+                          'block rounded-lg px-3 py-1.5 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
                           isActive ? 'bg-brand-50 font-medium text-brand-700' : 'text-surface-600 hover:bg-surface-100 hover:text-surface-900'
                         )
                       }
@@ -184,7 +184,7 @@ export function Sidebar({
               <button
                 onClick={() => toggleGroup(item.key)}
                 className={classNames(
-                  'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
+                  'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
                   groupActive
                     ? 'text-brand-700 hover:bg-brand-50/60'
                     : 'text-surface-700 hover:bg-surface-100 hover:text-surface-900'

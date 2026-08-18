@@ -40,6 +40,10 @@ const PIPELINE_COLORS = [
 ];
 const CONVERSION_COLORS = ['bg-brand-700', 'bg-brand-500', 'bg-violet-600', 'bg-emerald-600'];
 
+// Shared field styling — 36px control height, 13px filter text.
+const DATE_CLS =
+  'h-9 rounded-lg border border-surface-200 bg-white px-2.5 text-[13px] text-surface-700 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20';
+
 // ---------------------------------------------------------------------------
 // Per-section independent Branch + From/To date filter.
 // Each dashboard section owns its own instance so changing one never affects
@@ -65,13 +69,68 @@ type SectionFilterState = ReturnType<typeof useSectionFilter>;
 function SectionFilters({
   state,
   branchOptions,
+  variant = 'inline',
 }: {
   state: SectionFilterState;
   branchOptions: { value: string; label: string }[];
+  /** `stack` = narrow column: full-width Branch, then two dates in one row. */
+  variant?: 'inline' | 'stack';
 }) {
   const { branch, setBranch, from, setFrom, to, setTo, error, dirty, reset } = state;
-  const dateCls =
-    'h-9 rounded-lg border border-surface-200 bg-white px-2.5 text-[13px] text-surface-700 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20';
+
+  const resetBtn = (
+    <button
+      onClick={reset}
+      className="inline-flex items-center gap-1 text-xs font-semibold text-surface-500 hover:text-brand-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
+    >
+      <RotateCcw className="h-3.5 w-3.5" /> Reset
+    </button>
+  );
+
+  const fromInput = (
+    <input
+      type="date"
+      aria-label="From date"
+      value={from}
+      max={to || undefined}
+      onChange={(e) => setFrom(e.target.value)}
+      className={classNames(DATE_CLS, variant === 'stack' && 'min-w-0 flex-1', error && 'border-rose-400')}
+    />
+  );
+  const toInput = (
+    <input
+      type="date"
+      aria-label="To date"
+      value={to}
+      min={from || undefined}
+      onChange={(e) => setTo(e.target.value)}
+      className={classNames(DATE_CLS, variant === 'stack' && 'min-w-0 flex-1', error && 'border-rose-400')}
+    />
+  );
+
+  if (variant === 'stack') {
+    // Action Required lives in the narrower right column: a full-width Branch
+    // filter, then the two compact date fields on one row so nothing clips.
+    return (
+      <div className="flex w-full flex-col gap-2">
+        <FilterSelect
+          value={branch === 'all' ? '' : branch}
+          onChange={(v) => setBranch(v || 'all')}
+          placeholder="All Branches"
+          options={branchOptions}
+          className="w-full !text-[13px]"
+        />
+        <div className="flex items-center gap-2">
+          {fromInput}
+          <span className="flex-none text-xs text-surface-400">to</span>
+          {toInput}
+        </div>
+        {error && <p className="text-xs font-medium text-rose-600">{error}</p>}
+        {dirty && <div className="flex justify-end">{resetBtn}</div>}
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex flex-wrap items-center gap-2">
@@ -80,32 +139,12 @@ function SectionFilters({
           onChange={(v) => setBranch(v || 'all')}
           placeholder="All Branches"
           options={branchOptions}
+          className="!text-[13px]"
         />
-        <input
-          type="date"
-          aria-label="From date"
-          value={from}
-          max={to || undefined}
-          onChange={(e) => setFrom(e.target.value)}
-          className={classNames(dateCls, error && 'border-rose-400')}
-        />
+        {fromInput}
         <span className="text-xs text-surface-400">to</span>
-        <input
-          type="date"
-          aria-label="To date"
-          value={to}
-          min={from || undefined}
-          onChange={(e) => setTo(e.target.value)}
-          className={classNames(dateCls, error && 'border-rose-400')}
-        />
-        {dirty && (
-          <button
-            onClick={reset}
-            className="inline-flex items-center gap-1 text-xs font-semibold text-surface-500 hover:text-brand-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
-          >
-            <RotateCcw className="h-3.5 w-3.5" /> Reset
-          </button>
-        )}
+        {toInput}
+        {dirty && resetBtn}
       </div>
       {error && <p className="text-xs font-medium text-rose-600">{error}</p>}
     </div>
@@ -118,23 +157,31 @@ function DashSection({
   filters,
   children,
   className,
+  headerStack,
 }: {
   title: string;
   icon: React.ReactNode;
   filters: React.ReactNode;
   children: React.ReactNode;
   className?: string;
+  /** Keep the filters below the title even on desktop (used by narrow columns). */
+  headerStack?: boolean;
 }) {
   return (
     <section className={classNames('card overflow-hidden', className)}>
-      <div className="flex flex-col gap-3 border-b border-surface-100 px-4 py-3.5 sm:px-5 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex items-center gap-2 pt-1.5">
+      <div
+        className={classNames(
+          'flex flex-col gap-2.5 border-b border-surface-100 px-4 py-3 sm:px-5',
+          !headerStack && 'lg:flex-row lg:items-start lg:justify-between'
+        )}
+      >
+        <div className="flex items-center gap-2 pt-1">
           {icon}
-          <h3 className="text-sm font-semibold text-surface-800">{title}</h3>
+          <h3 className="text-sm font-semibold leading-5 text-surface-800">{title}</h3>
         </div>
         {filters}
       </div>
-      <div className="p-4 sm:p-5">{children}</div>
+      <div className="p-3.5 sm:p-4">{children}</div>
     </section>
   );
 }
@@ -152,12 +199,12 @@ function FunnelBar({
 }) {
   const inner = (
     <>
-      <span className="truncate text-sm font-medium">{row.label}</span>
-      <span className="ml-3 flex-none text-xl font-bold tabular-nums">{row.count}</span>
+      <span className="truncate text-[13px] font-medium leading-[18px]">{row.label}</span>
+      <span className="ml-3 flex-none text-lg font-bold leading-6 tabular-nums">{row.count}</span>
     </>
   );
   const base = classNames(
-    'flex items-center justify-between rounded-lg px-4 py-3 text-white shadow-sm',
+    'flex items-center justify-between rounded-lg px-4 py-2.5 text-white shadow-sm',
     color
   );
   if (row.to) {
@@ -197,22 +244,20 @@ function ActionCard({ row, onOpen }: { row: ActionRow; onOpen: (to: string) => v
       onClick={() => onOpen(row.to)}
       aria-label={`${row.label}: ${row.count}. ${row.description}`}
       className={classNames(
-        'flex w-full items-center gap-4 rounded-lg border border-surface-200 border-l-4 bg-white px-4 py-3 text-left shadow-sm transition hover:border-surface-300 hover:bg-surface-50 hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
+        'flex w-full items-center gap-3 rounded-lg border border-surface-200 border-l-4 bg-white px-3.5 py-3 text-left shadow-sm transition hover:border-surface-300 hover:bg-surface-50 hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
         edge
       )}
     >
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-semibold text-surface-800">{row.label}</span>
-        <span className="mt-0.5 block text-[13px] leading-snug text-surface-500">
-          {row.description}
-        </span>
+        <span className="block text-[13px] font-semibold leading-[18px] text-surface-800">{row.label}</span>
+        <span className="mt-0.5 block text-xs leading-4 text-surface-500">{row.description}</span>
         {row.sub && (
-          <span className="mt-1 inline-block text-[13px] font-medium text-surface-600">
+          <span className="mt-1 inline-block text-xs font-medium text-surface-600">
             {row.sub.label}: <span className="text-surface-800">{row.sub.count}</span>
           </span>
         )}
       </span>
-      <span className="flex-none text-2xl font-bold tabular-nums text-surface-900">{row.count}</span>
+      <span className="flex-none text-lg font-bold leading-6 tabular-nums text-surface-900">{row.count}</span>
     </button>
   );
 }
@@ -223,11 +268,11 @@ function OverdueItem({ row, onOpen }: { row: OverdueRow; onOpen: (to: string) =>
       type="button"
       onClick={() => onOpen(row.to)}
       aria-label={`${row.label}: ${row.count}. ${row.note}`}
-      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-surface-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
+      className="flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-left transition hover:bg-surface-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
     >
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium text-surface-800">{row.label}</span>
-        <span className="block text-[13px] text-surface-400">{row.note}</span>
+        <span className="block text-[13px] font-medium leading-[18px] text-surface-800">{row.label}</span>
+        <span className="block text-xs text-surface-400">{row.note}</span>
       </span>
       <span
         className={classNames(
@@ -309,15 +354,16 @@ export default function Dashboard() {
         description="Pipeline, conversion and the tasks that need attention across your sales offices."
       />
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        {/* LEFT COLUMN — Pipeline + Conversion funnels */}
-        <div className="flex flex-col gap-5 lg:col-span-2">
+      {/* 60/40 desktop split — Action Required gets the wider right column. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+        {/* LEFT COLUMN (60%) — Pipeline + Conversion funnels */}
+        <div className="flex flex-col gap-4 lg:col-span-3">
           <DashSection
             title="Pipeline Funnel"
             icon={<Filter className="h-4 w-4 text-brand-500" />}
             filters={<SectionFilters state={pipelineF} branchOptions={branchOptions} />}
           >
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {pipeline.map((row, i) => (
                 <FunnelBar
                   key={row.key}
@@ -335,7 +381,7 @@ export default function Dashboard() {
             icon={<ArrowRightLeft className="h-4 w-4 text-brand-500" />}
             filters={<SectionFilters state={conversionF} branchOptions={branchOptions} />}
           >
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {conversion.map((row: ConversionRow, i) => (
                 <div key={row.key}>
                   <FunnelBar row={row} width={100 - i * 13} color={CONVERSION_COLORS[i]} onOpen={onOpen} />
@@ -368,14 +414,15 @@ export default function Dashboard() {
           </DashSection>
         </div>
 
-        {/* RIGHT COLUMN — Action Required */}
+        {/* RIGHT COLUMN (40%) — Action Required */}
         <DashSection
           title="Action Required"
           icon={<ListChecks className="h-4 w-4 text-amber-500" />}
-          filters={<SectionFilters state={actionF} branchOptions={branchOptions} />}
-          className="lg:col-span-1"
+          filters={<SectionFilters state={actionF} branchOptions={branchOptions} variant="stack" />}
+          headerStack
+          className="lg:col-span-2"
         >
-          <div className="space-y-2.5">
+          <div className="space-y-2">
             {actions.map((row) => (
               <ActionCard key={row.key} row={row} onOpen={onOpen} />
             ))}
@@ -384,13 +431,13 @@ export default function Dashboard() {
       </div>
 
       {/* LOWER — Overdue Tasks (full width) */}
-      <div className="mt-5">
+      <div className="mt-4">
         <DashSection
           title="Overdue Tasks"
           icon={<CalendarClock className="h-4 w-4 text-rose-500" />}
           filters={<SectionFilters state={overdueF} branchOptions={branchOptions} />}
         >
-          <div className="mb-4 flex flex-wrap items-center gap-2 text-[13px]">
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-[13px]">
             <span className="chip">
               Internal Ops: <span className="font-semibold text-surface-800">{overdue.internalTotal}</span>
             </span>
@@ -412,7 +459,7 @@ export default function Dashboard() {
               Nothing is overdue for the selected branch and date range. 🎉
             </p>
           ) : (
-            <div className="grid grid-cols-1 gap-x-8 gap-y-5 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
               <div>
                 <div className="mb-2 flex items-center justify-between border-b border-surface-100 pb-1.5">
                   <h4 className="text-xs font-semibold uppercase tracking-wide text-surface-500">
