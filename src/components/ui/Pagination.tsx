@@ -29,7 +29,7 @@ export function Pagination({
 
   return (
     <div className="flex flex-col items-center justify-between gap-3 border-t border-surface-100 px-4 py-3 sm:flex-row">
-      <div className="flex items-center gap-3 text-sm text-surface-500">
+      <div className="flex items-center gap-3 text-[12px] text-surface-500">
         <span>
           Showing <span className="font-medium text-surface-700">{start}</span>–
           <span className="font-medium text-surface-700">{end}</span> of{' '}
@@ -67,7 +67,7 @@ export function Pagination({
               key={p}
               onClick={() => onPageChange(p)}
               className={classNames(
-                'flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-sm font-medium',
+                'flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-[12px] font-medium',
                 p === page ? 'bg-brand-600 text-white' : 'text-surface-600 hover:bg-surface-100'
               )}
             >

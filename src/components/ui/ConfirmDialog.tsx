@@ -53,7 +53,7 @@ export function ConfirmDialog({
         </div>
         <div>
           <h3 className="text-base font-semibold text-surface-800">{title}</h3>
-          <p className="mt-1 text-sm text-surface-500">{message}</p>
+          <p className="mt-1 text-[12px] leading-[18px] text-surface-500">{message}</p>
         </div>
       </div>
     </Modal>

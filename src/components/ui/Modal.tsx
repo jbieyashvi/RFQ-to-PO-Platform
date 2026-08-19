@@ -53,10 +53,10 @@ export function Modal({
         )}
       >
         {(title || subtitle) && (
-          <div className="flex items-start justify-between gap-4 border-b border-surface-100 px-6 py-4">
+          <div className="flex items-start justify-between gap-4 border-b border-surface-100 px-5 py-3.5">
             <div>
               {title && <h2 className="text-base font-semibold text-surface-800">{title}</h2>}
-              {subtitle && <p className="mt-0.5 text-sm text-surface-500">{subtitle}</p>}
+              {subtitle && <p className="mt-0.5 text-[12px] text-surface-500">{subtitle}</p>}
             </div>
             <button
               onClick={onClose}
@@ -66,9 +66,9 @@ export function Modal({
             </button>
           </div>
         )}
-        <div className="px-6 py-5">{children}</div>
+        <div className="px-5 py-4">{children}</div>
         {footer && (
-          <div className="flex items-center justify-end gap-2 border-t border-surface-100 px-6 py-4">
+          <div className="flex items-center justify-end gap-2 border-t border-surface-100 px-5 py-3.5">
             {footer}
           </div>
         )}

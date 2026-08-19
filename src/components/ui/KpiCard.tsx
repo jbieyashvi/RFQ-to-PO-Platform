@@ -43,7 +43,7 @@ export function KpiCard({
       )}
     >
       <div className="flex items-center justify-between">
-        <span className="text-[13px] font-medium text-surface-500">{label}</span>
+        <span className="text-[12px] font-medium text-surface-500">{label}</span>
         {icon && (
           <span className={classNames('flex h-8 w-8 items-center justify-center rounded-lg', accentBg[accent])}>
             {icon}
@@ -51,13 +51,13 @@ export function KpiCard({
         )}
       </div>
       <div className="mt-2 flex items-end justify-between">
-        <span className="text-2xl font-bold tracking-tight text-surface-800">{value}</span>
+        <span className="text-[20px] font-bold leading-7 tracking-tight text-surface-800">{value}</span>
         {clickable && (
           <ArrowUpRight className="h-4 w-4 text-surface-300 transition group-hover:text-brand-500" />
         )}
       </div>
       <div className="mt-1 flex items-center gap-2">
-        {sub && <span className="text-xs text-surface-400">{sub}</span>}
+        {sub && <span className="text-[11px] text-surface-400">{sub}</span>}
         {trend && (
           <span
             className={classNames(

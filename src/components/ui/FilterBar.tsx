@@ -28,11 +28,11 @@ export function FilterBar({
       </div>
       {hasChips && (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-medium text-surface-400">Active filters:</span>
+          <span className="text-[11px] font-medium text-surface-400">Active filters:</span>
           {chips!.map((chip) => (
             <span
               key={chip.key}
-              className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 py-1 pl-2.5 pr-1.5 text-xs font-medium text-brand-700"
+              className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 py-0.5 pl-2.5 pr-1.5 text-[11px] font-medium text-brand-700"
             >
               {chip.label}
               <button
@@ -47,7 +47,7 @@ export function FilterBar({
             <button
               onClick={onClearAll}
               className={classNames(
-                'text-xs font-semibold text-surface-500 underline-offset-2 hover:text-brand-600 hover:underline'
+                'text-[11px] font-semibold text-surface-500 underline-offset-2 hover:text-brand-600 hover:underline'
               )}
             >
               Clear all
@@ -77,7 +77,7 @@ export function FilterSelect({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       className={classNames(
-        'h-9 rounded-lg border bg-white px-3 pr-8 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-no-repeat',
+        'h-8 rounded-lg border bg-white px-2.5 pr-8 text-[12px] shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-no-repeat',
         value ? 'border-brand-300 text-surface-800 font-medium' : 'border-surface-200 text-surface-500',
         className
       )}

@@ -138,7 +138,7 @@ export function DataTable<T>({
                   <th
                     key={col.key}
                     className={classNames(
-                      'whitespace-nowrap px-3 py-2.5 text-[11.5px] font-semibold uppercase tracking-wide text-surface-500',
+                      'whitespace-nowrap px-2.5 py-2 text-[11px] font-semibold uppercase tracking-[0.02em] text-surface-500',
                       alignClass(col.align),
                       stickyCell(col, 'head'),
                       col.headerClassName
@@ -177,7 +177,7 @@ export function DataTable<T>({
               Array.from({ length: 6 }).map((_, i) => (
                 <tr key={i}>
                   {columns.map((col) => (
-                    <td key={col.key} className={classNames('px-3 py-3.5', stickyCell(col, 'body'))}>
+                    <td key={col.key} className={classNames('px-2.5 py-3', stickyCell(col, 'body'))}>
                       <div className="skeleton h-4 w-full max-w-[110px]" />
                     </td>
                   ))}
@@ -204,7 +204,7 @@ export function DataTable<T>({
                       key={col.key}
                       title={col.truncate ? col.title?.(row) : undefined}
                       className={classNames(
-                        'px-3 py-2.5 align-middle text-[12.5px] text-surface-700',
+                        'px-2.5 py-2 align-middle text-[12px] text-surface-700',
                         col.truncate ? 'overflow-hidden' : 'whitespace-nowrap',
                         alignClass(col.align),
                         stickyCell(col, 'body'),

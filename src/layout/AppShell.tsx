@@ -22,7 +22,7 @@ export function AppShell() {
           onToggleSidebar={() => setCollapsed((v) => !v)}
           onToggleMobile={() => setMobileOpen(true)}
         />
-        <main className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6">
+        <main className="mx-auto w-full max-w-[1440px] px-4 py-5 sm:px-6">
           <Outlet />
         </main>
       </div>

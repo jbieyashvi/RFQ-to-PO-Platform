@@ -47,7 +47,7 @@ export function Sidebar({
   const content = (
     <div className="flex h-full flex-col border-r border-surface-200 bg-white text-surface-700">
       {/* brand */}
-      <div className="flex h-16 flex-none items-center gap-2.5 border-b border-surface-100 px-4">
+      <div className="flex h-14 flex-none items-center gap-2.5 border-b border-surface-100 px-4">
         <div className="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-brand-600 text-white shadow-sm">
           <Boxes className="h-5 w-5" />
         </div>
@@ -66,7 +66,7 @@ export function Sidebar({
       </div>
 
       {/* nav */}
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4 no-scrollbar">
+      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-3 no-scrollbar">
         {items.map((item) => {
           const Icon = item.icon;
           if (!item.children) {
@@ -166,7 +166,7 @@ export function Sidebar({
                       onClick={onCloseMobile}
                       className={({ isActive }) =>
                         classNames(
-                          'block rounded-lg px-3 py-1.5 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
+                          'block rounded-lg px-3 py-1.5 text-[12px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
                           isActive ? 'bg-brand-50 font-medium text-brand-700' : 'text-surface-600 hover:bg-surface-100 hover:text-surface-900'
                         )
                       }
@@ -211,7 +211,7 @@ export function Sidebar({
                       title={c.label}
                       className={({ isActive }) =>
                         classNames(
-                          'flex items-start gap-2.5 rounded-lg px-3 py-1.5 text-[13px] leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
+                          'flex items-start gap-2.5 rounded-lg px-3 py-1.5 text-[12px] leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
                           isActive
                             ? 'relative bg-brand-50 font-medium text-brand-700 before:absolute before:left-0 before:top-1/2 before:h-4 before:w-[3px] before:-translate-y-1/2 before:rounded-r before:bg-brand-600'
                             : 'text-surface-600 hover:bg-surface-100 hover:text-surface-900'

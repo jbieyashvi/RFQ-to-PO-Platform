@@ -53,10 +53,10 @@ export function Drawer({
           widthClass[width]
         )}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-surface-100 px-6 py-4">
+        <div className="flex items-start justify-between gap-4 border-b border-surface-100 px-5 py-3.5">
           <div className="min-w-0">
             {title && <h2 className="truncate text-base font-semibold text-surface-800">{title}</h2>}
-            {subtitle && <div className="mt-0.5 text-sm text-surface-500">{subtitle}</div>}
+            {subtitle && <div className="mt-0.5 text-[12px] text-surface-500">{subtitle}</div>}
           </div>
           <div className="flex items-center gap-2">
             {headerExtra}
@@ -68,9 +68,9 @@ export function Drawer({
             </button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
+        <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
         {footer && (
-          <div className="flex items-center justify-end gap-2 border-t border-surface-100 bg-surface-50/60 px-6 py-4">
+          <div className="flex items-center justify-end gap-2 border-t border-surface-100 bg-surface-50/60 px-5 py-3.5">
             {footer}
           </div>
         )}

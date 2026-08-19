@@ -64,14 +64,14 @@ export function Header({
   };
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 items-center gap-2 border-b border-surface-200 bg-white/90 px-3 backdrop-blur sm:px-5">
+    <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-surface-200 bg-white/90 px-3 backdrop-blur sm:px-5">
       {/* sidebar toggles */}
       <button
         onClick={onToggleMobile}
         className="rounded-lg p-2 text-surface-500 hover:bg-surface-100 lg:hidden"
         aria-label="Open navigation"
       >
-        <Menu className="h-5 w-5" />
+        <Menu className="h-[18px] w-[18px]" />
       </button>
       <button
         onClick={onToggleSidebar}
@@ -79,7 +79,7 @@ export function Header({
         title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
       >
-        {collapsed ? <PanelLeft className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+        {collapsed ? <PanelLeft className="h-[18px] w-[18px]" /> : <PanelLeftClose className="h-[18px] w-[18px]" />}
       </button>
 
       <div className="flex-1" />
@@ -97,8 +97,8 @@ export function Header({
             {initials}
           </span>
           <span className="hidden text-left sm:block">
-            <span className="block text-sm font-medium leading-tight text-surface-800">{profile.fullName}</span>
-            <span className="block text-xs leading-tight text-surface-400">{ROLE_LABELS[profile.role]}</span>
+            <span className="block text-[13px] font-semibold leading-tight text-surface-800">{profile.fullName}</span>
+            <span className="block text-[11px] leading-tight text-surface-400">{ROLE_LABELS[profile.role]}</span>
           </span>
           <ChevronDown className="hidden h-4 w-4 text-surface-400 sm:block" />
         </button>
