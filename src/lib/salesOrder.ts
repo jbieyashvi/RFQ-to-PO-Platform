@@ -16,7 +16,6 @@ import type {
   Party,
   SalesOrder,
   SoContact,
-  SoKeyValue,
   SoPartyDetails,
   SoSalesperson,
 } from '@/types';
@@ -25,7 +24,8 @@ import { COMPANY_DOMAIN } from '@/lib/brand';
 import { officeName } from '@/data/offices';
 import { computeTotals, formatDate, formatINR, amountInWords, lineTotal } from '@/lib/format';
 import { formatPaymentTerms } from '@/lib/commercialTerms';
-import { specsForLine } from '@/lib/technicalSpecs';
+import { defaultItemTechnical } from '@/lib/technicalSpecs';
+import { USERS } from '@/data/users';
 
 // Indian GST state codes (first two GSTIN digits) → state name, for display and
 // the intra vs inter-state tax split.
@@ -111,32 +111,11 @@ export interface ResolveContext {
   catalog: Item[];
 }
 
-// Map the legacy synthesised TechnicalSpecs shape into the richer ItemTechnical.
+// Stored per-item technical block wins; otherwise synthesise the shared block
+// from the Item Master (identical builder the Create SO editor prefills with).
 function technicalForLine(line: LineItem, catalog: Item[]): ItemTechnical {
   if (line.technical) return line.technical;
-  const s = specsForLine(line, catalog);
-  const specs: SoKeyValue[] = [];
-  const documents: SoKeyValue[] = [];
-  const accessories: SoKeyValue[] = [];
-  const otherDetails: SoKeyValue[] = [];
-  if (nonEmpty(s.mocConnection)) specs.push({ label: 'MOC / Connection', value: s.mocConnection });
-  if (nonEmpty(s.documentsRequired)) documents.push({ label: 'Documents Required', value: s.documentsRequired });
-  if (nonEmpty(s.accessories)) accessories.push({ label: 'Accessories', value: s.accessories });
-  if (nonEmpty(s.otherDetails)) otherDetails.push({ label: 'Other Details', value: s.otherDetails });
-  return {
-    make: s.make,
-    product: s.product,
-    modelNo: s.model,
-    decodificationNo: s.decodification,
-    operatingPressure: s.operatingPressure,
-    operatingTemperature: s.operatingTemperature,
-    lineSize: s.lineSize,
-    cToC: s.dimensions,
-    specs,
-    documents,
-    accessories,
-    otherDetails,
-  };
+  return defaultItemTechnical(line, catalog);
 }
 
 // True when any displayable technical field carries a value.
@@ -210,10 +189,14 @@ function resolveConsignee(so: SalesOrder, buyer: SoPartyDetails, party?: Party):
 function resolveSalesperson(so: SalesOrder): SoSalesperson {
   if (so.salesperson) return so.salesperson;
   const owner = so.owner || '';
+  // Prefer the real contact from the user directory (Sales Office Master); fall
+  // back to a derived email so the block is never blank.
+  const user = USERS.find((u) => u.fullName === owner);
   const slug = owner.toLowerCase().replace(/[^a-z]+/g, '.').replace(/^\.|\.$/g, '');
   return {
     name: owner,
-    email: slug ? `${slug}@${COMPANY_DOMAIN}` : undefined,
+    phone: user?.phone,
+    email: user?.email ?? (slug ? `${slug}@${COMPANY_DOMAIN}` : undefined),
     officeId: so.officeId,
     owner,
   };
