@@ -10,6 +10,7 @@ import {
   Eye,
   Save,
   FileText,
+  FileSpreadsheet,
   Paperclip,
   X,
   CalendarClock,
@@ -76,6 +77,7 @@ const COMPOSE_HEADING: Record<string, string> = {
   revision: 'Reply — Send Revised Quotation',
   'po-request': 'Reply — Request Updated PO',
   'quote-correct': 'Reply — Send Corrected Quotation',
+  'so-send': 'Reply — Send Sales Order',
   normal: 'Outgoing Email',
 };
 
@@ -117,7 +119,10 @@ export function InboxCenterPanel({
   } = useApp();
 
   const isWorkflow = mode !== 'normal';
-  const intent = email.composeIntent; // 'revision' | 'po-request' | 'quote-correct'
+  const intent = email.composeIntent; // 'revision' | 'po-request' | 'quote-correct' | 'so-send'
+  // so-send carries the generated Sales Order PDF (not a quotation) and skips
+  // the next-review-date gate — it is the terminal step of the SO workflow.
+  const isSoSend = mode === 'po-verify' && intent === 'so-send';
 
   const [draft, setDraft] = useState<OutgoingDraft>(
     email.draft ?? (isWorkflow ? blankDraft(email) : templateFor(email))
@@ -125,6 +130,7 @@ export function InboxCenterPanel({
   const [reviewDate, setReviewDate] = useState<string>(email.reviewDate ?? quotation?.reviewDate ?? '');
   const [preview, setPreview] = useState(false);
   const [attachPreview, setAttachPreview] = useState(false);
+  const [soPreview, setSoPreview] = useState(false);
 
   const composerRef = useRef<HTMLDivElement | null>(null);
 
@@ -133,6 +139,7 @@ export function InboxCenterPanel({
     setReviewDate(email.reviewDate ?? quotation?.reviewDate ?? '');
     setPreview(false);
     setAttachPreview(false);
+    setSoPreview(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [email.id]);
 
@@ -212,9 +219,25 @@ export function InboxCenterPanel({
       }),
     [draft.to, draft.subject, draft.body, reviewDate, email.attachedQuote, attachmentStale, requireAttachment]
   );
+  // so-send has its own gate: valid recipient + subject + body + the generated
+  // SO attached. No next-review-date, no quotation attachment.
+  const soSendBlockers = useMemo(() => {
+    const b: string[] = [];
+    if (!isValidEmail(draft.to)) b.push('A valid recipient email is required.');
+    if (!draft.subject.trim()) b.push('Subject is required.');
+    if (!draft.body.trim()) b.push('Email body is required.');
+    if (!email.attachedSalesOrder) b.push('Add the Sales Order to the email before sending.');
+    return b;
+  }, [draft.to, draft.subject, draft.body, email.attachedSalesOrder]);
 
   const baseBlockers =
-    mode === 'quote-send' ? quoteBlockersBase : mode === 'normal' ? normalBlockers : workflowBlockersBase;
+    mode === 'quote-send'
+      ? quoteBlockersBase
+      : mode === 'normal'
+      ? normalBlockers
+      : isSoSend
+      ? soSendBlockers
+      : workflowBlockersBase;
   const blockers = permissionOk ? baseBlockers : [...baseBlockers, permissionMessage];
   const canFinalSend = blockers.length === 0;
 
@@ -234,6 +257,13 @@ export function InboxCenterPanel({
   const removeAttachment = () => {
     updateEmail(email.id, { attachedQuote: undefined });
     addToast({ type: 'info', title: 'Attachment removed', message: 'The quotation PDF was removed from the email.' });
+  };
+
+  // Removing the SO detaches it and collapses the composer back to the "prepare
+  // from the workspace" state — re-add it from the SO Generation panel.
+  const removeSoAttachment = () => {
+    updateEmail(email.id, { attachedSalesOrder: undefined, composeIntent: undefined, draft: undefined, draftSaved: false });
+    addToast({ type: 'info', title: 'Attachment removed', message: 'The Sales Order PDF was removed from the email.' });
   };
 
   // ---- Normal-mode send (Approve & Send) ----
@@ -438,10 +468,33 @@ export function InboxCenterPanel({
     addToast({ type: 'success', title: 'Corrected quotation sent', message: `Sent to ${draft.to}. Case moved to Updated Quote Sent.` });
   };
 
+  // ---- PO verification — Path 3: send the generated Sales Order. The SO was
+  // already generated + linked to a Pending ERP Handoff by the right panel; here
+  // we email it and stamp the SO Sent Date. ERP Handoff stays Pending (no
+  // duplicate is created). ----
+  const sendSalesOrder = () => {
+    if (!canFinalSend || !salesOrder) return;
+    const so = salesOrder;
+    updateEmail(email.id, { draft, draftSaved: true, sent: true, sentAt: SENT_TS, needsReview: false });
+    updateSalesOrder(so.id, {
+      sentAt: SENT_TS,
+      status: 'so_sent',
+      activity: [
+        ...so.activity,
+        { id: `act-${so.id}-sosend-${Date.now()}`, date: SENT_TS, actor: currentUser.fullName, action: 'Sales Order emailed to customer', detail: `${email.attachedSalesOrder?.soNumber ?? so.number} → ${draft.to}` },
+      ],
+    });
+    addToast({ type: 'success', title: 'Sales Order sent successfully.', message: `${so.number} emailed to ${draft.to}. ERP Handoff remains Pending.` });
+  };
+
   const onWorkflowSend = () => {
     if (mode === 'quote-send') sendQuote();
     else if (mode === 'revision') sendRevision();
-    else if (mode === 'po-verify') (intent === 'po-request' ? sendPoRequest() : sendQuoteCorrection());
+    else if (mode === 'po-verify') {
+      if (intent === 'po-request') sendPoRequest();
+      else if (intent === 'so-send') sendSalesOrder();
+      else sendQuoteCorrection();
+    }
   };
 
   const headingKey = mode === 'po-verify' ? intent ?? 'po-request' : mode;
@@ -500,18 +553,57 @@ export function InboxCenterPanel({
 
               {isWorkflow ? (
                 <>
-                  {/* Required next review date */}
-                  <TextField
-                    label="Next Review Date"
-                    type="date"
-                    required
-                    min={TODAY_ISO}
-                    value={reviewDate}
-                    onChange={(e) => setReviewDate(e.target.value)}
-                    disabled={readOnly}
-                    error={!reviewDate ? 'Next review date is required' : undefined}
-                    className="py-1.5 text-[13px]"
-                  />
+                  {/* Required next review date — not part of the SO send step */}
+                  {!isSoSend && (
+                    <TextField
+                      label="Next Review Date"
+                      type="date"
+                      required
+                      min={TODAY_ISO}
+                      value={reviewDate}
+                      onChange={(e) => setReviewDate(e.target.value)}
+                      disabled={readOnly}
+                      error={!reviewDate ? 'Next review date is required' : undefined}
+                      className="py-1.5 text-[13px]"
+                    />
+                  )}
+
+                  {/* SO attachment chip — the generated Sales Order PDF */}
+                  {isSoSend && (
+                    <div>
+                      <p className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-surface-500">
+                        <Paperclip className="h-3.5 w-3.5" /> Attached Sales Order
+                      </p>
+                      {email.attachedSalesOrder ? (
+                        <div className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2">
+                          <FileSpreadsheet className="h-4 w-4 flex-none text-brand-600" />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[12px] font-medium text-surface-800">{email.attachedSalesOrder.soNumber}</p>
+                            <p className="truncate text-[11px] text-surface-500">
+                              {email.attachedSalesOrder.fileType}
+                              {email.attachedSalesOrder.sizeLabel ? ` · ${email.attachedSalesOrder.sizeLabel}` : ''}
+                              {' · '}{formatINR(email.attachedSalesOrder.value)}
+                            </p>
+                          </div>
+                          {salesOrder && (
+                            <button onClick={() => setSoPreview(true)} className="flex-none rounded p-1 text-surface-400 transition-colors hover:bg-white hover:text-brand-600" title="Preview Sales Order">
+                              <Eye className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          {!email.sent && (
+                            <button onClick={removeSoAttachment} className="flex-none rounded p-1 text-surface-400 transition-colors hover:bg-white hover:text-rose-600" title="Remove Sales Order">
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 rounded-lg border border-dashed border-surface-300 bg-surface-50 px-3 py-2 text-[12px] text-surface-500">
+                          <Paperclip className="h-4 w-4 flex-none" />
+                          No Sales Order attached — use “Add Sales Order to Email” in the workspace.
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Attachment chip — only for sends that carry a quotation PDF */}
                   {requireAttachment && (
@@ -658,6 +750,55 @@ export function InboxCenterPanel({
             <div className="flex items-center justify-between border-t border-surface-200 px-3 py-2">
               <span className="text-[12px] font-medium text-surface-600">Grand Total</span>
               <span className="text-[14px] font-bold text-surface-900">{formatINR(quotation.value)}</span>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Sales Order preview — read-only document exactly as attached */}
+      {salesOrder && (
+        <Modal
+          open={soPreview}
+          onClose={() => setSoPreview(false)}
+          size="lg"
+          title="Sales Order Preview"
+          subtitle={`${salesOrder.number} · ${salesOrder.customerName}`}
+          footer={<Button variant="secondary" onClick={() => setSoPreview(false)}>Close Preview</Button>}
+        >
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-x-6 gap-y-1 rounded-xl border border-surface-200 px-4 py-3 text-[12px] sm:grid-cols-2">
+              <p><span className="text-surface-400">PO Number:</span> <span className="font-medium text-surface-800">{salesOrder.poNumber}</span></p>
+              <p><span className="text-surface-400">Quotation:</span> <span className="font-medium text-surface-800">{salesOrder.quotationNumber ?? '—'}</span></p>
+              <p><span className="text-surface-400">Sales Office:</span> <span className="font-medium text-surface-800">{officeName(salesOrder.officeId)}</span></p>
+              <p><span className="text-surface-400">Owner:</span> <span className="font-medium text-surface-800">{salesOrder.owner}</span></p>
+              <p><span className="text-surface-400">Delivery:</span> <span className="font-medium text-surface-800">{salesOrder.deliveryTerms}</span></p>
+              <p><span className="text-surface-400">Payment:</span> <span className="font-medium text-surface-800">{salesOrder.paymentTerms}</span></p>
+            </div>
+            <div className="overflow-hidden rounded-xl border border-surface-200">
+              <table className="w-full border-collapse text-[12px]">
+                <thead>
+                  <tr className="border-b border-surface-200 bg-surface-50 text-[10.5px] font-semibold uppercase tracking-[0.02em] text-surface-500">
+                    <th className="px-3 py-2 text-left">Item</th>
+                    <th className="px-2 py-2 text-right">Qty</th>
+                    <th className="px-2 py-2 text-right">Unit Price</th>
+                    <th className="px-3 py-2 text-right">Line Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-surface-100">
+                  {salesOrder.items.map((it) => (
+                    <tr key={it.id}>
+                      <td className="px-3 py-2"><p className="font-medium text-surface-800">{it.description}</p><p className="text-[10.5px] text-surface-400">{it.itemCode}{it.hsnCode ? ` · HSN ${it.hsnCode}` : ''}</p></td>
+                      <td className="px-2 py-2 text-right text-surface-700">{it.quantity} {it.unit}</td>
+                      <td className="px-2 py-2 text-right text-surface-700">{formatINR(it.unitPrice)}</td>
+                      <td className="px-3 py-2 text-right font-medium text-surface-800">{formatINR(lineTotal(it.quantity, it.unitPrice, it.discountPct))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="flex items-center justify-between border-t border-surface-200 px-3 py-2">
+                <span className="text-[12px] font-medium text-surface-600">Grand Total</span>
+                <span className="text-[14px] font-bold text-surface-900">{formatINR(salesOrder.value)}</span>
+              </div>
             </div>
           </div>
         </Modal>

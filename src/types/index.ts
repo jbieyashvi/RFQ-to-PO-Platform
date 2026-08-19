@@ -486,6 +486,21 @@ export interface QuoteAttachment {
   kind?: 'quotation' | 'revised' | 'corrected'; // which workflow generated it
 }
 
+// The system-generated Sales Order PDF attached to an outgoing email in the PO
+// Verification → SO Generation workflow. Like QuoteAttachment, this is the
+// platform's own generated document — there is no generic file upload. It is
+// only ever created by "Add Sales Order to Email" once the SO has been
+// generated, and carries the SO number/value shown on the composer chip.
+export interface SalesOrderAttachment {
+  fileName: string; // e.g. "SO-2026-0501.pdf"
+  soNumber: string; // e.g. "SO/2026/0501"
+  fileType: string; // 'PDF'
+  value: number; // SO grand total at attach time
+  addedBy: string;
+  addedAt: string; // ISO datetime
+  sizeLabel?: string; // e.g. "148 KB" — friendly file size on the chip
+}
+
 export interface InboxEmail {
   id: string;
   senderName: string;
@@ -524,10 +539,14 @@ export interface InboxEmail {
   // composer. Set when a right-panel "Add … to Email" / "Request Updated PO"
   // action populates the composer; cleared once the email is sent / reset. For
   // PO verification it also distinguishes the two resolution paths.
-  composeIntent?: 'revision' | 'po-request' | 'quote-correct';
+  composeIntent?: 'revision' | 'po-request' | 'quote-correct' | 'so-send';
   // Focused quote-send workflow: the system-generated quotation PDF attached to
   // this outgoing email. Only ever set/cleared from the Quote Tools panel.
   attachedQuote?: QuoteAttachment;
+  // PO Verification → SO Generation workflow: the system-generated Sales Order
+  // PDF attached to this outgoing email. Only ever set/cleared from the SO
+  // Generation panel's "Add Sales Order to Email" / "Remove" actions.
+  attachedSalesOrder?: SalesOrderAttachment;
   extraction: ExtractionField[];
   extractionConfirmed: boolean;
   validationFailed?: boolean; // commercial validation failed (e.g. PO vs quote mismatch)
