@@ -63,14 +63,21 @@ interface FormState {
   partyId: string;
   newCustomerName: string;
   billingAddress: string;
-  shippingAddress: string;
-  sameAsBilling: boolean;
   phone: string;
   email: string;
   pincode: string;
   gstin: string;
   kindAttentionName: string;
+  kindAttentionPhone: string;
   kindAttentionEmail: string;
+  // Consignee (ship-to). Prefilled from Party Master; hidden while "same as
+  // buyer" is on. Distinct GSTIN drives an inter-state (IGST) tax split.
+  consigneeSameAsBuyer: boolean;
+  consigneeName: string;
+  consigneePhone: string;
+  consigneeEmail: string;
+  consigneeGstin: string;
+  consigneeAddress: string;
   poNumber: string;
   poDate: string;
   quotationId: string;
@@ -98,14 +105,19 @@ const initialForm = (officeId: string, ct: CommercialTerms): FormState => ({
   partyId: '',
   newCustomerName: '',
   billingAddress: '',
-  shippingAddress: '',
-  sameAsBilling: false,
   phone: '',
   email: '',
   pincode: '',
   gstin: '',
   kindAttentionName: '',
+  kindAttentionPhone: '',
   kindAttentionEmail: '',
+  consigneeSameAsBuyer: true,
+  consigneeName: '',
+  consigneePhone: '',
+  consigneeEmail: '',
+  consigneeGstin: '',
+  consigneeAddress: '',
   poNumber: '',
   poDate: '',
   quotationId: '',
@@ -177,23 +189,40 @@ export default function CreateSalesOrder() {
     return list.map((u) => u.fullName);
   }, [form.officeId]);
 
+  // Prefill Office Admin from the Sales Office Master: default to the office's
+  // admin whenever the selected office changes and the current pick isn't valid
+  // for that office. Keeps a user's explicit choice as long as it stays valid.
+  useEffect(() => {
+    setForm((f) => (officeAdmins.includes(f.officeAdmin) ? f : { ...f, officeAdmin: officeAdmins[0] ?? '' }));
+  }, [officeAdmins]);
+
   const selectedParty = parties.find((p) => p.id === form.partyId);
 
-  // When selecting an existing party, prefill from Party Master.
+  // When selecting an existing party, prefill from Party Master. The consignee
+  // (ship-to) prefills from the party's shipping address; if that differs from
+  // billing we surface the consignee block, otherwise it stays "same as buyer".
   const onSelectParty = (id: string) => {
     const p = parties.find((x) => x.id === id);
+    const billing = p?.billingAddress ?? '';
+    const shipping = p?.shippingAddress ?? '';
+    const consigneeDiffers = !!shipping && shipping.trim() !== billing.trim();
     setForm((f) => ({
       ...f,
       partyId: id,
       quotationId: '',
-      billingAddress: p?.billingAddress ?? '',
-      shippingAddress: p?.shippingAddress ?? '',
-      sameAsBilling: false,
+      billingAddress: billing,
       phone: p?.phone ?? '',
       email: p?.email ?? '',
       gstin: p?.gstin ?? '',
       kindAttentionName: p?.contactPerson ?? '',
+      kindAttentionPhone: p?.phone ?? '',
       kindAttentionEmail: p?.email ?? '',
+      consigneeSameAsBuyer: !consigneeDiffers,
+      consigneeName: p?.companyName ?? '',
+      consigneePhone: p?.phone ?? '',
+      consigneeEmail: p?.email ?? '',
+      consigneeGstin: p?.gstin ?? '',
+      consigneeAddress: shipping,
       officeId: p?.officeId ?? f.officeId,
     }));
     setDirty(true);
@@ -209,6 +238,9 @@ export default function CreateSalesOrder() {
     const party = parties.find((p) => p.id === q.partyId);
     // Linking a quotation prefills its items, customer, sales office and owner.
     // Commercial terms stay driven by T&C Master defaults (single source of truth).
+    const billing = party?.billingAddress ?? form.billingAddress;
+    const shipping = party?.shippingAddress ?? '';
+    const consigneeDiffers = !!shipping && shipping.trim() !== billing.trim();
     setForm((f) => ({
       ...f,
       quotationId: id,
@@ -216,12 +248,18 @@ export default function CreateSalesOrder() {
       officeId: q.officeId || f.officeId,
       owner: q.owner || f.owner,
       billingAddress: party?.billingAddress ?? f.billingAddress,
-      shippingAddress: party?.shippingAddress ?? f.shippingAddress,
       phone: party?.phone ?? f.phone,
       email: party?.email ?? f.email,
       gstin: party?.gstin ?? f.gstin,
       kindAttentionName: party?.contactPerson ?? f.kindAttentionName,
+      kindAttentionPhone: party?.phone ?? f.kindAttentionPhone,
       kindAttentionEmail: party?.email ?? f.kindAttentionEmail,
+      consigneeSameAsBuyer: party ? !consigneeDiffers : f.consigneeSameAsBuyer,
+      consigneeName: party?.companyName ?? f.consigneeName,
+      consigneePhone: party?.phone ?? f.consigneePhone,
+      consigneeEmail: party?.email ?? f.consigneeEmail,
+      consigneeGstin: party?.gstin ?? f.consigneeGstin,
+      consigneeAddress: shipping || f.consigneeAddress,
     }));
     setDirty(true);
   };
@@ -235,8 +273,9 @@ export default function CreateSalesOrder() {
     applyQuotation(id);
   };
 
-  // Keep shipping mirrored to billing while "same as billing" is on.
-  const effectiveShipping = form.sameAsBilling ? form.billingAddress : form.shippingAddress;
+  // Consignee (ship-to) address — mirrors the buyer's billing address while
+  // "same as buyer" is on, otherwise the separately-entered consignee address.
+  const effectiveConsigneeAddress = form.consigneeSameAsBuyer ? form.billingAddress : form.consigneeAddress;
 
   // Packing is a % of the taxable order value; convert to an absolute amount so
   // the shared computeTotals math is unchanged.
@@ -293,7 +332,9 @@ export default function CreateSalesOrder() {
       formatPaymentTerms(form.payment) + (form.creditDays > 0 ? `, ${form.creditDays} Credit Days` : '');
     const warrantyText = formatWarranty(form.warrantyYears);
     const now = new Date().toISOString();
-    const shipping = effectiveShipping;
+    const consigneeAddress = effectiveConsigneeAddress;
+    // Salesperson contact prefilled from the user directory (Sales Office Master).
+    const salespersonUser = USERS.find((u) => u.fullName === form.owner);
     return {
       id: `so-${Date.now()}`,
       number: `SO/2026/${String(600 + Math.floor(Math.random() * 399)).padStart(4, '0')}`,
@@ -315,7 +356,7 @@ export default function CreateSalesOrder() {
       createdDate: '2026-08-13',
       deliveryDate: form.expectedDelivery,
       billingAddress: form.billingAddress,
-      shippingAddress: shipping,
+      shippingAddress: consigneeAddress,
       customerPhone: form.phone || undefined,
       customerEmail: form.email || undefined,
       pincode: form.pincode || undefined,
@@ -340,18 +381,41 @@ export default function CreateSalesOrder() {
         email: form.email || undefined,
         gstin: form.gstin || undefined,
       },
-      consignee: {
-        name: customerName,
-        address: shipping,
-        country: 'India',
-        gstin: form.gstin || undefined,
-      },
-      consigneeSameAsBuyer: form.sameAsBilling || shipping.trim() === form.billingAddress.trim(),
+      consignee: form.consigneeSameAsBuyer
+        ? {
+            name: customerName,
+            code: selectedParty?.code,
+            address: form.billingAddress,
+            pincode: form.pincode || undefined,
+            country: 'India',
+            phone: form.phone || undefined,
+            email: form.email || undefined,
+            gstin: form.gstin || undefined,
+          }
+        : {
+            name: form.consigneeName || customerName,
+            address: consigneeAddress,
+            country: 'India',
+            phone: form.consigneePhone || undefined,
+            email: form.consigneeEmail || undefined,
+            gstin: form.consigneeGstin || undefined,
+          },
+      consigneeSameAsBuyer: form.consigneeSameAsBuyer,
       kindAttention:
-        form.kindAttentionName || form.kindAttentionEmail
-          ? { name: form.kindAttentionName || undefined, email: form.kindAttentionEmail || undefined }
+        form.kindAttentionName || form.kindAttentionPhone || form.kindAttentionEmail
+          ? {
+              name: form.kindAttentionName || undefined,
+              phone: form.kindAttentionPhone || undefined,
+              email: form.kindAttentionEmail || undefined,
+            }
           : undefined,
-      salesperson: { name: form.owner, officeId: form.officeId, owner: form.owner },
+      salesperson: {
+        name: form.owner,
+        phone: salespersonUser?.phone,
+        email: salespersonUser?.email,
+        officeId: form.officeId,
+        owner: form.owner,
+      },
       deliveryTimeline: form.deliveryTimeline || undefined,
       expectedDeliveryDate: form.expectedDelivery || undefined,
       freight: form.freight || undefined,
@@ -374,7 +438,7 @@ export default function CreateSalesOrder() {
             deliveryTerms: form.deliveryTerms,
             deliveryDate: form.expectedDelivery,
             billingAddress: form.billingAddress,
-            shippingAddress: shipping,
+            shippingAddress: consigneeAddress,
           },
         },
       ],
@@ -480,18 +544,35 @@ export default function CreateSalesOrder() {
               <TextField label="GSTIN" required value={form.gstin} error={errors.gstin} onChange={(e) => set('gstin', e.target.value.toUpperCase())} placeholder="27AAACR5055K1Z5" />
               <TextField label="Pincode" value={form.pincode} onChange={(e) => set('pincode', e.target.value)} placeholder="400001" />
               <TextAreaField wrapClassName="sm:col-span-2" label="Billing Address" required rows={2} value={form.billingAddress} error={errors.billingAddress} onChange={(e) => set('billingAddress', e.target.value)} />
-              <div className="sm:col-span-2">
-                <div className="mb-1.5 flex items-center justify-between">
-                  <label className="label mb-0">Shipping Address</label>
+
+              {/* Kind Attention */}
+              <TextField label="Kind Attention — Name" required value={form.kindAttentionName} error={errors.kindAttentionName} onChange={(e) => set('kindAttentionName', e.target.value)} placeholder="Contact person" />
+              <TextField label="Kind Attention — Contact Number" value={form.kindAttentionPhone} onChange={(e) => set('kindAttentionPhone', e.target.value)} placeholder="+91 98200 41122" />
+              <TextField wrapClassName="sm:col-span-2" label="Kind Attention — Email" type="email" value={form.kindAttentionEmail} onChange={(e) => set('kindAttentionEmail', e.target.value)} placeholder="contact@customer.com" />
+
+              {/* Consignee (ship-to) — progressive: collapsed while same as buyer */}
+              <div className="sm:col-span-2 rounded-lg border border-surface-200 bg-surface-50/60 p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[12px] font-semibold text-surface-700">Consignee Details (Ship To)</span>
                   <label className="flex items-center gap-2 text-[12px] text-surface-500">
-                    <Toggle checked={form.sameAsBilling} onChange={(v) => set('sameAsBilling', v)} />
-                    Same as Billing Address
+                    <Toggle checked={form.consigneeSameAsBuyer} onChange={(v) => set('consigneeSameAsBuyer', v)} />
+                    Same as Buyer's Address
                   </label>
                 </div>
-                <TextAreaField label="" rows={2} value={effectiveShipping} disabled={form.sameAsBilling} onChange={(e) => set('shippingAddress', e.target.value)} placeholder={form.sameAsBilling ? 'Same as billing address' : 'Shipping address'} />
+                {form.consigneeSameAsBuyer ? (
+                  <p className="mt-2 text-[12px] text-surface-400">
+                    Consignee is the same as the buyer. Toggle off to ship to a different party.
+                  </p>
+                ) : (
+                  <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <TextField label="Consignee Name" value={form.consigneeName} onChange={(e) => set('consigneeName', e.target.value)} placeholder="Consignee / ship-to name" />
+                    <TextField label="Consignee GSTIN" value={form.consigneeGstin} onChange={(e) => set('consigneeGstin', e.target.value.toUpperCase())} placeholder="27AAACR5055K1Z5" />
+                    <TextField label="Consignee Phone" value={form.consigneePhone} onChange={(e) => set('consigneePhone', e.target.value)} placeholder="+91 98200 41122" />
+                    <TextField label="Consignee Email" type="email" value={form.consigneeEmail} onChange={(e) => set('consigneeEmail', e.target.value)} placeholder="dispatch@customer.com" />
+                    <TextAreaField wrapClassName="sm:col-span-2" label="Complete Consignee Address" rows={2} value={form.consigneeAddress} onChange={(e) => set('consigneeAddress', e.target.value)} placeholder="Ship-to address with pincode" />
+                  </div>
+                )}
               </div>
-              <TextField label="Kind Attention — Name" required value={form.kindAttentionName} error={errors.kindAttentionName} onChange={(e) => set('kindAttentionName', e.target.value)} placeholder="Contact person" />
-              <TextField label="Kind Attention — Email" type="email" value={form.kindAttentionEmail} onChange={(e) => set('kindAttentionEmail', e.target.value)} placeholder="contact@customer.com" />
             </div>
           </SectionCard>
 
@@ -562,7 +643,7 @@ export default function CreateSalesOrder() {
             title={<Section icon={<Boxes className="h-4 w-4" />} n={3} label="Catalogue Items" />}
             action={<span className="text-xs text-surface-400">{lines.length} line item(s)</span>}
           >
-            <ItemLineEditor items={lines} catalog={items} onChange={setLinesTracked} />
+            <ItemLineEditor items={lines} catalog={items} onChange={setLinesTracked} expandable defaultDeliveryDate={form.expectedDelivery} />
             {errors.lines && <p className="mt-2 text-xs font-medium text-rose-600">{errors.lines}</p>}
           </SectionCard>
 

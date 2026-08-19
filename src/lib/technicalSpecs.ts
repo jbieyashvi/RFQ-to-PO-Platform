@@ -1,4 +1,4 @@
-import type { Item, LineItem, TechnicalSpecs } from '@/types';
+import type { Item, ItemTechnical, LineItem, SoKeyValue, TechnicalSpecs } from '@/types';
 
 // The Sales Order Revision workspace shows an expandable Technical Specifications
 // area per catalogue item. Catalogue items may carry authored specs; where they
@@ -121,6 +121,51 @@ export function specsForLine(line: LineItem, catalog: Item[]): TechnicalSpecs {
   if (item?.technicalSpecs) return { ...item.technicalSpecs };
   if (item) return synthTechnicalSpecs(item);
   return synthTechnicalSpecs({ code: line.itemCode, name: line.description, category: 'Hardware' });
+}
+
+// ---------------------------------------------------------------------------
+// The single builder that turns Item Master specs into the shared ItemTechnical
+// block used everywhere. Identity fields (make/product/model/decodification)
+// stay typed; everything else becomes reusable key→value rows, because
+// different Flowtech products carry different specification requirements. Used
+// both to prefill the Create SO expandable item editor AND (via the resolver)
+// to synthesise a complete block for records that never stored one, so both
+// paths render identically. 'N/A' / empty values are dropped so no blank rows
+// are ever displayed.
+// ---------------------------------------------------------------------------
+let kvSeq = 0;
+export const nextKvId = () => `kv-${(kvSeq += 1)}`;
+
+const meaningful = (v?: string): v is string =>
+  typeof v === 'string' && v.trim() !== '' && v.trim().toUpperCase() !== 'N/A';
+
+export function defaultItemTechnical(line: LineItem, catalog: Item[]): ItemTechnical {
+  const s = specsForLine(line, catalog);
+  const specs: SoKeyValue[] = [];
+  const documents: SoKeyValue[] = [];
+  const accessories: SoKeyValue[] = [];
+  const otherDetails: SoKeyValue[] = [];
+  const push = (arr: SoKeyValue[], label: string, value?: string) => {
+    if (meaningful(value)) arr.push({ id: nextKvId(), label, value: value.trim() });
+  };
+  push(specs, 'Operating Pressure', s.operatingPressure);
+  push(specs, 'Operating Temperature', s.operatingTemperature);
+  push(specs, 'Line Size', s.lineSize);
+  push(specs, 'Dimensions', s.dimensions);
+  push(specs, 'MOC / Connection', s.mocConnection);
+  push(documents, 'Documents Required', s.documentsRequired);
+  push(accessories, 'Accessories', s.accessories);
+  push(otherDetails, 'Other Details', s.otherDetails);
+  return {
+    make: s.make,
+    product: s.product,
+    modelNo: s.model,
+    decodificationNo: s.decodification,
+    specs,
+    documents,
+    accessories,
+    otherDetails,
+  };
 }
 
 // Human-readable label list for the expandable spec editor.
