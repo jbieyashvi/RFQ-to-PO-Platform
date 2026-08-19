@@ -30,8 +30,11 @@ import { Button, TextField, TextAreaField, Modal, StatusBadge } from '@/componen
 import { useApp } from '@/context/AppContext';
 import { INBOX_CLASSIFICATION } from '@/lib/labels';
 import { officeName } from '@/data/offices';
+import { ITEMS } from '@/data/masters';
 import { emailSignature } from '@/lib/brand';
 import { classNames, computeTotals, formatINR, lineTotal } from '@/lib/format';
+import { resolveSalesOrder } from '@/lib/salesOrder';
+import { SalesOrderDocument } from '@/components/sales-order/SalesOrderDocument';
 import { TODAY_ISO } from '@/lib/quotationWorkflow';
 import { actionableFields, deriveVerificationStatus } from '@/lib/verification';
 import { EmailCenter } from './EmailCenter';
@@ -121,6 +124,7 @@ export function InboxCenterPanel({
     updateSalesOrder,
     currentUser,
     role,
+    parties,
   } = useApp();
 
   const isWorkflow = mode !== 'normal';
@@ -862,56 +866,21 @@ export function InboxCenterPanel({
           revision, reflect the saved revised draft (falls back to the live SO). */}
       {salesOrder && (() => {
         const snap = isSoRevise ? salesOrder.revisionDraft ?? null : null;
-        const soItems = snap ? snap.items : salesOrder.items;
-        const soValue = snap ? computeTotals(snap.items, salesOrder.packingCharges).grandTotal : salesOrder.value;
-        const soDelivery = snap ? snap.deliveryTerms : salesOrder.deliveryTerms;
-        const soPayment = snap ? snap.paymentTerms : salesOrder.paymentTerms;
+        const soForDoc = snap
+          ? { ...salesOrder, items: snap.items, deliveryTerms: snap.deliveryTerms, paymentTerms: snap.paymentTerms }
+          : salesOrder;
+        const resolved = resolveSalesOrder(soForDoc, { parties, catalog: ITEMS });
         const revLabel = email.attachedSalesOrder?.revisionLabel;
         return (
         <Modal
           open={soPreview}
           onClose={() => setSoPreview(false)}
-          size="lg"
+          size="xl"
           title={isSoRevise ? 'Revised Sales Order Preview' : 'Sales Order Preview'}
           subtitle={`${salesOrder.number}${revLabel ? ` · ${revLabel}` : ''} · ${salesOrder.customerName}`}
           footer={<Button variant="secondary" onClick={() => setSoPreview(false)}>Close Preview</Button>}
         >
-          <div className="space-y-3">
-            <div className="grid grid-cols-1 gap-x-6 gap-y-1 rounded-xl border border-surface-200 px-4 py-3 text-[12px] sm:grid-cols-2">
-              <p><span className="text-surface-400">PO Number:</span> <span className="font-medium text-surface-800">{salesOrder.poNumber}</span></p>
-              <p><span className="text-surface-400">Quotation:</span> <span className="font-medium text-surface-800">{salesOrder.quotationNumber ?? '—'}</span></p>
-              <p><span className="text-surface-400">Sales Office:</span> <span className="font-medium text-surface-800">{officeName(salesOrder.officeId)}</span></p>
-              <p><span className="text-surface-400">Owner:</span> <span className="font-medium text-surface-800">{salesOrder.owner}</span></p>
-              <p><span className="text-surface-400">Delivery:</span> <span className="font-medium text-surface-800">{soDelivery}</span></p>
-              <p><span className="text-surface-400">Payment:</span> <span className="font-medium text-surface-800">{soPayment}</span></p>
-            </div>
-            <div className="overflow-hidden rounded-xl border border-surface-200">
-              <table className="w-full border-collapse text-[12px]">
-                <thead>
-                  <tr className="border-b border-surface-200 bg-surface-50 text-[10.5px] font-semibold uppercase tracking-[0.02em] text-surface-500">
-                    <th className="px-3 py-2 text-left">Item</th>
-                    <th className="px-2 py-2 text-right">Qty</th>
-                    <th className="px-2 py-2 text-right">Unit Price</th>
-                    <th className="px-3 py-2 text-right">Line Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-surface-100">
-                  {soItems.map((it) => (
-                    <tr key={it.id}>
-                      <td className="px-3 py-2"><p className="font-medium text-surface-800">{it.description}</p><p className="text-[10.5px] text-surface-400">{it.itemCode}{it.hsnCode ? ` · HSN ${it.hsnCode}` : ''}</p></td>
-                      <td className="px-2 py-2 text-right text-surface-700">{it.quantity} {it.unit}</td>
-                      <td className="px-2 py-2 text-right text-surface-700">{formatINR(it.unitPrice)}</td>
-                      <td className="px-3 py-2 text-right font-medium text-surface-800">{formatINR(lineTotal(it.quantity, it.unitPrice, it.discountPct))}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="flex items-center justify-between border-t border-surface-200 px-3 py-2">
-                <span className="text-[12px] font-medium text-surface-600">Grand Total</span>
-                <span className="text-[14px] font-bold text-surface-900">{formatINR(soValue)}</span>
-              </div>
-            </div>
-          </div>
+          <SalesOrderDocument resolved={resolved} showLetterhead />
         </Modal>
         );
       })()}

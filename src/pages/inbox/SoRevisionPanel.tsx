@@ -41,8 +41,10 @@ import {
 } from '@/components/ui';
 import { useApp } from '@/context/AppContext';
 import { OFFICES, officeName } from '@/data/offices';
+import { ITEMS } from '@/data/masters';
 import { emailSignature } from '@/lib/brand';
-import { DocumentLetterhead } from '@/components/DocumentLetterhead';
+import { resolveSalesOrder, type ResolvedSalesOrder } from '@/lib/salesOrder';
+import { SalesOrderDocument } from '@/components/sales-order/SalesOrderDocument';
 import { OWNERS, USERS } from '@/data/users';
 import {
   amountInWords,
@@ -632,24 +634,34 @@ export function SoRevisionPanel({
         </div>
       )}
 
-      <SoRevisionPreviewModal
-        open={preview !== null}
-        onClose={() => setPreview(null)}
-        so={so}
-        title={preview === 'original' ? 'Original Sales Order Preview' : `Revised Sales Order Preview · Rev ${nextRevNum}`}
-        lines={preview === 'original' ? original.items : lines}
-        specs={specs}
-        showSpecs={preview === 'revised'}
-        billing={preview === 'original' ? original.billingAddress : form.billingAddress}
-        shipping={preview === 'original' ? original.shippingAddress : effectiveShipping}
-        deliveryDate={preview === 'original' ? original.deliveryDate : form.expectedDelivery}
-        paymentText={preview === 'original' ? original.paymentTerms : revisedPaymentText}
-        deliveryTerms={preview === 'original' ? original.deliveryTerms : form.deliveryTerms}
-        kindAttention={form.kindAttentionName}
-        officeId={preview === 'original' ? so.officeId : form.officeId}
-        poNumber={preview === 'original' ? so.poNumber : form.poNumber}
-        packingPct={form.packingPct}
-      />
+      {preview !== null && (() => {
+        const isOrig = preview === 'original';
+        const previewLines = isOrig ? original.items : lines;
+        const packingAmount = Math.round((computeTotals(previewLines, 0).taxable * form.packingPct) / 100);
+        const soForDoc: SalesOrder = {
+          ...so,
+          items: previewLines,
+          billingAddress: isOrig ? original.billingAddress : form.billingAddress,
+          shippingAddress: isOrig ? original.shippingAddress : effectiveShipping,
+          deliveryDate: isOrig ? original.deliveryDate : form.expectedDelivery,
+          paymentTerms: isOrig ? original.paymentTerms : revisedPaymentText,
+          deliveryTerms: isOrig ? original.deliveryTerms : form.deliveryTerms,
+          officeId: isOrig ? so.officeId : form.officeId,
+          poNumber: isOrig ? so.poNumber : form.poNumber,
+          packingCharges: packingAmount,
+          kindAttention: form.kindAttentionName ? { name: form.kindAttentionName } : so.kindAttention,
+        };
+        const resolved = resolveSalesOrder(soForDoc, { parties, catalog: ITEMS });
+        return (
+          <SoRevisionPreviewModal
+            open
+            onClose={() => setPreview(null)}
+            title={isOrig ? 'Original Sales Order Preview' : `Revised Sales Order Preview · Rev ${nextRevNum}`}
+            subtitle={`${so.number} · ${so.customerName}`}
+            resolved={resolved}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -947,119 +959,26 @@ function TabButton({
 function SoRevisionPreviewModal({
   open,
   onClose,
-  so,
   title,
-  lines,
-  specs,
-  showSpecs,
-  billing,
-  shipping,
-  deliveryDate,
-  paymentText,
-  deliveryTerms,
-  kindAttention,
-  officeId,
-  poNumber,
-  packingPct,
+  subtitle,
+  resolved,
 }: {
   open: boolean;
   onClose: () => void;
-  so: SalesOrder;
   title: string;
-  lines: LineItem[];
-  specs: Record<string, TechnicalSpecs>;
-  showSpecs: boolean;
-  billing: string;
-  shipping: string;
-  deliveryDate: string;
-  paymentText: string;
-  deliveryTerms: string;
-  kindAttention: string;
-  officeId: string;
-  poNumber: string;
-  packingPct: number;
+  subtitle: string;
+  resolved: ResolvedSalesOrder;
 }) {
-  const packingAmount = Math.round((computeTotals(lines, 0).taxable * packingPct) / 100);
-  const totals = computeTotals(lines, packingAmount);
   return (
     <Modal
       open={open}
       onClose={onClose}
-      size="lg"
+      size="xl"
       title={title}
-      subtitle={`${so.number} · ${so.customerName}`}
+      subtitle={subtitle}
       footer={<Button variant="primary" onClick={onClose}>Close</Button>}
     >
-      <div className="space-y-4">
-        <DocumentLetterhead
-          docTitle="Sales Order Acknowledgement"
-          meta={<p className="font-semibold text-surface-800">{so.number}</p>}
-        />
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h3 className="text-[15px] font-bold text-surface-900">{so.customerName}</h3>
-            <p className="text-[12px] text-surface-500">{kindAttention}</p>
-            <p className="mt-1 max-w-xs text-[11px] text-surface-400">{billing}</p>
-            {shipping && shipping !== billing && (
-              <p className="mt-1 max-w-xs text-[11px] text-surface-400">Ship to: {shipping}</p>
-            )}
-          </div>
-          <div className="text-right text-[12px]">
-            <p className="text-[13px] font-bold text-surface-900">{so.number}</p>
-            <p className="mt-1 text-surface-500">PO: <span className="font-medium text-surface-800">{poNumber}</span></p>
-            <p className="text-surface-500">Office: <span className="font-medium text-surface-800">{officeName(officeId)}</span></p>
-            <p className="text-surface-500">Delivery: <span className="font-medium text-surface-800">{deliveryDate ? formatDate(deliveryDate, { short: true }) : '—'}</span></p>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto rounded-xl border border-surface-200">
-          <table className="w-full min-w-[520px] border-collapse text-[12px]">
-            <thead>
-              <tr className="border-b border-surface-200 bg-surface-50 text-[10.5px] font-semibold uppercase tracking-[0.02em] text-surface-500">
-                <th className="px-3 py-2 text-left">Item</th>
-                <th className="px-2 py-2 text-right">Qty</th>
-                <th className="px-2 py-2 text-right">Unit Price</th>
-                <th className="px-3 py-2 text-right">Line Total</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-surface-100">
-              {lines.map((it) => (
-                <tr key={it.id} className="align-top">
-                  <td className="px-3 py-2">
-                    <p className="font-medium text-surface-800">{it.description || '—'}</p>
-                    <p className="text-[10.5px] text-surface-400">{it.itemCode}{it.hsnCode ? ` · HSN ${it.hsnCode}` : ''}</p>
-                    {showSpecs && specs[it.id] && (
-                      <p className="mt-0.5 text-[10.5px] text-surface-500">
-                        {[specs[it.id].make, specs[it.id].model, specs[it.id].operatingPressure].filter(Boolean).join(' · ')}
-                      </p>
-                    )}
-                  </td>
-                  <td className="px-2 py-2 text-right text-surface-700">{it.quantity} {it.unit}</td>
-                  <td className="px-2 py-2 text-right text-surface-700">{formatINR(it.unitPrice)}</td>
-                  <td className="px-3 py-2 text-right font-medium text-surface-800">{formatINR(lineTotal(it.quantity, it.unitPrice, it.discountPct))}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-0.5 text-[11.5px] text-surface-600">
-            <p><span className="text-surface-400">Payment:</span> <span className="font-medium text-surface-800">{paymentText}</span></p>
-            <p><span className="text-surface-400">Delivery:</span> <span className="font-medium text-surface-800">{deliveryTerms || '—'}</span></p>
-          </div>
-          <div className="ml-auto w-full max-w-xs space-y-0.5">
-            <InfoRow label="Taxable Value" value={formatINR(totals.taxable)} />
-            <InfoRow label="GST" value={formatINR(totals.tax)} />
-            <InfoRow label="Packing & Forwarding" value={formatINR(packingAmount)} />
-            <div className="mt-1 flex items-center justify-between border-t border-surface-200 pt-2">
-              <span className="text-[13px] font-semibold text-surface-800">Grand Total</span>
-              <span className="text-[15px] font-bold text-brand-700">{formatINR(totals.grandTotal)}</span>
-            </div>
-          </div>
-        </div>
-        <p className="text-[11px] italic text-surface-500">{amountInWords(totals.grandTotal)}</p>
-      </div>
+      <SalesOrderDocument resolved={resolved} showLetterhead />
     </Modal>
   );
 }

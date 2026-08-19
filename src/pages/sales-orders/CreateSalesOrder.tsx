@@ -24,12 +24,12 @@ import {
   Modal,
   ConfirmDialog,
   InfoRow,
-  StatusBadge,
   Toggle,
 } from '@/components/ui';
-import { DocumentLetterhead } from '@/components/DocumentLetterhead';
 import { COMPANY_NAME } from '@/lib/brand';
 import { useApp } from '@/context/AppContext';
+import { SalesOrderDocument } from '@/components/sales-order/SalesOrderDocument';
+import { resolveSalesOrder } from '@/lib/salesOrder';
 import { OFFICES, officeName } from '@/data/offices';
 import { OWNERS, USERS } from '@/data/users';
 import type { CommercialTerms, LineItem, PaymentTerms, PoProofType, SalesOrder } from '@/types';
@@ -81,10 +81,14 @@ interface FormState {
   poProofNotes: string;
   packingPct: number;
   deliveryTerms: string;
+  deliveryTimeline: string;
   warrantyYears: number;
   creditDays: number;
   payment: PaymentTerms;
   expectedDelivery: string;
+  freight: string;
+  inspection: string;
+  additionalTerms: string;
 }
 
 // Commercial-terms defaults are sourced from T&C Master (the single source of
@@ -112,10 +116,14 @@ const initialForm = (officeId: string, ct: CommercialTerms): FormState => ({
   poProofNotes: '',
   packingPct: ct.packingPct,
   deliveryTerms: defaultDeliveryOption(ct)?.name ?? '',
+  deliveryTimeline: '',
   warrantyYears: ct.warrantyYears,
   creditDays: 0,
   payment: { ...ct.payment },
   expectedDelivery: '',
+  freight: '',
+  inspection: '',
+  additionalTerms: '',
 });
 
 export default function CreateSalesOrder() {
@@ -321,6 +329,34 @@ export default function CreateSalesOrder() {
         payment: { ...form.payment },
         creditDays: form.creditDays,
       },
+      // Structured shared-model sections captured on manual creation.
+      buyer: {
+        name: customerName,
+        code: selectedParty?.code,
+        address: form.billingAddress,
+        pincode: form.pincode || undefined,
+        country: 'India',
+        phone: form.phone || undefined,
+        email: form.email || undefined,
+        gstin: form.gstin || undefined,
+      },
+      consignee: {
+        name: customerName,
+        address: shipping,
+        country: 'India',
+        gstin: form.gstin || undefined,
+      },
+      consigneeSameAsBuyer: form.sameAsBilling || shipping.trim() === form.billingAddress.trim(),
+      kindAttention:
+        form.kindAttentionName || form.kindAttentionEmail
+          ? { name: form.kindAttentionName || undefined, email: form.kindAttentionEmail || undefined }
+          : undefined,
+      salesperson: { name: form.owner, officeId: form.officeId, owner: form.owner },
+      deliveryTimeline: form.deliveryTimeline || undefined,
+      expectedDeliveryDate: form.expectedDelivery || undefined,
+      freight: form.freight || undefined,
+      inspection: form.inspection || undefined,
+      additionalTerms: form.additionalTerms || undefined,
       sentAt: opts.withHandoff ? now : undefined,
       erpHandoff: opts.withHandoff ? { state: 'pending', source: 'manual', submittedAt: now, submittedBy: currentUser.fullName } : undefined,
       revisionNumber: 0,
@@ -386,6 +422,20 @@ export default function CreateSalesOrder() {
     );
     addToast({ type: 'info', title: 'Draft downloaded', message: 'SO draft exported.' });
   };
+
+  // Live document preview — resolved from the same shared model buildSO produces,
+  // with a placeholder SO number (the real number is assigned only on create).
+  const previewResolved = useMemo(
+    () =>
+      preview
+        ? resolveSalesOrder(
+            { ...buildSO({ withHandoff: false }), number: 'SO/2026/(draft)' },
+            { parties, catalog: items }
+          )
+        : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [preview, form, lines]
+  );
 
   return (
     <>
@@ -584,6 +634,10 @@ export default function CreateSalesOrder() {
                 onChange={(e) => set('creditDays', Math.max(0, Number(e.target.value)))}
                 hint="Credit period in days (if applicable)"
               />
+              <TextField label="Delivery Timeline" value={form.deliveryTimeline} onChange={(e) => set('deliveryTimeline', e.target.value)} placeholder="e.g. 4–6 weeks from clear PO" />
+              <TextField label="Freight / Transportation" value={form.freight} onChange={(e) => set('freight', e.target.value)} placeholder="e.g. Extra at actuals" />
+              <TextField label="Inspection" value={form.inspection} onChange={(e) => set('inspection', e.target.value)} placeholder="e.g. At works / Third-party" />
+              <TextAreaField wrapClassName="sm:col-span-2" label="Additional Commercial Terms" rows={2} value={form.additionalTerms} onChange={(e) => set('additionalTerms', e.target.value)} placeholder="Any additional terms to appear on the Sales Order…" />
             </div>
           </SectionCard>
         </div>
@@ -657,64 +711,13 @@ export default function CreateSalesOrder() {
           </>
         }
       >
-        <div className="space-y-5">
-          <DocumentLetterhead
-            docTitle="Sales Order Acknowledgement"
-            meta={<p className="font-semibold text-surface-800">{form.poNumber ? `PO ${form.poNumber}` : 'Draft'}</p>}
-          />
-          <div className="flex items-start justify-between">
-            <div>
-              <h3 className="text-lg font-bold text-surface-900">{customerName || 'Customer'}</h3>
-              <p className="text-sm text-surface-500">{form.kindAttentionName}</p>
-              <p className="mt-1 max-w-sm text-xs text-surface-400">{form.billingAddress}</p>
-            </div>
-            <div className="text-right text-sm">
-              <StatusBadge tone="blue" label="Draft Preview" dot={false} />
-              <p className="mt-2 text-surface-500">PO: <span className="font-medium text-surface-800">{form.poNumber || '—'}</span></p>
-              <p className="text-surface-500">Office: <span className="font-medium text-surface-800">{officeName(form.officeId)}</span></p>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto rounded-xl border border-surface-200">
-            <table className="w-full min-w-[560px] border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-surface-200 bg-surface-50 text-xs font-semibold uppercase tracking-wide text-surface-500">
-                  <th className="px-3 py-2.5 text-left">Item</th>
-                  <th className="px-2 py-2.5 text-right">Qty</th>
-                  <th className="px-2 py-2.5 text-right">Rate</th>
-                  <th className="px-3 py-2.5 text-right">Amount</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-surface-100">
-                {lines.length === 0 ? (
-                  <tr><td colSpan={4} className="px-3 py-6 text-center text-sm text-surface-400">No items added.</td></tr>
-                ) : (
-                  lines.map((it) => (
-                    <tr key={it.id}>
-                      <td className="px-3 py-2.5">{it.description || '—'}</td>
-                      <td className="px-2 py-2.5 text-right">{it.quantity} {it.unit}</td>
-                      <td className="px-2 py-2.5 text-right">{formatINR(it.unitPrice)}</td>
-                      <td className="px-3 py-2.5 text-right font-medium">{formatINR(it.quantity * it.unitPrice * (1 - it.discountPct / 100))}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="ml-auto max-w-xs space-y-1">
-            <InfoRow label="Subtotal" value={formatINR(totals.subtotal)} />
-            <InfoRow label="Discount" value={`- ${formatINR(totals.discount)}`} />
-            <InfoRow label="GST" value={formatINR(totals.tax)} />
-            <InfoRow label="Packing" value={formatINR(packingAmount)} />
-            <div className="mt-1 border-t border-surface-200 pt-2">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-surface-800">Grand Total</span>
-                <span className="text-base font-bold text-brand-700">{formatINR(totals.grandTotal)}</span>
-              </div>
-            </div>
-          </div>
-        </div>
+        {previewResolved ? (
+          lines.length === 0 ? (
+            <p className="py-10 text-center text-sm text-surface-400">Add at least one line item to preview the Sales Order.</p>
+          ) : (
+            <SalesOrderDocument resolved={previewResolved} showLetterhead />
+          )
+        ) : null}
       </Modal>
     </>
   );

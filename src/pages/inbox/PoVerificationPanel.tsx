@@ -66,6 +66,8 @@ import {
   PAYMENT_FIELDS,
 } from '@/lib/commercialTerms';
 import { VERIFICATION_STATUS } from '@/lib/labels';
+import { resolveSalesOrder, type ResolvedSalesOrder } from '@/lib/salesOrder';
+import { SalesOrderDocument } from '@/components/sales-order/SalesOrderDocument';
 import { buildVersions, grandTotalOf } from '@/lib/revisionQueue';
 import { quoteSignature } from './helpers';
 import {
@@ -885,10 +887,14 @@ interface SoForm {
   poProofNotes: string;
   packingPct: number;
   deliveryTerms: string;
+  deliveryTimeline: string;
   warrantyYears: number;
   creditDays: number;
   payment: PaymentTerms;
   expectedDelivery: string;
+  freight: string;
+  inspection: string;
+  additionalTerms: string;
 }
 
 // Prefill from the verified Sales Order, its accepted quotation and the Party
@@ -918,10 +924,14 @@ function initSoForm(so: SalesOrder, party: Party | undefined, ct: CommercialTerm
       `PO ${so.poNumber} verified against accepted quotation ${so.quotationNumber ?? ''}.`.trim(),
     packingPct: so.commercials?.packingPct ?? derivedPacking,
     deliveryTerms: so.deliveryTerms || defaultDeliveryOption(ct)?.name || '',
+    deliveryTimeline: so.deliveryTimeline ?? '',
     warrantyYears: parseInt(so.warranty, 10) || ct.warrantyYears,
     creditDays: so.commercials?.creditDays ?? 0,
     payment: so.commercials?.payment ? { ...so.commercials.payment } : { ...ct.payment },
     expectedDelivery: so.deliveryDate ?? '',
+    freight: so.freight ?? '',
+    inspection: so.inspection ?? '',
+    additionalTerms: so.additionalTerms ?? '',
   };
 }
 
@@ -1039,8 +1049,44 @@ function GenerateTab({
       value: totals.grandTotal,
       poValue: totals.grandTotal,
       commercials: { packingPct: form.packingPct, payment: { ...form.payment }, creditDays: form.creditDays },
+      // Structured shared-model sections (prefilled from the verified PO / party).
+      buyer: {
+        name: so.customerName,
+        code: so.customerCode,
+        address: form.billingAddress,
+        pincode: form.pincode || undefined,
+        country: 'India',
+        phone: form.phone || undefined,
+        email: form.email || undefined,
+        gstin: form.gstin || undefined,
+      },
+      consignee: {
+        name: so.customerName,
+        address: effectiveShipping,
+        country: 'India',
+        gstin: form.gstin || undefined,
+      },
+      consigneeSameAsBuyer: form.sameAsBilling || effectiveShipping.trim() === form.billingAddress.trim(),
+      kindAttention:
+        form.kindAttentionName || form.kindAttentionEmail
+          ? { name: form.kindAttentionName || undefined, email: form.kindAttentionEmail || undefined }
+          : undefined,
+      salesperson: { name: form.owner, officeId: form.officeId, owner: form.owner },
+      deliveryTimeline: form.deliveryTimeline || undefined,
+      expectedDeliveryDate: form.expectedDelivery || undefined,
+      freight: form.freight || undefined,
+      inspection: form.inspection || undefined,
+      additionalTerms: form.additionalTerms || undefined,
     };
   };
+
+  // Live document preview — resolved from the current (possibly edited) form
+  // merged onto the SO record, so the preview matches exactly what Save writes.
+  const previewResolved = useMemo(
+    () => resolveSalesOrder({ ...so, ...buildPatch() }, { parties, catalog }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [so, form, lines]
+  );
 
   // Generate the Sales Order: persist the (possibly edited) fields, flip it live
   // and, in the SAME update, link a Pending ERP Handoff record. Guarded so a
@@ -1269,7 +1315,13 @@ function GenerateTab({
               Total: {paymentSum}%{paymentSum !== 100 && ' — must total 100%.'}
             </div>
           </div>
-          <TextField label="Credit Days" type="number" min={0} value={form.creditDays} onChange={(e) => set('creditDays', Math.max(0, Number(e.target.value)))} className="py-1.5 text-[13px]" hint="Credit period in days (if applicable)" />
+          <div className="grid grid-cols-2 gap-2">
+            <TextField label="Credit Days" type="number" min={0} value={form.creditDays} onChange={(e) => set('creditDays', Math.max(0, Number(e.target.value)))} className="py-1.5 text-[13px]" />
+            <TextField label="Delivery Timeline" value={form.deliveryTimeline} onChange={(e) => set('deliveryTimeline', e.target.value)} className="py-1.5 text-[13px]" placeholder="e.g. 4–6 weeks" />
+            <TextField label="Freight / Transportation" value={form.freight} onChange={(e) => set('freight', e.target.value)} className="py-1.5 text-[13px]" placeholder="e.g. Extra at actuals" />
+            <TextField label="Inspection" value={form.inspection} onChange={(e) => set('inspection', e.target.value)} className="py-1.5 text-[13px]" placeholder="e.g. At works" />
+          </div>
+          <TextAreaField label="Additional Commercial Terms" rows={2} value={form.additionalTerms} onChange={(e) => set('additionalTerms', e.target.value)} className="text-[13px]" placeholder="Any additional terms…" />
         </FormSection>
 
         {/* 5. Amount Summary */}
@@ -1309,16 +1361,7 @@ function GenerateTab({
           {!canGenerate && <p className="text-center text-[11px] font-medium text-rose-600">Create permission required.</p>}
         </div>
 
-        <SoPreviewModal
-          open={preview}
-          onClose={() => setPreview(false)}
-          so={so}
-          form={form}
-          lines={lines}
-          totals={totals}
-          packingAmount={packingAmount}
-          shipping={effectiveShipping}
-        />
+        <SoPreviewModal open={preview} onClose={() => setPreview(false)} resolved={previewResolved} />
       </div>
     );
   }
@@ -1404,16 +1447,7 @@ function GenerateTab({
         </div>
       </div>
 
-      <SoPreviewModal
-        open={preview}
-        onClose={() => setPreview(false)}
-        so={so}
-        form={form}
-        lines={lines}
-        totals={totals}
-        packingAmount={packingAmount}
-        shipping={effectiveShipping}
-      />
+      <SoPreviewModal open={preview} onClose={() => setPreview(false)} resolved={previewResolved} />
     </div>
   );
 }
@@ -1447,87 +1481,27 @@ function FormSection({
   );
 }
 
-// Professional Sales Order document preview — same data as the editable form.
+// Professional Sales Order document preview — the shared SO Acknowledgement
+// renderer, resolved from the current form so it always matches what is saved.
 function SoPreviewModal({
   open,
   onClose,
-  so,
-  form,
-  lines,
-  totals,
-  packingAmount,
-  shipping,
+  resolved,
 }: {
   open: boolean;
   onClose: () => void;
-  so: SalesOrder;
-  form: SoForm;
-  lines: LineItem[];
-  totals: ReturnType<typeof computeTotals>;
-  packingAmount: number;
-  shipping: string;
+  resolved: ResolvedSalesOrder;
 }) {
   return (
     <Modal
       open={open}
       onClose={onClose}
-      size="lg"
+      size="xl"
       title="Sales Order Preview"
-      subtitle={`${so.number} · ${so.customerName}`}
+      subtitle={`${resolved.soNumber} · ${resolved.buyer.name ?? ''}`}
       footer={<Button variant="primary" onClick={onClose}>Close</Button>}
     >
-      <div className="space-y-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h3 className="text-[15px] font-bold text-surface-900">{so.customerName}</h3>
-            <p className="text-[12px] text-surface-500">{form.kindAttentionName}</p>
-            <p className="mt-1 max-w-xs text-[11px] text-surface-400">{form.billingAddress}</p>
-            {shipping && shipping !== form.billingAddress && (
-              <p className="mt-1 max-w-xs text-[11px] text-surface-400">Ship to: {shipping}</p>
-            )}
-          </div>
-          <div className="text-right text-[12px]">
-            <p className="text-[13px] font-bold text-surface-900">{so.number}</p>
-            <p className="mt-1 text-surface-500">PO: <span className="font-medium text-surface-800">{form.poNumber}</span></p>
-            <p className="text-surface-500">Office: <span className="font-medium text-surface-800">{officeName(form.officeId)}</span></p>
-            <p className="text-surface-500">Delivery: <span className="font-medium text-surface-800">{formatDate(form.expectedDelivery, { short: true })}</span></p>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto rounded-xl border border-surface-200">
-          <table className="w-full min-w-[520px] border-collapse text-[12px]">
-            <thead>
-              <tr className="border-b border-surface-200 bg-surface-50 text-[10.5px] font-semibold uppercase tracking-[0.02em] text-surface-500">
-                <th className="px-3 py-2 text-left">Item</th>
-                <th className="px-2 py-2 text-right">Qty</th>
-                <th className="px-2 py-2 text-right">Unit Price</th>
-                <th className="px-3 py-2 text-right">Line Total</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-surface-100">
-              {lines.map((it) => (
-                <tr key={it.id}>
-                  <td className="px-3 py-2"><p className="font-medium text-surface-800">{it.description || '—'}</p><p className="text-[10.5px] text-surface-400">{it.itemCode}{it.hsnCode ? ` · HSN ${it.hsnCode}` : ''}</p></td>
-                  <td className="px-2 py-2 text-right text-surface-700">{it.quantity} {it.unit}</td>
-                  <td className="px-2 py-2 text-right text-surface-700">{formatINR(it.unitPrice)}</td>
-                  <td className="px-3 py-2 text-right font-medium text-surface-800">{formatINR(lineTotal(it.quantity, it.unitPrice, it.discountPct))}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="ml-auto max-w-xs space-y-0.5">
-          <InfoRow label="Subtotal" value={formatINR(totals.subtotal)} />
-          <InfoRow label="Discount" value={`- ${formatINR(totals.discount)}`} />
-          <InfoRow label="GST" value={formatINR(totals.tax)} />
-          <InfoRow label="Packing & Forwarding" value={formatINR(packingAmount)} />
-          <div className="mt-1 flex items-center justify-between border-t border-surface-200 pt-2">
-            <span className="text-[13px] font-semibold text-surface-800">Grand Total</span>
-            <span className="text-[15px] font-bold text-brand-700">{formatINR(totals.grandTotal)}</span>
-          </div>
-        </div>
-      </div>
+      <SalesOrderDocument resolved={resolved} showLetterhead />
     </Modal>
   );
 }

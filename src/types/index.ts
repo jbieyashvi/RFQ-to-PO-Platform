@@ -167,6 +167,96 @@ export interface LineItem {
   unitPrice: number;
   discountPct: number;
   taxPct: number;
+  // Optional Item Master name (distinct from the free-text description). Older
+  // records omit it — the resolver falls back to the catalogue item / description.
+  itemName?: string;
+  // Per-item technical block and delivery schedule for the Sales Order
+  // Acknowledgement. Both optional; the resolver synthesises/derives when absent
+  // so every display surface has a complete block to show.
+  technical?: ItemTechnical;
+  schedule?: DeliveryScheduleRow[];
+}
+
+// A reusable label→value row (technical specs, documents required, accessories,
+// other details). `id` is only needed while editing.
+export interface SoKeyValue {
+  id?: string;
+  label: string;
+  value: string;
+}
+
+// Per-item technical & specification block on the Sales Order Acknowledgement.
+// Fixed optional attributes plus reusable key→value lists. Only non-empty
+// fields are ever displayed. Defaults derive from the Item Master.
+export interface ItemTechnical {
+  make?: string;
+  product?: string;
+  service?: string; // service / application
+  operatingPressure?: string;
+  operatingTemperature?: string;
+  density?: string;
+  decodificationNo?: string;
+  modelNo?: string;
+  lineSize?: string;
+  cToC?: string; // C-to-C height / dimensions
+  wettedPartsMOC?: string;
+  processConnectionType?: string;
+  processConnectionMOC?: string;
+  processConnectionStd?: string;
+  cagingType?: string;
+  cageMOC?: string;
+  scaleMOC?: string;
+  glandMOC?: string;
+  floatType?: string; // float / flat type
+  flangeType?: string;
+  valveBodyMOC?: string;
+  specs?: SoKeyValue[]; // reusable technical specification rows
+  documents?: SoKeyValue[]; // documents required (drawing / datasheet / TPI …)
+  accessories?: SoKeyValue[];
+  otherDetails?: SoKeyValue[];
+}
+
+// One delivery-schedule row for an item. Pending = scheduled − already delivered
+// (in the prototype we treat everything as pending).
+export interface DeliveryScheduleRow {
+  id: string;
+  scheduleNo: number;
+  deliveryDate?: string;
+  expectedArrivalDate?: string;
+  scheduledQty: number;
+  pendingQty?: number;
+}
+
+// Structured buyer / consignee block. `name` is the M/S. display name. Older
+// records only store the flat billing/shipping address strings — the resolver
+// derives this block from the Party Master + those strings when absent.
+export interface SoPartyDetails {
+  name?: string;
+  code?: string;
+  address: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  country?: string;
+  phone?: string;
+  email?: string;
+  gstin?: string;
+}
+
+// Kind Attention contact captured on the Sales Order.
+export interface SoContact {
+  name?: string;
+  phone?: string;
+  email?: string;
+}
+
+// Salesperson block — derived from the Sales Office Master + owner when absent.
+export interface SoSalesperson {
+  name: string;
+  phone?: string;
+  email?: string;
+  officeId: string;
+  owner: string;
 }
 
 export interface RevisionRecord {
@@ -424,6 +514,21 @@ export interface SalesOrder {
     payment: PaymentTerms;
     creditDays: number;
   };
+  // ---- Shared Sales Order Acknowledgement structured sections (all optional
+  // for backward compatibility; the resolver in lib/salesOrder derives these
+  // from the flat fields + masters when absent, so every screen shows the same
+  // complete document regardless of how the record was created). ----
+  buyer?: SoPartyDetails;
+  consignee?: SoPartyDetails;
+  consigneeSameAsBuyer?: boolean;
+  kindAttention?: SoContact;
+  salesperson?: SoSalesperson;
+  // Expanded commercial terms (beyond the flat paymentTerms/deliveryTerms).
+  deliveryTimeline?: string;
+  expectedDeliveryDate?: string;
+  freight?: string;
+  inspection?: string;
+  additionalTerms?: string;
   revisionDraft?: SORevisionSnapshot; // working edits before approval/send
   revisionPreviewed?: boolean;
   versions: SORevisionVersion[]; // [Original, Rev 1, …] — original never overwritten
