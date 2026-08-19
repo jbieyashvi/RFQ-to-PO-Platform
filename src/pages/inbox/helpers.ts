@@ -1,7 +1,43 @@
-import type { InboxEmail } from '@/types';
+import type { InboxEmail, Quotation } from '@/types';
 
 export function isValidEmail(s: string): boolean {
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test((s ?? '').trim());
+}
+
+/**
+ * A stable signature of a quotation's sendable contents. It changes whenever the
+ * grand total or any line item's quantity / price / discount changes — used to
+ * detect a quote that was edited AFTER being attached to an outgoing email.
+ */
+export function quoteSignature(q: Pick<Quotation, 'value' | 'items'>): string {
+  return `${q.value}|${q.items
+    .map((i) => `${i.id}:${i.quantity}:${i.unitPrice}:${i.discountPct}`)
+    .join(',')}`;
+}
+
+export interface QuoteSendState {
+  to: string;
+  subject: string;
+  body: string;
+  reviewDate: string;
+  hasAttachment: boolean;
+  attachmentStale: boolean;
+}
+
+/**
+ * Blocking reasons the focused quote-send email cannot go out yet. Empty array
+ * means every send precondition is satisfied. Messages match the PM-confirmed
+ * copy for the attachment and review-date rules.
+ */
+export function quoteSendBlockers(s: QuoteSendState): string[] {
+  const b: string[] = [];
+  if (!isValidEmail(s.to)) b.push('A valid recipient (To) address is required.');
+  if (!s.subject.trim()) b.push('Subject is required.');
+  if (!s.body.trim()) b.push('Email body is required.');
+  if (!s.hasAttachment) b.push('Add the latest quotation to the email before sending.');
+  else if (s.attachmentStale) b.push('The quotation has changed. Add the latest version before sending.');
+  if (!s.reviewDate) b.push('Select the next review date before sending the quotation.');
+  return b;
 }
 
 /** Required extraction fields that are still missing or low-confidence & unresolved. */

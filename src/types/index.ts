@@ -456,6 +456,21 @@ export interface OutgoingDraft {
   aiGenerated: boolean;
 }
 
+// The system-generated quotation PDF attached to an outgoing email in the
+// focused quote-send workflow. Only the platform's own quotation PDF may be
+// attached here — there is no generic file upload. `signature` captures the
+// quote's sendable contents at attach time so a later edit is detectable as
+// stale ("add the latest version before sending").
+export interface QuoteAttachment {
+  fileName: string; // e.g. "QTN-2026-1007.pdf"
+  qtnNumber: string; // e.g. "QTN/2026/1007"
+  fileType: string; // 'PDF'
+  quoteValue: number;
+  signature: string; // staleness signature of the quote at attach time
+  addedBy: string;
+  addedAt: string; // ISO datetime
+}
+
 export interface InboxEmail {
   id: string;
   senderName: string;
@@ -490,6 +505,9 @@ export interface InboxEmail {
   queueLabel?: string; // e.g. "Quote Needs Revision"
   requestedChanges?: RequestedChange[]; // customer-requested old → new changes
   reviewDate?: string; // manually-set next review date on the linked record
+  // Focused quote-send workflow: the system-generated quotation PDF attached to
+  // this outgoing email. Only ever set/cleared from the Quote Tools panel.
+  attachedQuote?: QuoteAttachment;
   extraction: ExtractionField[];
   extractionConfirmed: boolean;
   validationFailed?: boolean; // commercial validation failed (e.g. PO vs quote mismatch)

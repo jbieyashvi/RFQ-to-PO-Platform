@@ -4,9 +4,12 @@ import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { Toaster } from '@/components/ui/Toaster';
 import { classNames } from '@/lib/format';
+import { useApp } from '@/context/AppContext';
 
 export function AppShell() {
-  const [collapsed, setCollapsed] = useState(false);
+  // Sidebar collapse lives in AppContext so the Global Inbox can auto-collapse
+  // it for more workspace width, then restore the user's previous state on exit.
+  const { sidebarCollapsed: collapsed, setSidebarCollapsed: setCollapsed } = useApp();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (

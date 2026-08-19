@@ -51,6 +51,12 @@ interface AppState {
   canInbox: (action: InboxAction) => boolean;
   visibleOffices: SalesOffice[];
 
+  // UI: application sidebar collapse (icon-only) state — lifted here so the
+  // Global Inbox can auto-optimise horizontal space while it is open, then
+  // restore the user's previous state on leaving.
+  sidebarCollapsed: boolean;
+  setSidebarCollapsed: (v: boolean | ((prev: boolean) => boolean)) => void;
+
   // data
   offices: SalesOffice[];
   users: User[];
@@ -113,6 +119,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [quotations, setQuotations] = useState<Quotation[]>(QUOTATIONS);
   const [salesOrders, setSalesOrders] = useState<SalesOrder[]>(SALES_ORDERS);
   const [emails, setEmails] = useState<InboxEmail[]>(() => [...EMAILS, ...PO_VERIFICATION_EMAILS]);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const currentUser = useMemo(() => {
@@ -249,6 +256,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     can,
     canInbox,
     visibleOffices,
+    sidebarCollapsed,
+    setSidebarCollapsed,
     offices,
     users,
     items,

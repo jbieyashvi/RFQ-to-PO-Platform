@@ -217,18 +217,20 @@ export default function QuotesPending() {
     setDueState('');
   };
 
-  // Open the inquiry's linked Global Inbox conversation — selecting the correct
-  // email for THIS inquiry. Nothing is sent; the composer stays for human review.
+  // Open the inquiry's linked Global Inbox conversation in focused quote-send
+  // mode — selecting the correct email for THIS inquiry and passing the QTN so
+  // the inbox opens its quote tools. Nothing is sent; the composer stays for
+  // human review. No quotation drawer opens on this page.
   const openInbox = (r: PendingRow) => {
     const q = r.q;
     const existing = emails.find((e) => (e.quotationSendId === q.id || e.linkedQuotation === q.number) && !e.sent);
     if (existing) {
-      navigate(`/inbox?email=${existing.id}`);
+      navigate(`/inbox?email=${existing.id}&mode=quote-send&qtn=${q.id}`);
       return;
     }
     const id = `em-inq-${q.id}`;
     if (!emails.some((e) => e.id === id)) addEmail(buildInquiryEmail(q, r, id));
-    navigate(`/inbox?email=${id}`);
+    navigate(`/inbox?email=${id}&mode=quote-send&qtn=${q.id}`);
   };
 
   const buildInquiryEmail = (q: Quotation, r: PendingRow, id: string): InboxEmail => {

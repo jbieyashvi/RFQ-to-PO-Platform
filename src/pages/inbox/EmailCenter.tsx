@@ -25,7 +25,7 @@ const fieldTone: Record<ExtractionField['confidence'], { ring: string; label: st
   missing: { ring: 'border-rose-300 bg-rose-50/50', label: 'Missing', tone: 'text-rose-600' },
 };
 
-export function EmailCenter({ email }: { email: InboxEmail }) {
+export function EmailCenter({ email, embedded }: { email: InboxEmail; embedded?: boolean }) {
   const { updateEmail, canInbox, addToast } = useApp();
   const cls = INBOX_CLASSIFICATION[email.classification];
   const [editing, setEditing] = useState(false);
@@ -58,9 +58,12 @@ export function EmailCenter({ email }: { email: InboxEmail }) {
   };
 
   return (
-    <div className="flex h-full flex-col">
+    // `embedded` renders the reader as flowing content (no own height / scroll)
+    // so the centre panel can stack the email above the reply composer inside a
+    // single shared scroll area. Standalone (dedicated workflows) keeps h-full.
+    <div className={embedded ? '' : 'flex h-full flex-col'}>
       {/* Header */}
-      <div className="flex-none border-b border-surface-100 px-5 py-4">
+      <div className={classNames('border-b border-surface-100 px-5 py-4', !embedded && 'flex-none')}>
         <div className="flex flex-wrap items-start justify-between gap-2">
           <h2 className="text-base font-semibold text-surface-900">{email.subject}</h2>
           <div className="flex items-center gap-2">
@@ -110,8 +113,8 @@ export function EmailCenter({ email }: { email: InboxEmail }) {
         </div>
       </div>
 
-      {/* Scrollable body */}
-      <div className="flex-1 overflow-y-auto px-5 py-4">
+      {/* Body (scrolls with the composer below it when embedded) */}
+      <div className={classNames('px-5 py-4', !embedded && 'flex-1 overflow-y-auto')}>
         {/* Body */}
         <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-surface-700">{email.body}</div>
 

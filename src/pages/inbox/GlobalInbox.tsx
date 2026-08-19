@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Inbox, ArrowLeft, MailOpen } from 'lucide-react';
+import { Inbox, ArrowLeft, MailOpen, FileText } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import { SearchInput, FilterSelect, EmptyState } from '@/components/ui';
 import { Tabs } from '@/components/ui/misc';
@@ -13,11 +13,15 @@ import { confidenceBucket } from './helpers';
 import { EmailList } from './EmailList';
 import { EmailCenter } from './EmailCenter';
 import { EmailActionPanel } from './EmailActionPanel';
+import { InboxCenterPanel } from './InboxCenterPanel';
+import { QuoteToolsPanel } from './QuoteToolsPanel';
+import { RevisionQuotePanel } from './RevisionQuotePanel';
+import { PoVerificationPanel } from './PoVerificationPanel';
 
 type Tab = 'all' | 'needs_review' | 'drafts';
 
 export default function GlobalInbox() {
-  const { emails, updateEmail } = useApp();
+  const { emails, updateEmail, quotations, sidebarCollapsed, setSidebarCollapsed } = useApp();
   // Office scope still applies in the background (a user only sees emails for
   // offices they may access) — but there is no office FILTER on this screen.
   const inScope = useOfficeScope();
@@ -42,6 +46,25 @@ export default function GlobalInbox() {
   const [mobileView, setMobileView] = useState<'list' | 'detail'>(() =>
     params.get('email') ? 'detail' : 'list'
   );
+
+  // Focused quote-send mode — carried in from "Quotes Pending" via
+  // ?mode=quote-send&qtn=<quotationId>. It stays scoped to the ONE deep-linked
+  // email + quotation, so browsing to other emails shows normal inbox tools.
+  const [quoteSend, setQuoteSend] = useState<{ emailId: string; qtnId: string } | null>(() => {
+    const mode = params.get('mode');
+    const emailId = params.get('email');
+    const qtnId = params.get('qtn');
+    return mode === 'quote-send' && emailId && qtnId ? { emailId, qtnId } : null;
+  });
+
+  // Auto-optimise the workspace: collapse the app sidebar to its icon rail while
+  // the inbox is open, then restore the user's previous state on leaving.
+  const restoreSidebarRef = useRef(sidebarCollapsed);
+  useEffect(() => {
+    const restore = restoreSidebarRef.current;
+    setSidebarCollapsed(true);
+    return () => setSidebarCollapsed(restore);
+  }, [setSidebarCollapsed]);
 
   const scoped = useMemo(() => emails.filter((e) => inScope(e.officeId)), [emails, inScope]);
 
@@ -107,6 +130,19 @@ export default function GlobalInbox() {
     [emails, selectedId]
   );
 
+  // Quote-send tools appear ONLY on the specific deep-linked email, and only
+  // when its passed quotation is resolvable and scoped to the same customer.
+  const isQuoteSend = !!quoteSend && !!selected && selected.id === quoteSend.emailId;
+  const quoteSendQuotation = useMemo(() => {
+    if (!isQuoteSend || !quoteSend) return null;
+    const q = quotations.find((x) => x.id === quoteSend.qtnId) ?? null;
+    // Guard §4: never let a quotation belonging to another customer be opened.
+    if (q && selected?.partyId && q.partyId !== selected.partyId) return null;
+    return q;
+  }, [isQuoteSend, quoteSend, quotations, selected]);
+
+  const showQuoteTools = isQuoteSend && !!quoteSendQuotation;
+
   const onSelect = (id: string) => {
     setSelectedId(id);
     setMobileView('detail');
@@ -157,16 +193,17 @@ export default function GlobalInbox() {
       </div>
 
       {/* Connected three-panel workspace — one surface, vertical dividers, no
-          gaps. The fr ratios (0.62 / 1 / 1.12) give the intended visual
-          hierarchy: narrow list · comfortable reading · widest action panel.
-          Enabled at ≥1180px; below that we fall back to progressive list →
-          detail navigation so the panels never squeeze or scroll sideways. */}
+          gaps. The fr ratios (0.55 / 1 / 0.95 ≈ 22% / 40% / 38%) put the
+          reading + writing centre panel widest, matching the PM layout: narrow
+          list · widest read+compose · quote/action tools. Enabled at ≥1180px;
+          below that we fall back to progressive list → detail navigation so the
+          panels never squeeze or scroll sideways. */}
       <div
         className={classNames(
           'grid grid-cols-1 gap-4',
           'min-[1180px]:h-[calc(100vh-268px)] min-[1180px]:min-h-[520px] min-[1180px]:gap-0',
           'min-[1180px]:overflow-hidden min-[1180px]:rounded-xl min-[1180px]:border min-[1180px]:border-surface-200 min-[1180px]:bg-white min-[1180px]:shadow-card',
-          'min-[1180px]:grid-cols-[minmax(230px,0.62fr)_minmax(290px,1fr)_minmax(330px,1.12fr)]'
+          'min-[1180px]:grid-cols-[minmax(220px,0.55fr)_minmax(330px,1fr)_minmax(310px,0.95fr)]'
         )}
       >
         {/* Left: email list — narrowest, compact, subtly muted, divider on right */}
@@ -199,11 +236,22 @@ export default function GlobalInbox() {
               >
                 <ArrowLeft className="h-4 w-4" /> Back to list
               </button>
+              {showQuoteTools && (
+                <div className="flex flex-none items-center gap-1.5 border-b border-brand-100 bg-brand-50/70 px-4 py-2 text-[12px] font-medium text-brand-700">
+                  <FileText className="h-3.5 w-3.5" /> Quote-send mode — {quoteSendQuotation!.number}
+                </div>
+              )}
               <div className="min-h-0 flex-1">
-                <EmailCenter email={selected} />
+                {showQuoteTools ? (
+                  <InboxCenterPanel email={selected} quoteSend quotation={quoteSendQuotation} />
+                ) : selected.revisionSendId || selected.poVerifyId ? (
+                  <EmailCenter email={selected} />
+                ) : (
+                  <InboxCenterPanel email={selected} />
+                )}
               </div>
             </div>
-            {/* Right: business action / composer — widest, most interactive */}
+            {/* Right: quote tools / business action — dedicated workflow surface */}
             <div
               className={classNames(
                 'card overflow-hidden min-[1180px]:flex min-[1180px]:flex-col',
@@ -212,7 +260,15 @@ export default function GlobalInbox() {
               )}
             >
               <div className="min-h-0 flex-1">
-                <EmailActionPanel email={selected} />
+                {showQuoteTools ? (
+                  <QuoteToolsPanel email={selected} quotation={quoteSendQuotation!} />
+                ) : selected.revisionSendId ? (
+                  <RevisionQuotePanel email={selected} />
+                ) : selected.poVerifyId ? (
+                  <PoVerificationPanel email={selected} />
+                ) : (
+                  <EmailActionPanel email={selected} />
+                )}
               </div>
             </div>
           </>
