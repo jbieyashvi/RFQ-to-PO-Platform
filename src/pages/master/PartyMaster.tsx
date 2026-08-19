@@ -1,4 +1,5 @@
 import { PageHeader } from '@/layout/PageHeader';
+import { DataTable, type Column } from '@/components/ui';
 
 // ---------------------------------------------------------------------------
 // Party Master — aligned to the PM reference prototype: a single clean,
@@ -7,6 +8,11 @@ import { PageHeader } from '@/layout/PageHeader';
 // row actions, no drawer. These PM-reference records are prototype data until
 // the final Party Master data is received from OM. Rendered locally so the
 // shared party store, types and other modules are left untouched.
+//
+// The desktop table uses the shared `DataTable` so its header, typography,
+// spacing, hover, sticky-header, sorting and overflow behaviour match Item
+// Master exactly. Only the two address columns override the DataTable default
+// to wrap onto (at most) two lines.
 // ---------------------------------------------------------------------------
 interface PartyRow {
   company: string;
@@ -66,9 +72,61 @@ const PARTY_ROWS: PartyRow[] = [
   },
 ];
 
-const TH = 'px-4 py-2.5 text-left text-[12px] font-semibold uppercase tracking-wide text-surface-500';
-const PRIMARY = 'text-[13px] font-medium text-surface-800';
-const SECONDARY = 'mt-0.5 text-[12px] leading-relaxed text-surface-500';
+// Person + address stacked inside a single cell. The wrapper resets the
+// DataTable cell's default `whitespace-nowrap` so the address can wrap, capped
+// at two lines with a tooltip carrying the full value.
+function PersonAddress({ name, address }: { name: string; address: string }) {
+  return (
+    <div className="whitespace-normal">
+      <p className="text-[12px] font-medium text-surface-800">{name}</p>
+      <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-surface-500" title={address}>
+        {address}
+      </p>
+    </div>
+  );
+}
+
+const columns: Column<PartyRow>[] = [
+  {
+    key: 'company',
+    header: 'Company Name',
+    width: '20%',
+    truncate: true,
+    title: (r) => r.company,
+    sortValue: (r) => r.company,
+    render: (r) => <span className="font-medium text-surface-800">{r.company}</span>,
+  },
+  {
+    key: 'buyer',
+    header: "Buyer's Name & Billing Address",
+    width: '27%',
+    render: (r) => <PersonAddress name={r.buyer} address={r.billingAddress} />,
+  },
+  {
+    key: 'consignee',
+    header: "Consignee's Name & Address",
+    width: '27%',
+    render: (r) => <PersonAddress name={r.consignee} address={r.consigneeAddress} />,
+  },
+  {
+    key: 'gstin',
+    header: 'GSTIN',
+    width: '15%',
+    truncate: true,
+    title: (r) => r.gstin,
+    sortValue: (r) => r.gstin,
+    render: (r) => <span className="text-surface-700">{r.gstin}</span>,
+  },
+  {
+    key: 'sector',
+    header: 'Sector',
+    width: '11%',
+    truncate: true,
+    title: (r) => r.sector,
+    sortValue: (r) => r.sector,
+    render: (r) => <span className="text-surface-700">{r.sector}</span>,
+  },
+];
 
 export default function PartyMaster() {
   return (
@@ -79,75 +137,33 @@ export default function PartyMaster() {
         crumbs={[{ label: 'Master' }, { label: 'Party Master' }]}
       />
 
-      <div className="card overflow-hidden">
-        {/* Desktop / tablet — single responsive table */}
+      <div className="card">
+        {/* Desktop / tablet — shared DataTable (no filter toolbar: Party Master
+            intentionally has no filters, so the table begins inside the card). */}
         <div className="hidden md:block">
-          <table className="w-full table-fixed border-collapse">
-            <colgroup>
-              <col className="w-[20%]" />
-              <col className="w-[26%]" />
-              <col className="w-[26%]" />
-              <col className="w-[16%]" />
-              <col className="w-[12%]" />
-            </colgroup>
-            <thead>
-              <tr className="border-b border-surface-200 bg-surface-50">
-                <th className={TH}>Company Name</th>
-                <th className={TH}>Buyer&rsquo;s Name &amp; Billing Address</th>
-                <th className={TH}>Consignee&rsquo;s Name &amp; Address</th>
-                <th className={TH}>GSTIN</th>
-                <th className={TH}>Sector</th>
-              </tr>
-            </thead>
-            <tbody>
-              {PARTY_ROWS.map((p) => (
-                <tr
-                  key={p.gstin}
-                  className="border-b border-surface-100 align-top last:border-0 hover:bg-surface-50/60"
-                >
-                  <td className="px-4 py-3">
-                    <p className={PRIMARY}>{p.company}</p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className={PRIMARY}>{p.buyer}</p>
-                    <p className={SECONDARY}>{p.billingAddress}</p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className={PRIMARY}>{p.consignee}</p>
-                    <p className={SECONDARY}>{p.consigneeAddress}</p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="font-mono text-[13px] font-medium text-surface-700">{p.gstin}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="text-[13px] text-surface-700">{p.sector}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable columns={columns} rows={PARTY_ROWS} rowKey={(r) => r.gstin} />
         </div>
 
         {/* Mobile — each record as a labelled stacked card */}
         <div className="divide-y divide-surface-100 md:hidden">
           {PARTY_ROWS.map((p) => (
-            <div key={p.gstin} className="space-y-3 p-4">
+            <div key={p.gstin} className="space-y-2.5 p-4">
               <Field label="Company Name">
-                <p className={PRIMARY}>{p.company}</p>
+                <p className="text-[12px] font-medium text-surface-800">{p.company}</p>
               </Field>
               <Field label="Buyer's Name & Billing Address">
-                <p className={PRIMARY}>{p.buyer}</p>
-                <p className={SECONDARY}>{p.billingAddress}</p>
+                <p className="text-[12px] font-medium text-surface-800">{p.buyer}</p>
+                <p className="mt-0.5 text-[11px] leading-snug text-surface-500">{p.billingAddress}</p>
               </Field>
               <Field label="Consignee's Name & Address">
-                <p className={PRIMARY}>{p.consignee}</p>
-                <p className={SECONDARY}>{p.consigneeAddress}</p>
+                <p className="text-[12px] font-medium text-surface-800">{p.consignee}</p>
+                <p className="mt-0.5 text-[11px] leading-snug text-surface-500">{p.consigneeAddress}</p>
               </Field>
               <Field label="GSTIN">
-                <span className="font-mono text-[13px] font-medium text-surface-700">{p.gstin}</span>
+                <span className="text-[12px] text-surface-700">{p.gstin}</span>
               </Field>
               <Field label="Sector">
-                <span className="text-[13px] text-surface-700">{p.sector}</span>
+                <span className="text-[12px] text-surface-700">{p.sector}</span>
               </Field>
             </div>
           ))}
