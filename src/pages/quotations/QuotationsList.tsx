@@ -5,7 +5,6 @@ import { PageHeader } from '@/layout/PageHeader';
 import {
   Button,
   DataTable,
-  StatusBadge,
   SearchInput,
   FilterSelect,
   Pagination,
@@ -13,16 +12,19 @@ import {
   type FilterChip,
 } from '@/components/ui';
 import { QuotationDetailsDrawer } from '@/components/QuotationDetails';
+import { WorkflowInlineSelect } from '@/components/WorkflowInlineSelect';
+import { WorkflowUpdateModal, type WorkflowRequest } from '@/components/WorkflowUpdateModal';
 import { useApp, useOfficeScope } from '@/context/AppContext';
 import { OFFICES, officeName } from '@/data/offices';
 import { QUOTATION_STAGE, QUOTATION_STATUS } from '@/lib/labels';
-import type { Quotation } from '@/types';
+import type { Quotation, QuotationStage, QuotationStatus } from '@/types';
 import { downloadCSV, formatDateTime, formatINR } from '@/lib/format';
 import { latestQuoteSubmittedAt, queryReceivedAt } from '@/lib/quotationDates';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 
 export default function QuotationsList() {
   const { quotations, role, can, addToast } = useApp();
+  const canEdit = can('quotations', 'edit');
   const inScope = useOfficeScope();
   const [params, setParams] = useSearchParams();
 
@@ -33,8 +35,22 @@ export default function QuotationsList() {
   const [stage, setStage] = useState(params.get('stage') ?? '');
   const [office, setOffice] = useState('');
 
-  const [active, setActive] = useState<Quotation | null>(null);
+  // Track the open drawer by id so it always reflects the live quotation after
+  // a workflow update (inline or drawer), rather than a stale snapshot.
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const active = activeId ? quotations.find((q) => q.id === activeId) ?? null : null;
+
+  // The inline Status/Stage dropdowns don't mutate immediately — picking a new
+  // value opens the shared "Update Quotation Workflow" prompt (review date).
+  const [pending, setPending] = useState<WorkflowRequest | null>(null);
   const loading = useSimulatedLoading([]);
+
+  const statusOptions = (Object.entries(QUOTATION_STATUS) as [QuotationStatus, { label: string }][]).map(
+    ([value, v]) => ({ value, label: v.label })
+  );
+  const stageOptions = (Object.entries(QUOTATION_STAGE) as [QuotationStage, { label: string }][]).map(
+    ([value, v]) => ({ value, label: v.label })
+  );
 
   // sync incoming query params once (dashboard deep-links pass ?status / ?stage / ?q=<QTN no>)
   useEffect(() => {
@@ -106,8 +122,36 @@ export default function QuotationsList() {
     },
     { key: 'office', header: 'Sales Office', truncate: true, title: (r) => officeName(r.officeId), sortValue: (r) => officeName(r.officeId), render: (r) => <span className="text-surface-600">{officeName(r.officeId)}</span> },
     { key: 'owner', header: 'Owner', width: '112px', truncate: true, title: (r) => r.owner, render: (r) => <span className="text-surface-600">{r.owner}</span> },
-    { key: 'status', header: 'Status', width: '90px', render: (r) => <StatusBadge tone={QUOTATION_STATUS[r.status].tone} label={QUOTATION_STATUS[r.status].label} /> },
-    { key: 'stage', header: 'Stage', width: '116px', render: (r) => <StatusBadge tone={QUOTATION_STAGE[r.stage].tone} label={QUOTATION_STAGE[r.stage].label} dot={false} /> },
+    {
+      key: 'status',
+      header: 'Status',
+      width: '116px',
+      render: (r) => (
+        <WorkflowInlineSelect
+          value={r.status}
+          tone={QUOTATION_STATUS[r.status].tone}
+          options={statusOptions}
+          disabled={!canEdit}
+          ariaLabel={`Status for ${r.number}`}
+          onSelect={(value) => setPending({ quotation: r, field: 'status', value })}
+        />
+      ),
+    },
+    {
+      key: 'stage',
+      header: 'Stage',
+      width: '140px',
+      render: (r) => (
+        <WorkflowInlineSelect
+          value={r.stage}
+          tone={QUOTATION_STAGE[r.stage].tone}
+          options={stageOptions}
+          disabled={!canEdit}
+          ariaLabel={`Stage for ${r.number}`}
+          onSelect={(value) => setPending({ quotation: r, field: 'stage', value })}
+        />
+      ),
+    },
     { key: 'value', header: 'Value', width: '96px', align: 'right', sortValue: (r) => r.value, render: (r) => <span className="font-medium text-surface-800">{formatINR(r.value)}</span> },
     {
       key: 'queryReceived',
@@ -131,7 +175,7 @@ export default function QuotationsList() {
       sticky: 'right',
       render: (r) => (
         <div className="flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
-          <Button variant="secondary" size="sm" onClick={() => setActive(r)} aria-label={`Open ${r.number}`}>
+          <Button variant="secondary" size="sm" onClick={() => setActiveId(r.id)} aria-label={`Open ${r.number}`}>
             Open
           </Button>
         </div>
@@ -220,7 +264,7 @@ export default function QuotationsList() {
           rows={pageRows}
           rowKey={(r) => r.id}
           loading={loading}
-          onRowClick={(r) => setActive(r)}
+          onRowClick={(r) => setActiveId(r.id)}
           emptyTitle="No quotations match your filters"
           emptyMessage="Try clearing some filters to see more results."
           emptyAction={chips.length > 0 ? <Button variant="secondary" size="sm" onClick={clearAll}>Clear all filters</Button> : undefined}
@@ -228,7 +272,9 @@ export default function QuotationsList() {
         {!loading && total > 0 && <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={setPageSize} />}
       </div>
 
-      <QuotationDetailsDrawer quotation={active} onClose={() => setActive(null)} onEdit={() => addToast({ type: 'info', title: 'Edit mode', message: 'Use the workflow controls to update status, stage and review date.' })} />
+      <QuotationDetailsDrawer quotation={active} onClose={() => setActiveId(null)} onEdit={() => addToast({ type: 'info', title: 'Edit mode', message: 'Use the workflow controls to update status, stage and review date.' })} />
+
+      <WorkflowUpdateModal request={pending} onClose={() => setPending(null)} />
     </>
   );
 }

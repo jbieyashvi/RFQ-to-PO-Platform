@@ -1,7 +1,9 @@
 import type { BadgeTone } from '@/lib/labels';
 import { classNames } from '@/lib/format';
 
-const toneClass: Record<BadgeTone, string> = {
+// Exported so badge-styled controls (e.g. the inline workflow dropdowns on the
+// quotations list) can match the badge palette exactly.
+export const badgeToneClass: Record<BadgeTone, string> = {
   gray: 'bg-surface-100 text-surface-600 ring-surface-200',
   slate: 'bg-slate-100 text-slate-700 ring-slate-200',
   blue: 'bg-blue-50 text-blue-700 ring-blue-200',
@@ -11,6 +13,8 @@ const toneClass: Record<BadgeTone, string> = {
   violet: 'bg-violet-50 text-violet-700 ring-violet-200',
   teal: 'bg-teal-50 text-teal-700 ring-teal-200',
 };
+
+const toneClass = badgeToneClass;
 
 const dotClass: Record<BadgeTone, string> = {
   gray: 'bg-surface-400',

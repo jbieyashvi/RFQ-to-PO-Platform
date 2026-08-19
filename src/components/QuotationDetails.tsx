@@ -25,9 +25,7 @@ import {
   downloadText,
 } from '@/lib/format';
 import { latestQuoteSubmittedAt, queryReceivedAt } from '@/lib/quotationDates';
-
-// Prototype "today" — a review date must be today or later when the status changes.
-const TODAY_ISO = '2026-08-13';
+import { TODAY_ISO, buildWorkflowPatch, reviewDateError } from '@/lib/quotationWorkflow';
 
 export function QuotationDetailsDrawer({
   quotation,
@@ -40,7 +38,7 @@ export function QuotationDetailsDrawer({
   onEdit?: (q: Quotation) => void;
   initialTab?: string;
 }) {
-  const { updateQuotation, can, addToast } = useApp();
+  const { updateQuotation, can, addToast, currentUser } = useApp();
   const [tab, setTab] = useState('overview');
   const [status, setStatus] = useState<QuotationStatus>('open');
   const [stage, setStage] = useState<QuotationStage>('no_followup');
@@ -64,16 +62,14 @@ export function QuotationDetailsDrawer({
   const submitted = latestQuoteSubmittedAt(q);
   const dirty = status !== q.status || stage !== q.stage || reviewDate !== q.reviewDate;
 
-  // A status change (Open / Close / Receive) makes the review date mandatory and
-  // it must be today or a future date. Changing only the stage does not.
+  // Shared rule (same logic as the inline list dropdowns): a Status OR Stage
+  // change makes the review date mandatory, and it must be today or later.
   const statusChanged = status !== q.status;
-  const reviewDateValid = !!reviewDate && reviewDate >= TODAY_ISO;
-  const reviewError = statusChanged && !reviewDateValid
-    ? (!reviewDate
-        ? 'Select a review date before changing the quotation status.'
-        : 'Review date must be today or a future date.')
-    : '';
-  const saveDisabled = !dirty || !canEdit || (statusChanged && !reviewDateValid);
+  const stageChanged = stage !== q.stage;
+  const workflowChanged = statusChanged || stageChanged;
+  const reviewErr = reviewDateError(reviewDate);
+  const reviewError = workflowChanged ? reviewErr ?? '' : '';
+  const saveDisabled = !dirty || !canEdit || (workflowChanged && !!reviewErr);
 
   const requestClose = () => {
     if (dirty) setConfirmDiscard(true);
@@ -82,23 +78,8 @@ export function QuotationDetailsDrawer({
 
   const saveWorkflow = () => {
     if (saveDisabled) return;
-    updateQuotation(q.id, {
-      status,
-      stage,
-      reviewDate,
-      lastUpdated: '2026-08-13',
-      activity: [
-        ...q.activity,
-        {
-          id: `act-${Date.now()}`,
-          date: '2026-08-13T12:00:00',
-          actor: q.owner,
-          action: 'Quotation updated',
-          detail: `Status → ${QUOTATION_STATUS[status].label}, Stage → ${QUOTATION_STAGE[stage].label}`,
-        },
-      ],
-    });
-    addToast({ type: 'success', title: 'Quotation updated', message: `${q.number} saved.` });
+    updateQuotation(q.id, buildWorkflowPatch(q, { status, stage, reviewDate }, currentUser.fullName));
+    addToast({ type: 'success', title: 'Quotation workflow updated.' });
   };
 
   const downloadPdf = () => {
@@ -184,16 +165,16 @@ export function QuotationDetailsDrawer({
                   label="Review Date"
                   type="date"
                   min={TODAY_ISO}
-                  required={statusChanged}
+                  required={workflowChanged}
                   error={reviewError || undefined}
                   value={reviewDate}
                   disabled={!canEdit}
                   onChange={(e) => setReviewDate(e.target.value)}
                 />
               </div>
-              {statusChanged && !reviewError && (
+              {workflowChanged && !reviewError && (
                 <p className="mt-2 text-xs text-brand-600">
-                  Status change — review date and status are saved together.
+                  Status/Stage change — review date is saved together with the change.
                 </p>
               )}
               {!canEdit && (
