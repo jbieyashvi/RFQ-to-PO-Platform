@@ -11,6 +11,7 @@ import {
   SelectField,
   TextField,
   InfoRow,
+  ConfirmDialog,
 } from '@/components/ui';
 import { useApp } from '@/context/AppContext';
 import { QUOTATION_STAGE, QUOTATION_STATUS, QUOTATION_DELIVERY } from '@/lib/labels';
@@ -23,6 +24,10 @@ import {
   lineTotal,
   downloadText,
 } from '@/lib/format';
+import { latestQuoteSubmittedAt, queryReceivedAt } from '@/lib/quotationDates';
+
+// Prototype "today" — a review date must be today or later when the status changes.
+const TODAY_ISO = '2026-08-13';
 
 export function QuotationDetailsDrawer({
   quotation,
@@ -40,6 +45,7 @@ export function QuotationDetailsDrawer({
   const [status, setStatus] = useState<QuotationStatus>('open');
   const [stage, setStage] = useState<QuotationStage>('no_followup');
   const [reviewDate, setReviewDate] = useState('');
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   useEffect(() => {
     if (quotation) {
@@ -47,6 +53,7 @@ export function QuotationDetailsDrawer({
       setStatus(quotation.status);
       setStage(quotation.stage);
       setReviewDate(quotation.reviewDate);
+      setConfirmDiscard(false);
     }
   }, [quotation, initialTab]);
 
@@ -54,9 +61,27 @@ export function QuotationDetailsDrawer({
   const q = quotation;
   const totals = computeTotals(q.items, q.packingCharges);
   const canEdit = can('quotations', 'edit');
+  const submitted = latestQuoteSubmittedAt(q);
   const dirty = status !== q.status || stage !== q.stage || reviewDate !== q.reviewDate;
 
+  // A status change (Open / Close / Receive) makes the review date mandatory and
+  // it must be today or a future date. Changing only the stage does not.
+  const statusChanged = status !== q.status;
+  const reviewDateValid = !!reviewDate && reviewDate >= TODAY_ISO;
+  const reviewError = statusChanged && !reviewDateValid
+    ? (!reviewDate
+        ? 'Select a review date before changing the quotation status.'
+        : 'Review date must be today or a future date.')
+    : '';
+  const saveDisabled = !dirty || !canEdit || (statusChanged && !reviewDateValid);
+
+  const requestClose = () => {
+    if (dirty) setConfirmDiscard(true);
+    else onClose();
+  };
+
   const saveWorkflow = () => {
+    if (saveDisabled) return;
     updateQuotation(q.id, {
       status,
       stage,
@@ -88,9 +113,10 @@ export function QuotationDetailsDrawer({
   };
 
   return (
+    <>
     <Drawer
       open={!!quotation}
-      onClose={onClose}
+      onClose={requestClose}
       width="xl"
       title={q.number}
       subtitle={
@@ -115,7 +141,7 @@ export function QuotationDetailsDrawer({
               Edit Quotation
             </Button>
           )}
-          <Button variant="primary" onClick={saveWorkflow} disabled={!dirty || !canEdit}>
+          <Button variant="primary" onClick={saveWorkflow} disabled={saveDisabled}>
             Save Changes
           </Button>
         </>
@@ -157,11 +183,19 @@ export function QuotationDetailsDrawer({
                 <TextField
                   label="Review Date"
                   type="date"
+                  min={TODAY_ISO}
+                  required={statusChanged}
+                  error={reviewError || undefined}
                   value={reviewDate}
                   disabled={!canEdit}
                   onChange={(e) => setReviewDate(e.target.value)}
                 />
               </div>
+              {statusChanged && !reviewError && (
+                <p className="mt-2 text-xs text-brand-600">
+                  Status change — review date and status are saved together.
+                </p>
+              )}
               {!canEdit && (
                 <p className="mt-2 text-xs text-amber-600">
                   Your role does not have edit permission for quotations.
@@ -175,9 +209,8 @@ export function QuotationDetailsDrawer({
                 { label: 'Customer Code', value: q.customerCode },
                 { label: 'Sales Office', value: officeName(q.officeId) },
                 { label: 'Owner', value: q.owner },
-                { label: 'Quote Date', value: formatDate(q.quoteDate) },
-                { label: 'Created', value: formatDate(q.createdDate) },
-                { label: 'Review Date', value: formatDate(q.reviewDate) },
+                { label: 'Query Received', value: formatDateTime(queryReceivedAt(q)) },
+                { label: 'Latest Quote Submitted', value: submitted ? formatDateTime(submitted) : 'Not submitted' },
                 { label: 'Last Updated', value: formatDate(q.lastUpdated) },
               ]}
             />
@@ -322,5 +355,17 @@ export function QuotationDetailsDrawer({
         {tab === 'activity' && <ActivityTimeline events={q.activity} />}
       </div>
     </Drawer>
+
+    <ConfirmDialog
+      open={confirmDiscard}
+      onClose={() => setConfirmDiscard(false)}
+      onConfirm={onClose}
+      title="Discard unsaved changes?"
+      message="You have unsaved changes to the status, stage or review date. Close without saving?"
+      confirmLabel="Discard changes"
+      cancelLabel="Keep editing"
+      danger
+    />
+    </>
   );
 }
