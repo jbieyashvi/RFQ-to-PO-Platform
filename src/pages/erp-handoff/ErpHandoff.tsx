@@ -19,7 +19,7 @@ import { SalesOrderDetailsDrawer } from '@/components/SalesOrderDetails';
 import { useApp, useOfficeScope } from '@/context/AppContext';
 import { OFFICES, officeName } from '@/data/offices';
 import type { SalesOrder } from '@/types';
-import { ERP_HANDOFF_STATE } from '@/lib/labels';
+import { ERP_HANDOFF_STATE, ERP_HANDOFF_SOURCE } from '@/lib/labels';
 import { downloadText, formatDate, formatDateTime, formatINR } from '@/lib/format';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 
@@ -121,6 +121,15 @@ export default function ErpHandoff() {
     { key: 'owner', header: 'Owner', truncate: true, title: (r) => r.owner, sortValue: (r) => r.owner, render: (r) => <span className="text-surface-600">{r.owner}</span> },
     { key: 'value', header: 'Order Value', width: '112px', align: 'right', sortValue: (r) => r.value, render: (r) => <span className="font-medium text-surface-800">{formatINR(r.value)}</span> },
     {
+      key: 'source',
+      header: 'Source',
+      width: '168px',
+      truncate: true,
+      title: (r) => ERP_HANDOFF_SOURCE[r.erpHandoff!.source],
+      sortValue: (r) => ERP_HANDOFF_SOURCE[r.erpHandoff!.source],
+      render: (r) => <span className="text-surface-600">{ERP_HANDOFF_SOURCE[r.erpHandoff!.source]}</span>,
+    },
+    {
       key: 'state',
       header: 'Handoff State',
       width: '128px',
@@ -175,8 +184,8 @@ export default function ErpHandoff() {
           loading={loading}
           onRowClick={(r) => setActive(r)}
           rowClassName={(r) => (r.id === highlight ? 'bg-emerald-50/70' : undefined)}
-          emptyTitle="No handoffs yet"
-          emptyMessage="Sales Orders created via Create SO Manually appear here for ERP handoff."
+          emptyTitle="No Sales Orders are currently awaiting ERP handoff."
+          emptyMessage="Sales Orders from PO vs Quote Verification and Create SO Manually appear here for ERP handoff."
         />
         {!loading && total > 0 && <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={setPageSize} />}
       </div>

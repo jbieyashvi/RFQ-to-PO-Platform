@@ -298,21 +298,55 @@ export function PoVerificationPanel({
     });
   };
 
+  // Generate the Sales Order from the fully-verified comparison and, in the SAME
+  // update, push a linked ERP Handoff record (Pending) into the shared store so
+  // both the Sales Orders list and the ERP Handoff queue stay in sync. Guarded so
+  // clicking twice never creates a duplicate.
   const generateSO = () => {
-    if (!resolvedAll) return;
+    if (!resolvedAll || so.erpHandoff) return;
+    const now = `${TODAY_ISO}T12:30:00`;
     const verifiedBy = so.verifiedBy ?? currentUser.fullName;
-    const verifiedAt = so.verifiedAt ?? `${TODAY_ISO}T12:30:00`;
+    const verifiedAt = so.verifiedAt ?? now;
     updateSalesOrder(so.id, {
       soGenerated: true,
+      status: 'so_sent',
+      sentAt: so.sentAt ?? now,
       verifiedBy,
       verifiedAt,
+      erpHandoff: {
+        state: 'pending',
+        source: 'po_verification',
+        submittedAt: now,
+        submittedBy: currentUser.fullName,
+      },
       activity: [
         ...so.activity,
-        { id: `act-${so.id}-sogen-${Date.now()}`, date: `${TODAY_ISO}T12:30:00`, actor: currentUser.fullName, action: 'Sales Order generated', detail: `${so.number} generated from verified PO & quotation` },
+        { id: `act-${so.id}-sogen-${Date.now()}`, date: now, actor: currentUser.fullName, action: 'Sales Order generated', detail: `${so.number} generated from verified PO & quotation — sent to ERP Handoff (Pending)` },
       ],
     });
-    addToast({ type: 'success', title: 'Sales Order generated', message: `${so.number} created from verified data. Sent to ERP Handoff (Pending).` });
+    addToast({ type: 'success', title: 'Sales Order generated', message: `${so.number} created and sent to ERP Handoff (Pending).` });
     navigate('/sales-orders');
+  };
+
+  // Repair a broken link: a Sales Order that was already generated (seeded or
+  // legacy) but never received its ERP Handoff record. Creates the missing
+  // Pending handoff so it appears in the ERP Handoff queue.
+  const repairHandoff = () => {
+    if (so.erpHandoff) return;
+    const now = `${TODAY_ISO}T12:30:00`;
+    updateSalesOrder(so.id, {
+      erpHandoff: {
+        state: 'pending',
+        source: 'po_verification',
+        submittedAt: now,
+        submittedBy: currentUser.fullName,
+      },
+      activity: [
+        ...so.activity,
+        { id: `act-${so.id}-handoffrepair-${Date.now()}`, date: now, actor: currentUser.fullName, action: 'ERP Handoff record created', detail: `Linked ERP Handoff (Pending) created for ${so.number}` },
+      ],
+    });
+    addToast({ type: 'success', title: 'ERP Handoff linked', message: `${so.number} added to ERP Handoff (Pending).` });
   };
 
   return (
@@ -359,7 +393,14 @@ export function PoVerificationPanel({
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-4 py-3">
         {tab === 'generate' ? (
-          <GenerateTab so={so} canGenerate={canGenerate} onGenerate={generateSO} />
+          <GenerateTab
+            so={so}
+            canGenerate={canGenerate}
+            onGenerate={generateSO}
+            onRepairHandoff={repairHandoff}
+            onViewSalesOrder={() => navigate('/sales-orders')}
+            onViewHandoff={() => navigate('/erp-handoff', { state: { highlightId: so.id } })}
+          />
         ) : correcting ? (
           <CorrectQuoteEditor
             quote={quote}
@@ -829,8 +870,24 @@ function CorrectQuoteEditor({
 
 // ---------------------------------------------------------------------------
 
-function GenerateTab({ so, canGenerate, onGenerate }: { so: SalesOrder; canGenerate: boolean; onGenerate: () => void }) {
+function GenerateTab({
+  so,
+  canGenerate,
+  onGenerate,
+  onRepairHandoff,
+  onViewSalesOrder,
+  onViewHandoff,
+}: {
+  so: SalesOrder;
+  canGenerate: boolean;
+  onGenerate: () => void;
+  onRepairHandoff: () => void;
+  onViewSalesOrder: () => void;
+  onViewHandoff: () => void;
+}) {
   const total = so.poValue;
+  const generated = so.soGenerated || !!so.erpHandoff;
+  const handoffMissing = generated && !so.erpHandoff;
   return (
     <>
       <div className="mb-3 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-700">
@@ -859,9 +916,37 @@ function GenerateTab({ so, canGenerate, onGenerate }: { so: SalesOrder; canGener
         </div>
       </div>
 
-      {so.soGenerated ? (
-        <div className="mt-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-700">
-          <CheckCircle2 className="h-4 w-4 flex-none" /> Sales Order {so.number} has been generated from the verified data.
+      {generated ? (
+        <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+          <div className="flex items-center gap-2 text-[13px] font-semibold text-emerald-800">
+            <CheckCircle2 className="h-4 w-4 flex-none" /> Sales Order Generated
+          </div>
+          <p className="mt-1 text-[12px] text-emerald-700">
+            <span className="font-semibold">{so.number}</span> was created from the verified PO &amp; quotation
+            {so.erpHandoff ? ' and sent to ERP Handoff (Pending).' : '.'}
+          </p>
+
+          {handoffMissing && (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
+              <p className="flex items-center gap-1 font-medium">
+                <AlertTriangle className="h-3.5 w-3.5 flex-none" /> This Sales Order has no linked ERP Handoff record.
+              </p>
+              <Button variant="secondary" size="sm" className="mt-2 w-full" onClick={onRepairHandoff}>
+                Create ERP Handoff record
+              </Button>
+            </div>
+          )}
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button variant="secondary" size="sm" leftIcon={<Eye className="h-3.5 w-3.5" />} onClick={onViewSalesOrder}>
+              View Sales Order
+            </Button>
+            {so.erpHandoff && (
+              <Button variant="secondary" size="sm" leftIcon={<ArrowLeft className="h-3.5 w-3.5 rotate-180" />} onClick={onViewHandoff}>
+                View in ERP Handoff
+              </Button>
+            )}
+          </div>
         </div>
       ) : (
         <div className="mt-4">

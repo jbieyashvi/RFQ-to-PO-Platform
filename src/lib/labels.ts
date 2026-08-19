@@ -2,6 +2,7 @@ import type {
   ActionKey,
   EmailClassification,
   ErpHandoffState,
+  ErpHandoffSource,
   InboxAction,
   ModuleKey,
   QuotationDeliveryState,
@@ -102,6 +103,11 @@ export const SO_STATUS: Record<SOStatus, { label: string; tone: BadgeTone }> = {
 export const ERP_HANDOFF_STATE: Record<ErpHandoffState, { label: string; tone: BadgeTone }> = {
   pending: { label: 'Pending', tone: 'amber' },
   handed_over: { label: 'Handed Over', tone: 'green' },
+};
+
+export const ERP_HANDOFF_SOURCE: Record<ErpHandoffSource, string> = {
+  po_verification: 'PO vs Quote Verification',
+  manual: 'Create SO Manually',
 };
 
 export const REVISION_STATE: Record<

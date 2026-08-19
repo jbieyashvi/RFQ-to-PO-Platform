@@ -315,7 +315,7 @@ export default function CreateSalesOrder() {
       poProofType: form.poProofType,
       poProofNotes: form.poProofNotes || undefined,
       sentAt: opts.withHandoff ? now : undefined,
-      erpHandoff: opts.withHandoff ? { state: 'pending', submittedAt: now, submittedBy: currentUser.fullName } : undefined,
+      erpHandoff: opts.withHandoff ? { state: 'pending', source: 'manual', submittedAt: now, submittedBy: currentUser.fullName } : undefined,
       revisionNumber: 0,
       versions: [
         {

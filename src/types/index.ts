@@ -319,8 +319,12 @@ export interface VerificationField {
 // operational handoff step only.
 export type ErpHandoffState = 'pending' | 'handed_over';
 
+// Which flow pushed the Sales Order into the ERP Handoff queue.
+export type ErpHandoffSource = 'po_verification' | 'manual';
+
 export interface ErpHandoff {
   state: ErpHandoffState;
+  source: ErpHandoffSource; // PO vs Quote Verification vs Create SO Manually
   submittedAt: string; // ISO datetime the SO was submitted to the handoff queue
   submittedBy: string;
   reference?: string; // ERP reference / handoff note captured on handover
