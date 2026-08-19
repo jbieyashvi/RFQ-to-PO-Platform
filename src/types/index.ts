@@ -158,6 +158,45 @@ export interface RevisionRecord {
   by: string;
 }
 
+// A customer-requested change captured from the revision email and surfaced as
+// an old → new comparison in the Quote Generator. `field`/`itemProposed` let the
+// generator apply the proposed value to the editable line when applicable.
+export type RequestedChangeType =
+  | 'unit_price'
+  | 'quantity'
+  | 'delivery'
+  | 'payment'
+  | 'warranty'
+  | 'catalogue_item'
+  | 'add_item'
+  | 'remove_item';
+
+export interface RequestedChange {
+  id: string;
+  type: RequestedChangeType;
+  label: string; // e.g. "Unit price — EM Flowmeter DN50"
+  oldValue: string; // display string, e.g. "₹95,000"
+  newValue: string; // display string, e.g. "₹86,000"
+  itemId?: string; // links to a line item when the change is line-level
+  field?: 'unitPrice' | 'quantity'; // which line field the proposal edits
+  itemProposed?: number; // proposed numeric value for `field`
+}
+
+// An immutable point-in-time version of a quotation. The previous version is
+// never overwritten — a revised quote is saved as a NEW version on send.
+export interface QuoteVersion {
+  id: string;
+  label: string; // 'V1', 'V2'…
+  version: number;
+  createdAt: string; // ISO datetime
+  by: string;
+  value: number;
+  items: LineItem[];
+  note?: string;
+  sent?: boolean;
+  sentAt?: string;
+}
+
 export interface ActivityEvent {
   id: string;
   date: string;
@@ -204,6 +243,9 @@ export interface Quotation {
   packingCharges: number;
   attachments: Attachment[];
   revisions: RevisionRecord[];
+  // Immutable version history — populated when a revised quote is sent so the
+  // previous version is preserved (List of Quotations shows the latest).
+  quoteVersions?: QuoteVersion[];
   activity: ActivityEvent[];
 }
 
@@ -380,6 +422,13 @@ export interface InboxEmail {
   linkedPO?: string;
   linkedSO?: string;
   quotationSendId?: string; // set when this is an outbound "Review & Send" for a quotation
+  // Revision workflow (Quotes Needing Revision → Open). When set, the inbox
+  // right panel renders the Quote Generator instead of the generic composer.
+  revisionSendId?: string; // quotation id this revision targets
+  inquiryNo?: string; // linked inquiry identifier shown in the centre panel
+  queueLabel?: string; // e.g. "Quote Needs Revision"
+  requestedChanges?: RequestedChange[]; // customer-requested old → new changes
+  reviewDate?: string; // manually-set next review date on the linked record
   extraction: ExtractionField[];
   extractionConfirmed: boolean;
   requiredAttachment?: boolean; // outgoing reply must carry an attachment (e.g. quote PDF)

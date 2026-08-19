@@ -34,6 +34,7 @@ import { INBOX_CLASSIFICATION } from '@/lib/labels';
 import { officeName } from '@/data/offices';
 import { classNames, formatINR } from '@/lib/format';
 import { sendBlockers, isValidEmail } from './helpers';
+import { RevisionQuotePanel } from './RevisionQuotePanel';
 
 const TODAY_TS = '2026-08-13T12:30:00';
 
@@ -155,6 +156,13 @@ export function EmailActionPanel({ email }: { email: InboxEmail }) {
   const actions = contextualActions(email, navigate);
 
   const readOnly = email.sent || !canDraft;
+
+  // Quotes Needing Revision → Open lands here: render the dedicated Quote
+  // Generator (queue label, changes requested, editable revised quote, send)
+  // instead of the generic reply composer.
+  if (email.revisionSendId) {
+    return <RevisionQuotePanel email={email} />;
+  }
 
   return (
     <div className="flex h-full flex-col">

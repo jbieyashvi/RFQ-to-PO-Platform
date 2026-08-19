@@ -17,6 +17,14 @@ export function formatNumber(value: number): string {
   return new Intl.NumberFormat('en-IN').format(value);
 }
 
+// Compact Indian currency for dense tables/cards: ₹86,000, ₹7.5L, ₹1.2Cr.
+export function compactINR(value: number): string {
+  const trim = (n: number) => String(Math.round(n * 10) / 10);
+  if (Math.abs(value) >= 10000000) return `₹${trim(value / 10000000)}Cr`;
+  if (Math.abs(value) >= 100000) return `₹${trim(value / 100000)}L`;
+  return `₹${new Intl.NumberFormat('en-IN').format(Math.round(value))}`;
+}
+
 export function formatDate(iso: string, opts?: { short?: boolean }): string {
   if (!iso) return '—';
   const d = new Date(iso + 'T00:00:00');

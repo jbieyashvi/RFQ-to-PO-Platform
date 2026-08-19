@@ -107,6 +107,7 @@ export function EmailCenter({ email }: { email: InboxEmail }) {
           <span className="chip"><Building2 className="h-3 w-3" /> {officeName(email.officeId)}</span>
           <span className="chip"><UserRound className="h-3 w-3" /> {email.owner}</span>
           {email.customerName && <span className="chip">{email.customerName}{email.customerCode ? ` · ${email.customerCode}` : ''}</span>}
+          {email.inquiryNo && <span className="chip !text-amber-700 !bg-amber-50 !border-amber-200">Inquiry: {email.inquiryNo}</span>}
           {email.linkedQuotation && <span className="chip !text-brand-700 !bg-brand-50 !border-brand-200">Quote: {email.linkedQuotation}</span>}
           {email.linkedPO && <span className="chip !text-violet-700 !bg-violet-50 !border-violet-200">PO: {email.linkedPO}</span>}
           {email.linkedSO && <span className="chip !text-teal-700 !bg-teal-50 !border-teal-200">SO: {email.linkedSO}</span>}
