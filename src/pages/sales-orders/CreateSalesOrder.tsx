@@ -27,6 +27,8 @@ import {
   StatusBadge,
   Toggle,
 } from '@/components/ui';
+import { DocumentLetterhead } from '@/components/DocumentLetterhead';
+import { COMPANY_NAME } from '@/lib/brand';
 import { useApp } from '@/context/AppContext';
 import { OFFICES, officeName } from '@/data/offices';
 import { OWNERS, USERS } from '@/data/users';
@@ -380,7 +382,7 @@ export default function CreateSalesOrder() {
   const downloadDraft = () => {
     downloadText(
       `SO-draft-${form.poNumber || 'new'}.txt`,
-      `DRAFT SALES ORDER\nCustomer: ${customerName}\nPO: ${form.poNumber}\nValue: ${formatINR(totals.grandTotal)}\nItems: ${lines.length}`
+      `${COMPANY_NAME}\nDRAFT SALES ORDER ACKNOWLEDGEMENT\n\nCustomer: ${customerName}\nPO: ${form.poNumber}\nValue: ${formatINR(totals.grandTotal)}\nItems: ${lines.length}`
     );
     addToast({ type: 'info', title: 'Draft downloaded', message: 'SO draft exported.' });
   };
@@ -656,6 +658,10 @@ export default function CreateSalesOrder() {
         }
       >
         <div className="space-y-5">
+          <DocumentLetterhead
+            docTitle="Sales Order Acknowledgement"
+            meta={<p className="font-semibold text-surface-800">{form.poNumber ? `PO ${form.poNumber}` : 'Draft'}</p>}
+          />
           <div className="flex items-start justify-between">
             <div>
               <h3 className="text-lg font-bold text-surface-900">{customerName || 'Customer'}</h3>

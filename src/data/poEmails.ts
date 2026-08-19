@@ -28,7 +28,7 @@ export const PO_VERIFICATION_EMAILS: InboxEmail[] = SALES_ORDERS.map((so) => {
     id: `em-po-${so.id}`,
     senderName: `${contact} Procurement`,
     senderEmail: `procurement@${domain}`,
-    recipient: 'sales@nexustrade.in',
+    recipient: 'sales@flowtech-instruments.com',
     cc: [`accounts@${domain}`],
     subject: `Purchase Order ${so.poNumber} against ${so.quotationNumber ?? 'quotation'}`,
     receivedAt: `${so.receivedDate}T08:30:00`,

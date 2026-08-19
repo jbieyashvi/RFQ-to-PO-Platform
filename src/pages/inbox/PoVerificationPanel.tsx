@@ -53,6 +53,7 @@ import {
 } from '@/components/ui';
 import { useApp } from '@/context/AppContext';
 import { OFFICES, officeName } from '@/data/offices';
+import { emailSignature } from '@/lib/brand';
 import { OWNERS, USERS } from '@/data/users';
 import { ITEMS } from '@/data/masters';
 import { classNames, computeTotals, formatDate, formatINR, lineTotal } from '@/lib/format';
@@ -182,7 +183,7 @@ export function PoVerificationPanel({
           `On verifying the PO against the accepted quotation, the following field(s) do not match and need a corrected Purchase Order:\n\n` +
           `${mismatchLines}\n\n` +
           `Request you to kindly share a revised Purchase Order reflecting the accepted terms so we may proceed with the Sales Order.\n\n` +
-          `Warm regards,\n${so.owner}\nNexus RFQ — ${officeName(so.officeId)}`,
+          emailSignature(so.owner, officeName(so.officeId)),
         relatedDoc: so.poNumber,
         aiGenerated: true,
       },
@@ -279,7 +280,7 @@ export function PoVerificationPanel({
           `${mismatchLines}\n\n` +
           `Corrected value: ${formatINR(value)}.\n\n` +
           `Kindly confirm so we may align the Purchase Order and proceed with the Sales Order.\n\n` +
-          `Warm regards,\n${so.owner}\nNexus RFQ — ${officeName(so.officeId)}`,
+          emailSignature(so.owner, officeName(so.officeId)),
         relatedDoc: quote.number,
         aiGenerated: true,
       },
@@ -1121,7 +1122,7 @@ function GenerateTab({
           `Dear ${contact},\n\nThank you for Purchase Order ${so.poNumber}.\n\n` +
           `Please find attached our Sales Order ${so.number} raised against your PO, for a total value of ${formatINR(so.value)}. ` +
           `Kindly review and confirm so we may proceed with processing.\n\n` +
-          `Warm regards,\n${so.owner}\nNexus RFQ — ${officeName(so.officeId)}`,
+          emailSignature(so.owner, officeName(so.officeId)),
         relatedDoc: so.number,
         aiGenerated: true,
       },

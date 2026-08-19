@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { Boxes, Mail, Loader2, CheckCircle2, ArrowLeft } from 'lucide-react';
+import { Mail, Loader2, CheckCircle2, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { classNames } from '@/lib/format';
+import { FlowtechLogo } from '@/components/Brand';
+import { APP_NAME, APP_SUBTITLE, COMPANY_DOMAIN } from '@/lib/brand';
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('');
@@ -28,13 +30,11 @@ export default function ForgotPassword() {
   return (
     <div className="flex min-h-screen items-center justify-center overflow-x-clip bg-surface-50 px-4 py-10">
       <div className="w-full max-w-md">
-        <div className="mb-6 flex items-center justify-center gap-2.5">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm">
-            <Boxes className="h-6 w-6" />
-          </div>
+        <div className="mb-6 flex items-center justify-center gap-3">
+          <FlowtechLogo className="h-12" imgClassName="h-6" />
           <div>
-            <p className="text-lg font-bold leading-tight text-surface-900">Nexus RFQ</p>
-            <p className="text-xs leading-tight text-surface-400">RFQ → PO Platform</p>
+            <p className="text-lg font-bold leading-tight text-surface-900">{APP_NAME}</p>
+            <p className="text-xs leading-tight text-surface-500">{APP_SUBTITLE}</p>
           </div>
         </div>
 
@@ -75,7 +75,7 @@ export default function ForgotPassword() {
                       autoFocus
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="you@nexustrade.in"
+                      placeholder={`you@${COMPANY_DOMAIN}`}
                       className={classNames('input pl-9', error && 'input-error')}
                       aria-invalid={!!error}
                     />

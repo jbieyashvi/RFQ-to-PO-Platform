@@ -1,9 +1,11 @@
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { Boxes, Eye, EyeOff, Loader2, Mail, Lock, Info } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Mail, Lock, Info } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { useAuth, DEMO_EMAIL, DEMO_PASSWORD } from '@/context/AuthContext';
 import { classNames } from '@/lib/format';
+import { FlowtechLogo } from '@/components/Brand';
+import { APP_NAME, APP_SUBTITLE, COMPANY_DOMAIN } from '@/lib/brand';
 
 export default function Login() {
   const { login, isAuthenticated } = useAuth();
@@ -47,21 +49,19 @@ export default function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center overflow-x-clip bg-surface-50 px-4 py-10">
       <div className="w-full max-w-md">
-        {/* Brand */}
-        <div className="mb-6 flex items-center justify-center gap-2.5">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm">
-            <Boxes className="h-6 w-6" />
-          </div>
+        {/* Brand — official Flowtech wordmark */}
+        <div className="mb-6 flex items-center justify-center gap-3">
+          <FlowtechLogo className="h-12" imgClassName="h-6" />
           <div>
-            <p className="text-lg font-bold leading-tight text-surface-900">Nexus RFQ</p>
-            <p className="text-xs leading-tight text-surface-400">RFQ → PO Platform</p>
+            <p className="text-lg font-bold leading-tight text-surface-900">{APP_NAME}</p>
+            <p className="text-xs leading-tight text-surface-500">{APP_SUBTITLE}</p>
           </div>
         </div>
 
         <div className="rounded-2xl border border-surface-200 bg-white p-6 shadow-card sm:p-8">
-          <h1 className="text-xl font-bold tracking-tight text-surface-900">Welcome back</h1>
+          <h1 className="text-xl font-bold tracking-tight text-surface-900">Welcome to {APP_NAME}</h1>
           <p className="mt-1 text-sm text-surface-500">
-            Sign in to manage quotations, purchase orders and sales orders.
+            Sign in to manage enquiries, quotations, purchase orders and sales orders.
           </p>
 
           {formError && (
@@ -83,7 +83,7 @@ export default function Login() {
                   autoFocus
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@nexustrade.in"
+                  placeholder={`you@${COMPANY_DOMAIN}`}
                   className={classNames('input pl-9', errors.email && 'input-error')}
                   aria-invalid={!!errors.email}
                   aria-describedby={errors.email ? 'login-email-error' : undefined}

@@ -30,6 +30,7 @@ import { Button, TextField, TextAreaField, Modal, StatusBadge } from '@/componen
 import { useApp } from '@/context/AppContext';
 import { INBOX_CLASSIFICATION } from '@/lib/labels';
 import { officeName } from '@/data/offices';
+import { emailSignature } from '@/lib/brand';
 import { classNames, computeTotals, formatINR, lineTotal } from '@/lib/format';
 import { TODAY_ISO } from '@/lib/quotationWorkflow';
 import { actionableFields, deriveVerificationStatus } from '@/lib/verification';
@@ -55,7 +56,7 @@ function templateFor(email: InboxEmail): OutgoingDraft {
     to: email.senderEmail,
     cc: email.cc.join(', '),
     subject: `RE: ${email.subject}`,
-    body: `${greeting}\n\nThank you for your email. We acknowledge receipt and will revert shortly.\n\nWarm regards,\n${email.owner}\nNexus RFQ — ${officeName(email.officeId)}`,
+    body: `${greeting}\n\nThank you for your email. We acknowledge receipt and will revert shortly.\n\n${emailSignature(email.owner, officeName(email.officeId))}`,
     relatedDoc: email.linkedQuotation ?? email.linkedPO ?? email.linkedSO ?? '',
     aiGenerated: true,
   };

@@ -36,16 +36,16 @@ export interface AccountSettings {
 }
 
 // Demo credentials (prototype only — no real backend).
-export const DEMO_EMAIL = 'aarav.mehta@nexustrade.in';
+export const DEMO_EMAIL = 'aarav.mehta@flowtech-instruments.com';
 export const DEMO_PASSWORD = 'demo123';
 
 const DEFAULT_PROFILE: AuthProfile = {
   id: 'usr-001',
   fullName: 'Aarav Mehta',
-  email: 'aarav.mehta@nexustrade.in',
+  email: 'aarav.mehta@flowtech-instruments.com',
   phone: '+91 98200 41122',
   jobTitle: 'Head of Inside Sales',
-  employeeId: 'NX-0001',
+  employeeId: 'FT-0001',
   officeId: 'off-mum',
   role: 'super_admin',
 };
@@ -65,7 +65,7 @@ const DEFAULT_SETTINGS: AccountSettings = {
   },
 };
 
-const STORAGE_KEY = 'nexus-rfq-auth';
+const STORAGE_KEY = 'flowtech-rfq-auth';
 
 interface StoredSession {
   profile: AuthProfile;

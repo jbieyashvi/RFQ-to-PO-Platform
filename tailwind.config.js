@@ -4,19 +4,24 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Flowtech brand — controlled red used for primary actions, active
+        // states and focus accents. Maps the pervasive `brand` token from the
+        // former indigo ramp onto Flowtech's crimson.
         brand: {
-          50: '#eef2ff', 100: '#e0e7ff', 200: '#c7d2fe', 300: '#a5b4fc',
-          400: '#818cf8', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca',
-          800: '#3730a3', 900: '#312e81', 950: '#1e1b4b',
+          50: '#FDEDEE', 100: '#FAD8DA', 200: '#F3C4C6', 300: '#E79A9D',
+          400: '#D9686C', 500: '#CE3438', 600: '#C52E33', 700: '#AA252A',
+          800: '#8A1E22', 900: '#6E1A1D', 950: '#40100F',
         },
+        // Neutral surfaces — warm charcoal/greys tuned to the Flowtech palette
+        // (App Background #F7F7F5, Surface #FFFFFF, Border #E5E5E2, text #202020).
         surface: {
-          0: '#ffffff', 50: '#f8fafc', 100: '#f1f5f9', 200: '#e2e8f0',
-          300: '#cbd5e1', 400: '#94a3b8', 500: '#64748b', 600: '#475569',
-          700: '#334155', 800: '#1e293b', 900: '#0f172a',
+          0: '#ffffff', 50: '#f7f7f5', 100: '#f0f0ee', 200: '#e5e5e2',
+          300: '#d4d4d0', 400: '#a3a3a0', 500: '#7a7a7a', 600: '#555555',
+          700: '#3a3a3a', 800: '#202020', 900: '#151515',
         },
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+        sans: ['Inter', 'Manrope', 'Arial', 'sans-serif'],
       },
       boxShadow: {
         card: '0 1px 2px 0 rgb(0 0 0 / 0.04), 0 1px 3px 0 rgb(0 0 0 / 0.06)',

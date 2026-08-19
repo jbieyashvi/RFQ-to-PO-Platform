@@ -71,7 +71,7 @@ function inValueBucket(v: number, bucket: string): boolean {
 
 function officeEmail(officeId: string) {
   const city = officeName(officeId).split(' ')[0].toLowerCase();
-  return `sales.${city}@nexustrade.in`;
+  return `sales.${city}@flowtech-instruments.com`;
 }
 
 export default function QuotesRevisions() {

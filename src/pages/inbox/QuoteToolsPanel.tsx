@@ -11,6 +11,7 @@ import {
 import type { InboxEmail, Quotation } from '@/types';
 import { Button, Modal, StatusBadge } from '@/components/ui';
 import { QuotationDetailsDrawer } from '@/components/QuotationDetails';
+import { DocumentLetterhead } from '@/components/DocumentLetterhead';
 import { useApp } from '@/context/AppContext';
 import { QUOTATION_DELIVERY } from '@/lib/labels';
 import { computeTotals, formatINR, lineTotal } from '@/lib/format';
@@ -166,6 +167,10 @@ export function QuoteToolsPanel({ email, quotation }: { email: InboxEmail; quota
         footer={<Button variant="secondary" onClick={() => setShowPreview(false)}>Close Preview</Button>}
       >
         <div className="space-y-4">
+          <DocumentLetterhead
+            docTitle="Quotation"
+            meta={<p className="font-semibold text-surface-800">{quotation.number}</p>}
+          />
           <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-surface-200 px-4 py-3">
             <div>
               <p className="text-[11px] uppercase tracking-wide text-surface-400">Quotation No.</p>

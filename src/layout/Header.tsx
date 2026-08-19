@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { ConfirmDialog } from '@/components/ui';
+import { APP_NAME } from '@/lib/brand';
 
 function useClickOutside<T extends HTMLElement>(onClose: () => void) {
   const ref = useRef<T>(null);
@@ -118,7 +119,7 @@ export function Header({
         open={signOutOpen}
         onClose={() => setSignOutOpen(false)}
         onConfirm={confirmSignOut}
-        title="Sign out of Nexus RFQ?"
+        title={`Sign out of ${APP_NAME}?`}
         message="You will need to sign in again to access the platform."
         confirmLabel="Sign Out"
         cancelLabel="Cancel"

@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { ChevronRight, Boxes, X } from 'lucide-react';
+import { ChevronRight, X } from 'lucide-react';
 import type { ModuleKey } from '@/types';
 import { useApp, useOfficeScope } from '@/context/AppContext';
 import { NAV, MASTER_CHILD_MODULE } from './nav';
 import { classNames } from '@/lib/format';
+import { FlowtechLogo, FlowtechMonogram } from '@/components/Brand';
+import { APP_SUBTITLE } from '@/lib/brand';
 
 function visibleModule(can: (m: ModuleKey, a: 'view') => boolean, module: ModuleKey | ModuleKey[]) {
   if (Array.isArray(module)) return module.some((m) => can(m, 'view'));
@@ -46,16 +48,17 @@ export function Sidebar({
 
   const content = (
     <div className="flex h-full flex-col border-r border-surface-200 bg-white text-surface-700">
-      {/* brand */}
+      {/* brand — official Flowtech wordmark when expanded, monogram when collapsed */}
       <div className="flex h-14 flex-none items-center gap-2.5 border-b border-surface-100 px-4">
-        <div className="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-brand-600 text-white shadow-sm">
-          <Boxes className="h-5 w-5" />
-        </div>
-        {!collapsed && (
-          <div className="min-w-0">
-            <p className="truncate text-sm font-bold text-surface-800">Nexus RFQ</p>
-            <p className="truncate text-[11px] text-surface-400">RFQ → PO Platform</p>
-          </div>
+        {collapsed ? (
+          <FlowtechMonogram className="h-9 w-9" />
+        ) : (
+          <>
+            <FlowtechLogo />
+            <div className="min-w-0">
+              <p className="truncate text-[11px] font-medium text-surface-500">{APP_SUBTITLE}</p>
+            </div>
+          </>
         )}
         <button
           onClick={onCloseMobile}

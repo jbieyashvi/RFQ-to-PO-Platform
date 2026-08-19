@@ -41,6 +41,8 @@ import {
 } from '@/components/ui';
 import { useApp } from '@/context/AppContext';
 import { OFFICES, officeName } from '@/data/offices';
+import { emailSignature } from '@/lib/brand';
+import { DocumentLetterhead } from '@/components/DocumentLetterhead';
 import { OWNERS, USERS } from '@/data/users';
 import {
   amountInWords,
@@ -375,7 +377,7 @@ export function SoRevisionPanel({
           `${changeLines}\n\n` +
           `Revised order value: ${formatINR(value)}.\n\n` +
           `Kindly review and confirm so we may proceed accordingly.\n\n` +
-          `Warm regards,\n${form.owner}\nNexus RFQ — ${officeName(form.officeId)}`,
+          emailSignature(form.owner, officeName(form.officeId)),
         relatedDoc: so.number,
         aiGenerated: true,
       },
@@ -989,6 +991,10 @@ function SoRevisionPreviewModal({
       footer={<Button variant="primary" onClick={onClose}>Close</Button>}
     >
       <div className="space-y-4">
+        <DocumentLetterhead
+          docTitle="Sales Order Acknowledgement"
+          meta={<p className="font-semibold text-surface-800">{so.number}</p>}
+        />
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="text-[15px] font-bold text-surface-900">{so.customerName}</h3>

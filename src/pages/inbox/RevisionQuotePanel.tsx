@@ -13,11 +13,13 @@ import {
 } from 'lucide-react';
 import type { InboxEmail, LineItem, RequestedChange } from '@/types';
 import { Button, Modal, StatusBadge } from '@/components/ui';
+import { DocumentLetterhead } from '@/components/DocumentLetterhead';
 import { useApp } from '@/context/AppContext';
 import { ITEMS } from '@/data/masters';
 import { classNames, downloadText, formatINR, lineTotal } from '@/lib/format';
 import { buildVersions, fmtDate, grandTotalOf } from '@/lib/revisionQueue';
 import { officeName } from '@/data/offices';
+import { emailSignature } from '@/lib/brand';
 import { quoteSignature } from './helpers';
 
 const ATTACH_TS = '2026-08-13T12:40:00';
@@ -198,7 +200,7 @@ export function RevisionQuotePanel({
           `Please find attached our revised quotation reflecting the requested changes.\n\n` +
           `Revised value: ${formatINR(revisedValue)}.\n\n` +
           `Kindly review and confirm. We remain available for any clarification.\n\n` +
-          `Warm regards,\n${q.owner}\nNexus RFQ — ${officeName(email.officeId)}`,
+          emailSignature(q.owner, officeName(email.officeId)),
         relatedDoc: q.number,
         aiGenerated: true,
       },
@@ -423,7 +425,11 @@ export function RevisionQuotePanel({
         subtitle={`${q.number} · ${q.customerName}`}
         footer={<Button variant="primary" onClick={() => setShowPreview(false)}>Close</Button>}
       >
-        <div className="overflow-hidden rounded-xl border border-surface-200">
+        <DocumentLetterhead
+          docTitle="Revised Quotation"
+          meta={<p className="font-semibold text-surface-800">{q.number}</p>}
+        />
+        <div className="mt-4 overflow-hidden rounded-xl border border-surface-200">
           <table className="w-full border-collapse text-[12px]">
             <thead>
               <tr className="border-b border-surface-200 bg-surface-50 text-[10.5px] font-semibold uppercase tracking-[0.02em] text-surface-500">

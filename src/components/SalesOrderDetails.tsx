@@ -5,6 +5,7 @@ import { Drawer, Button, DescList, InfoRow } from '@/components/ui';
 import { useApp } from '@/context/AppContext';
 import { officeName } from '@/data/offices';
 import { computeTotals, downloadText, formatDate, formatINR, lineTotal } from '@/lib/format';
+import { COMPANY_NAME } from '@/lib/brand';
 
 // Spec-aligned labels for the four payment buckets (mirrors Create SO Manually).
 const PAYMENT_LABEL: Record<keyof PaymentTerms, string> = {
@@ -67,7 +68,7 @@ export function SalesOrderDetailsDrawer({
   const download = () => {
     downloadText(
       `${so.number.replace(/\//g, '-')}.txt`,
-      `SALES ORDER ${so.number}\nPO: ${so.poNumber} (${formatDate(so.poDate)})\nCustomer: ${so.customerName} (${so.customerCode})\nSales Office: ${officeName(so.officeId)}\nOwner: ${so.owner}\nValue: ${formatINR(so.value)}\n\nItems:\n${so.items
+      `${COMPANY_NAME}\nSALES ORDER ACKNOWLEDGEMENT\n\n${so.number}\nPO: ${so.poNumber} (${formatDate(so.poDate)})\nCustomer: ${so.customerName} (${so.customerCode})\nSales Office: ${officeName(so.officeId)}\nOwner: ${so.owner}\nValue: ${formatINR(so.value)}\n\nItems:\n${so.items
         .map((it) => `- ${it.itemCode} ${it.description} x${it.quantity} @ ${formatINR(it.unitPrice)}`)
         .join('\n')}`
     );

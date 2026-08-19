@@ -12,6 +12,7 @@ import {
 } from '@/components/ui';
 import { useApp, useOfficeScope } from '@/context/AppContext';
 import { officeName, officeCode } from '@/data/offices';
+import { APP_NAME, emailSignature } from '@/lib/brand';
 import type { InboxEmail, Quotation } from '@/types';
 import { classNames } from '@/lib/format';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
@@ -127,7 +128,7 @@ function inquiryNumber(q: Quotation, seq: number): string {
 
 function officeEmail(officeId: string) {
   const city = officeName(officeId).split(' ')[0].toLowerCase();
-  return `sales.${city}@nexustrade.in`;
+  return `sales.${city}@flowtech-instruments.com`;
 }
 
 export default function QuotesPending() {
@@ -245,7 +246,7 @@ export default function QuotesPending() {
       cc: [],
       subject: `Enquiry ${r.inquiryNo} — ${q.customerName}`,
       receivedAt: r.queryCreatedAt.slice(0, 19),
-      body: `Dear Nexus team,\n\nPlease share your quotation against our enquiry ${r.inquiryNo}. Kindly include GST, delivery and payment terms.\n\nRegards,\n${party?.contactPerson ?? 'Procurement'}\n${q.customerName}`,
+      body: `Dear Flowtech team,\n\nPlease share your quotation against our enquiry ${r.inquiryNo}. Kindly include GST, delivery and payment terms.\n\nRegards,\n${party?.contactPerson ?? 'Procurement'}\n${q.customerName}`,
       thread: [],
       classification: 'inquiry',
       aiConfidence: 95,
@@ -269,8 +270,8 @@ export default function QuotesPending() {
         from,
         to,
         cc: '',
-        subject: `Quotation ${q.number} from Nexus RFQ`,
-        body: `Dear ${party?.contactPerson ?? 'Sir/Madam'},\n\nThank you for your enquiry ${r.inquiryNo}. Our quotation ${q.number} is ready for your kind review.\n\nGrand total: ${compactINR(q.value)} (inclusive of applicable GST).\nPayment terms: ${q.paymentTerms}.\nDelivery: ${q.deliveryTerms}.\n\nThis quotation is valid for 30 days. We look forward to your confirmation.\n\nWarm regards,\n${q.owner}\nNexus RFQ — ${officeName(q.officeId)}`,
+        subject: `Quotation ${q.number} from ${APP_NAME}`,
+        body: `Dear ${party?.contactPerson ?? 'Sir/Madam'},\n\nThank you for your enquiry ${r.inquiryNo}. Our quotation ${q.number} is ready for your kind review.\n\nGrand total: ${compactINR(q.value)} (inclusive of applicable GST).\nPayment terms: ${q.paymentTerms}.\nDelivery: ${q.deliveryTerms}.\n\nThis quotation is valid for 30 days. We look forward to your confirmation.\n\n${emailSignature(q.owner, officeName(q.officeId))}`,
         relatedDoc: q.number,
         amount: q.value,
         aiGenerated: true,

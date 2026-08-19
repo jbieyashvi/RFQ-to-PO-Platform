@@ -1,4 +1,4 @@
-# Nexus RFQ — RFQ-to-PO Management Platform
+# Flowtech RFQ — RFQ-to-PO Management Platform
 
 A polished, responsive, high-fidelity **frontend prototype** for managing the workflow
 from sales quotation to customer PO verification and sales-order creation. Data is

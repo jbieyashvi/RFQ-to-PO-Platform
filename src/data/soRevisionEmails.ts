@@ -26,7 +26,7 @@ function domainOf(name: string): string {
 
 function officeEmail(officeId: string): string {
   const city = officeName(officeId).split(' ')[0].toLowerCase();
-  return `sales.${city}@nexustrade.in`;
+  return `sales.${city}@flowtech-instruments.com`;
 }
 
 // Only Sales Orders in a revision sub-state appear in the revisions queue.
