@@ -55,7 +55,7 @@ export default function Verification() {
       addToast({ type: 'error', title: 'Purchase Order email not found', message: 'The source Purchase Order email could not be found.' });
       return;
     }
-    navigate(`/inbox?email=${linked.id}`);
+    navigate(`/inbox?mode=po-verification&po=${encodeURIComponent(so.poNumber)}&qtn=${encodeURIComponent(so.quotationNumber ?? '')}&email=${linked.id}`);
   };
 
   const columns: Column<SalesOrder>[] = [

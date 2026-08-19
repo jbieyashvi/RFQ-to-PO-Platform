@@ -160,12 +160,12 @@ export default function QuotesRevisions() {
     const q = r.q;
     const existing = emails.find((e) => e.revisionSendId === q.id && !e.sent);
     if (existing) {
-      navigate(`/inbox?email=${existing.id}`);
+      navigate(`/inbox?mode=quote-revision&qtn=${q.id}&email=${existing.id}`);
       return;
     }
     const id = `em-rev-${q.id}`;
     if (!emails.some((e) => e.id === id)) addEmail(buildRevisionEmail(q, r, id));
-    navigate(`/inbox?email=${id}`);
+    navigate(`/inbox?mode=quote-revision&qtn=${q.id}&email=${id}`);
   };
 
   const buildRevisionEmail = (q: Quotation, r: RevisionRow, id: string): InboxEmail => {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Inbox, ArrowLeft, MailOpen, FileText } from 'lucide-react';
+import { Inbox, ArrowLeft, MailOpen, FileText, RefreshCw, ClipboardCheck } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import { SearchInput, FilterSelect, EmptyState } from '@/components/ui';
 import { Tabs } from '@/components/ui/misc';
@@ -11,7 +11,6 @@ import type { EmailClassification, InboxEmail } from '@/types';
 import { classNames } from '@/lib/format';
 import { confidenceBucket } from './helpers';
 import { EmailList } from './EmailList';
-import { EmailCenter } from './EmailCenter';
 import { EmailActionPanel } from './EmailActionPanel';
 import { InboxCenterPanel } from './InboxCenterPanel';
 import { QuoteToolsPanel } from './QuoteToolsPanel';
@@ -21,7 +20,7 @@ import { PoVerificationPanel } from './PoVerificationPanel';
 type Tab = 'all' | 'needs_review' | 'drafts';
 
 export default function GlobalInbox() {
-  const { emails, updateEmail, quotations, sidebarCollapsed, setSidebarCollapsed } = useApp();
+  const { emails, updateEmail, quotations, salesOrders, sidebarCollapsed, setSidebarCollapsed } = useApp();
   // Office scope still applies in the background (a user only sees emails for
   // offices they may access) — but there is no office FILTER on this screen.
   const inScope = useOfficeScope();
@@ -56,6 +55,12 @@ export default function GlobalInbox() {
     const qtnId = params.get('qtn');
     return mode === 'quote-send' && emailId && qtnId ? { emailId, qtnId } : null;
   });
+
+  // Bumped whenever a right-hand workspace PREPARES the centre composer (adds a
+  // revised/corrected quote, drafts a PO-correction request). The centre panel
+  // watches it to pull the freshly written draft in and scroll/focus itself.
+  const [focusTick, setFocusTick] = useState(0);
+  const onPrepared = () => setFocusTick((t) => t + 1);
 
   // Auto-optimise the workspace: collapse the app sidebar to its icon rail while
   // the inbox is open, then restore the user's previous state on leaving.
@@ -105,7 +110,11 @@ export default function GlobalInbox() {
       .sort((a, b) => ((a.sent && a.sentAt ? a.sentAt : a.receivedAt) < (b.sent && b.sentAt ? b.sentAt : b.receivedAt) ? 1 : -1));
   }, [scoped, tab, search, classification, owner, readState, confidence, dateFrom, dateTo]);
 
-  // Deep-link: ?email=<id> (used by "Review & Send Email" from Quotes Pending)
+  // Deep-link: ?email=<id> (+ optional ?mode=quote-send|quote-revision|
+  // po-verification & qtn/po params) — used by "Review & Send Email" from Quotes
+  // Pending, "Open in Inbox" from Quote Revisions, and "Verify" from PO
+  // Verification. The params are intentionally LEFT in the URL so a reload lands
+  // back on the same conversation with the same business context.
   useEffect(() => {
     const id = params.get('email');
     if (id && emails.some((e) => e.id === id)) {
@@ -114,7 +123,6 @@ export default function GlobalInbox() {
       setMobileView('detail');
       const e = emails.find((x) => x.id === id);
       if (e && !e.read) updateEmail(id, { read: true });
-      setParams({}, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -143,11 +151,45 @@ export default function GlobalInbox() {
 
   const showQuoteTools = isQuoteSend && !!quoteSendQuotation;
 
+  // Business context for the revision and PO-verification workflows is derived
+  // directly from the selected email's own workflow ids, so it survives reloads
+  // and manual navigation without depending on the deep-link query.
+  const revisionQuotation = useMemo(
+    () => (selected?.revisionSendId ? quotations.find((q) => q.id === selected.revisionSendId) ?? null : null),
+    [selected, quotations]
+  );
+  const poSalesOrder = useMemo(
+    () => (selected?.poVerifyId ? salesOrders.find((s) => s.id === selected.poVerifyId) ?? null : null),
+    [selected, salesOrders]
+  );
+  const poQuote = useMemo(
+    () => (poSalesOrder ? quotations.find((q) => q.id === poSalesOrder.quotationId) ?? null : null),
+    [poSalesOrder, quotations]
+  );
+
+  const isRevision = !showQuoteTools && !!selected?.revisionSendId;
+  const isPoVerify = !showQuoteTools && !isRevision && !!selected?.poVerifyId;
+
+  // Keep the URL describing the current conversation + its workflow so a reload
+  // restores exactly what the user is looking at.
+  const urlFor = (e: InboxEmail): Record<string, string> => {
+    if (quoteSend && e.id === quoteSend.emailId) return { mode: 'quote-send', email: e.id, qtn: quoteSend.qtnId };
+    if (e.revisionSendId) return { mode: 'quote-revision', email: e.id, qtn: e.revisionSendId };
+    if (e.poVerifyId) {
+      const so = salesOrders.find((s) => s.id === e.poVerifyId);
+      return { mode: 'po-verification', email: e.id, po: so?.poNumber ?? '', qtn: so?.quotationNumber ?? '' };
+    }
+    return { email: e.id };
+  };
+
   const onSelect = (id: string) => {
     setSelectedId(id);
     setMobileView('detail');
     const e = emails.find((x) => x.id === id);
-    if (e && !e.read) updateEmail(id, { read: true });
+    if (e) {
+      setParams(urlFor(e), { replace: true });
+      if (!e.read) updateEmail(id, { read: true });
+    }
   };
 
   const hasFilters = search || classification || owner || readState || confidence || dateFrom || dateTo;
@@ -241,11 +283,23 @@ export default function GlobalInbox() {
                   <FileText className="h-3.5 w-3.5" /> Quote-send mode — {quoteSendQuotation!.number}
                 </div>
               )}
+              {isRevision && (
+                <div className="flex flex-none items-center gap-1.5 border-b border-brand-100 bg-brand-50/70 px-4 py-2 text-[12px] font-medium text-brand-700">
+                  <RefreshCw className="h-3.5 w-3.5" /> Quote revision — {revisionQuotation?.number ?? selected.linkedQuotation ?? ''}
+                </div>
+              )}
+              {isPoVerify && (
+                <div className="flex flex-none items-center gap-1.5 border-b border-brand-100 bg-brand-50/70 px-4 py-2 text-[12px] font-medium text-brand-700">
+                  <ClipboardCheck className="h-3.5 w-3.5" /> PO vs Quote verification — {poSalesOrder?.poNumber ?? selected.linkedPO ?? ''}
+                </div>
+              )}
               <div className="min-h-0 flex-1">
                 {showQuoteTools ? (
-                  <InboxCenterPanel email={selected} quoteSend quotation={quoteSendQuotation} />
-                ) : selected.revisionSendId || selected.poVerifyId ? (
-                  <EmailCenter email={selected} />
+                  <InboxCenterPanel email={selected} mode="quote-send" quotation={quoteSendQuotation} focusTick={focusTick} />
+                ) : isRevision ? (
+                  <InboxCenterPanel email={selected} mode="revision" quotation={revisionQuotation} focusTick={focusTick} />
+                ) : isPoVerify ? (
+                  <InboxCenterPanel email={selected} mode="po-verify" salesOrder={poSalesOrder} quotation={poQuote} focusTick={focusTick} />
                 ) : (
                   <InboxCenterPanel email={selected} />
                 )}
@@ -262,10 +316,10 @@ export default function GlobalInbox() {
               <div className="min-h-0 flex-1">
                 {showQuoteTools ? (
                   <QuoteToolsPanel email={selected} quotation={quoteSendQuotation!} />
-                ) : selected.revisionSendId ? (
-                  <RevisionQuotePanel email={selected} />
-                ) : selected.poVerifyId ? (
-                  <PoVerificationPanel email={selected} />
+                ) : isRevision ? (
+                  <RevisionQuotePanel email={selected} onPrepared={onPrepared} />
+                ) : isPoVerify ? (
+                  <PoVerificationPanel email={selected} onPrepared={onPrepared} />
                 ) : (
                   <EmailActionPanel email={selected} />
                 )}

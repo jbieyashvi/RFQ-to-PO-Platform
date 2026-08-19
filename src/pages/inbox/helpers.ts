@@ -40,6 +40,35 @@ export function quoteSendBlockers(s: QuoteSendState): string[] {
   return b;
 }
 
+export interface ComposerState {
+  to: string;
+  subject: string;
+  body: string;
+  reviewDate: string;
+  hasAttachment: boolean;
+  attachmentStale: boolean;
+  /** Revision / corrected-quote sends require the system PDF; a PO-correction request does not. */
+  requireAttachment: boolean;
+}
+
+/**
+ * Blocking reasons a prepared workflow email (revision, corrected quote, or
+ * updated-PO request) cannot be sent from the shared middle composer yet. The
+ * next review date is compulsory for every one of these follow-up sends.
+ */
+export function composerBlockers(s: ComposerState): string[] {
+  const b: string[] = [];
+  if (!isValidEmail(s.to)) b.push('A valid recipient (To) address is required.');
+  if (!s.subject.trim()) b.push('Subject is required.');
+  if (!s.body.trim()) b.push('Email body is required.');
+  if (s.requireAttachment) {
+    if (!s.hasAttachment) b.push('Add the latest quotation to the email before sending.');
+    else if (s.attachmentStale) b.push('The quotation has changed. Add the latest version before sending.');
+  }
+  if (!s.reviewDate) b.push('Select the next review date before sending.');
+  return b;
+}
+
 /** Required extraction fields that are still missing or low-confidence & unresolved. */
 export function unresolvedMandatory(email: InboxEmail): string[] {
   return email.extraction

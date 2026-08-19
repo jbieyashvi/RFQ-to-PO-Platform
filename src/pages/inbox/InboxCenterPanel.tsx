@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Sparkles,
   AlertTriangle,
@@ -13,20 +13,36 @@ import {
   Paperclip,
   X,
   CalendarClock,
+  Wand2,
 } from 'lucide-react';
-import type { InboxEmail, OutgoingDraft, Quotation } from '@/types';
+import type {
+  InboxEmail,
+  OutgoingDraft,
+  Quotation,
+  SalesOrder,
+  VerificationField,
+} from '@/types';
 import { Button, TextField, TextAreaField, Modal, StatusBadge } from '@/components/ui';
 import { useApp } from '@/context/AppContext';
 import { INBOX_CLASSIFICATION } from '@/lib/labels';
 import { officeName } from '@/data/offices';
-import { classNames, formatINR } from '@/lib/format';
+import { classNames, formatINR, lineTotal } from '@/lib/format';
 import { TODAY_ISO } from '@/lib/quotationWorkflow';
+import { actionableFields, deriveVerificationStatus } from '@/lib/verification';
 import { EmailCenter } from './EmailCenter';
-import { sendBlockers, isValidEmail, quoteSignature, quoteSendBlockers } from './helpers';
+import {
+  sendBlockers,
+  isValidEmail,
+  quoteSignature,
+  quoteSendBlockers,
+  composerBlockers,
+} from './helpers';
 
 // Deterministic prototype clock (pinned to 2026-08-13).
 const TODAY_TS = '2026-08-13T12:30:00';
 const SENT_TS = '2026-08-13T12:45:00';
+
+export type ComposeMode = 'normal' | 'quote-send' | 'revision' | 'po-verify';
 
 function templateFor(email: InboxEmail): OutgoingDraft {
   const greeting = `Dear ${email.senderName.split(' ')[0] || 'Sir/Madam'},`;
@@ -41,24 +57,55 @@ function templateFor(email: InboxEmail): OutgoingDraft {
   };
 }
 
+// A blank reply scaffold for workflow modes — the right panel fills in the real
+// To / Subject / Body when it prepares the composer.
+function blankDraft(email: InboxEmail): OutgoingDraft {
+  return {
+    from: email.recipient,
+    to: email.senderEmail,
+    cc: email.cc.join(', '),
+    subject: '',
+    body: '',
+    relatedDoc: email.linkedQuotation ?? email.linkedPO ?? '',
+    aiGenerated: false,
+  };
+}
+
+const COMPOSE_HEADING: Record<string, string> = {
+  'quote-send': 'Reply — Send Quotation',
+  revision: 'Reply — Send Revised Quotation',
+  'po-request': 'Reply — Request Updated PO',
+  'quote-correct': 'Reply — Send Corrected Quotation',
+  normal: 'Outgoing Email',
+};
+
 /**
- * The centre panel of the Global Inbox: the selected incoming email plus the
- * outgoing composer. The composer ALWAYS lives here (never in the right panel).
- * In `quoteSend` mode it swaps the generic Related-Document / Amount fields for
- * the required Review Date + the attached-quotation indicator, and gates sending
- * on the latest quotation being attached.
+ * The centre panel of the Global Inbox and the ONE place any email is finally
+ * sent. It always shows the selected incoming email plus the outgoing composer;
+ * the right-hand business panels only PREPARE content (edit a quote, request a
+ * corrected PO) and hand it to this composer via the email record. Depending on
+ * `mode` the composer finalises the matching workflow:
+ *   • quote-send    → send the attached quotation
+ *   • revision      → send the revised quotation (new version)
+ *   • po-verify     → request an updated PO, or send a corrected quotation
+ * `normal` keeps the generic Approve & Send reply.
  */
 export function InboxCenterPanel({
   email,
-  quoteSend = false,
+  mode = 'normal',
   quotation = null,
+  salesOrder = null,
+  focusTick = 0,
 }: {
   email: InboxEmail;
-  quoteSend?: boolean;
+  mode?: ComposeMode;
   quotation?: Quotation | null;
+  salesOrder?: SalesOrder | null;
+  focusTick?: number;
 }) {
   const {
     updateEmail,
+    addEmail,
     canInbox,
     addToast,
     quotations,
@@ -69,23 +116,49 @@ export function InboxCenterPanel({
     role,
   } = useApp();
 
-  const [draft, setDraft] = useState<OutgoingDraft>(email.draft ?? templateFor(email));
+  const isWorkflow = mode !== 'normal';
+  const intent = email.composeIntent; // 'revision' | 'po-request' | 'quote-correct'
+
+  const [draft, setDraft] = useState<OutgoingDraft>(
+    email.draft ?? (isWorkflow ? blankDraft(email) : templateFor(email))
+  );
   const [reviewDate, setReviewDate] = useState<string>(email.reviewDate ?? quotation?.reviewDate ?? '');
   const [preview, setPreview] = useState(false);
+  const [attachPreview, setAttachPreview] = useState(false);
+
+  const composerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    setDraft(email.draft ?? templateFor(email));
+    setDraft(email.draft ?? (isWorkflow ? blankDraft(email) : templateFor(email)));
     setReviewDate(email.reviewDate ?? quotation?.reviewDate ?? '');
     setPreview(false);
+    setAttachPreview(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [email.id]);
+
+  // A right-panel action just PREPARED this composer — pull in the freshly
+  // written draft / review date and bring the composer into view + focus.
+  useEffect(() => {
+    if (focusTick <= 0) return;
+    if (email.draft) setDraft(email.draft);
+    setReviewDate(email.reviewDate ?? quotation?.reviewDate ?? '');
+    const t = setTimeout(() => {
+      composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // Focus the first editable field (To) — skip the disabled From input.
+      composerRef.current?.querySelector<HTMLInputElement>('input:not([disabled])')?.focus();
+    }, 50);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusTick]);
 
   const canDraft = canInbox('draft_reply');
   const canSend = canInbox('send');
   const canApprove = canInbox('approve');
 
-  // Sending a customer-facing email needs BOTH approve and send permission.
-  const permissionOk = canSend && canApprove;
+  // quote-send and the generic reply both need approve + send; the revision and
+  // PO follow-ups only need send (they were already approved as documents).
+  const permissionOk =
+    mode === 'quote-send' || mode === 'normal' ? canSend && canApprove : canSend;
   const permissionMessage =
     role === 'sales_user'
       ? 'Approval required from Office Admin or Super Admin.'
@@ -95,9 +168,17 @@ export function InboxCenterPanel({
   const setD = <K extends keyof OutgoingDraft>(k: K, v: OutgoingDraft[K]) =>
     setDraft((d) => ({ ...d, [k]: v }));
 
-  // ---- Quote-send attachment / staleness ----
+  // Which modes carry a system-generated quotation attachment.
+  const requireAttachment =
+    mode === 'quote-send' || mode === 'revision' || (mode === 'po-verify' && intent === 'quote-correct');
+
+  // The composer FORM is shown once there is something to send. For quote-send
+  // and normal replies that is always; for revision / PO it is only after the
+  // right panel prepares the email (sets composeIntent).
+  const composePrepared = mode === 'quote-send' || mode === 'normal' ? true : !!intent;
+
   const attachmentStale = !!(
-    quoteSend &&
+    requireAttachment &&
     quotation &&
     email.attachedQuote &&
     email.attachedQuote.signature !== quoteSignature(quotation)
@@ -118,21 +199,35 @@ export function InboxCenterPanel({
       }),
     [draft.to, draft.subject, draft.body, reviewDate, email.attachedQuote, attachmentStale]
   );
+  const workflowBlockersBase = useMemo(
+    () =>
+      composerBlockers({
+        to: draft.to,
+        subject: draft.subject,
+        body: draft.body,
+        reviewDate,
+        hasAttachment: !!email.attachedQuote,
+        attachmentStale,
+        requireAttachment,
+      }),
+    [draft.to, draft.subject, draft.body, reviewDate, email.attachedQuote, attachmentStale, requireAttachment]
+  );
 
-  const baseBlockers = quoteSend ? quoteBlockersBase : normalBlockers;
+  const baseBlockers =
+    mode === 'quote-send' ? quoteBlockersBase : mode === 'normal' ? normalBlockers : workflowBlockersBase;
   const blockers = permissionOk ? baseBlockers : [...baseBlockers, permissionMessage];
   const canFinalSend = blockers.length === 0;
 
   const blockReason = !permissionOk
     ? permissionMessage
     : baseBlockers.length > 0
-    ? quoteSend
-      ? baseBlockers[0]
-      : 'Complete classification and confirm the extracted details before sending.'
+    ? mode === 'normal'
+      ? 'Complete classification and confirm the extracted details before sending.'
+      : baseBlockers[0]
     : '';
 
   const saveDraft = () => {
-    updateEmail(email.id, { draft, draftSaved: true, ...(quoteSend ? { reviewDate } : {}) });
+    updateEmail(email.id, { draft, draftSaved: true, ...(isWorkflow ? { reviewDate } : {}) });
     addToast({ type: 'success', title: 'Draft saved', message: `Reply to ${email.senderName} saved as draft.` });
   };
 
@@ -210,6 +305,148 @@ export function InboxCenterPanel({
     addToast({ type: 'success', title: 'Quotation sent successfully.', message: `${quotation.number} sent to ${draft.to} and removed from Quotes Pending.` });
   };
 
+  // ---- Revision send (Send Email): the quote was already revised + saved by
+  // the right panel; here we snapshot it as a new sent version and mark sent. ----
+  const sendRevision = () => {
+    if (!canFinalSend || !quotation) return;
+    const q = quotation;
+    const existing = q.quoteVersions && q.quoteVersions.length > 0 ? q.quoteVersions : [];
+    const nextVersion = existing.length + 1;
+    const newVersion = {
+      id: `qv-${q.id}-${nextVersion}`,
+      label: `V${nextVersion}`,
+      version: nextVersion,
+      createdAt: SENT_TS,
+      by: currentUser.fullName,
+      value: q.value,
+      items: q.items.map((it) => ({ ...it })),
+      note: 'Revised quotation sent to customer',
+      sent: true,
+      sentAt: SENT_TS,
+    };
+    updateQuotation(q.id, {
+      quoteVersions: [...existing, newVersion],
+      workState: 'sent',
+      deliveryState: 'sent',
+      sentAt: SENT_TS,
+      sentBy: currentUser.fullName,
+      sendChannel: 'Email (via Global Inbox)',
+      reviewDate,
+      lastUpdated: '2026-08-13',
+      revisions: [
+        ...q.revisions,
+        { id: `rev-${q.id}-${nextVersion}`, version: nextVersion, date: '2026-08-13', reason: 'Revised quotation sent to customer', by: currentUser.fullName },
+      ],
+      activity: [
+        ...q.activity,
+        { id: `act-${q.id}-send-${nextVersion}`, date: SENT_TS, actor: currentUser.fullName, action: 'Revised quotation sent to customer', detail: `${email.attachedQuote?.fileName ?? q.number} → ${draft.to} · next review ${reviewDate}` },
+      ],
+    });
+    updateEmail(email.id, { draft, draftSaved: true, sent: true, sentAt: SENT_TS, needsReview: false, reviewDate });
+    addToast({ type: 'success', title: 'Revised quotation sent successfully.', message: `${q.number} sent to ${draft.to}. Saved as ${newVersion.label}.` });
+  };
+
+  // Record the outgoing customer email as a sent item in the inbox history.
+  const recordOutgoing = (so: SalesOrder, withAttachment: boolean) => {
+    addEmail({
+      id: `em-out-${so.id}-${intent}-${Date.now()}`,
+      senderName: so.owner,
+      senderEmail: email.recipient,
+      recipient: draft.to,
+      cc: draft.cc ? draft.cc.split(',').map((s) => s.trim()).filter(Boolean) : [],
+      subject: draft.subject,
+      receivedAt: TODAY_TS,
+      body: draft.body,
+      thread: [],
+      classification: 'purchase_order',
+      aiConfidence: 100,
+      read: true,
+      needsReview: false,
+      officeId: so.officeId,
+      owner: so.owner,
+      partyId: so.partyId,
+      customerName: so.customerName,
+      customerCode: so.customerCode,
+      linkedPO: so.poNumber,
+      linkedQuotation: so.quotationNumber,
+      linkedSO: so.number,
+      attachedQuote: withAttachment ? email.attachedQuote : undefined,
+      extraction: [],
+      extractionConfirmed: true,
+      draftSaved: true,
+      sent: true,
+      sentAt: TODAY_TS,
+    });
+  };
+
+  // ---- PO verification — Path 1: request an updated PO (no attachment). The
+  // workflow state moves to "Awaiting Corrected PO" ONLY now, on send. ----
+  const sendPoRequest = () => {
+    if (!canFinalSend || !salesOrder) return;
+    const so = salesOrder;
+    const targetKeys = new Set(actionableFields(so.verificationFields).map((f) => f.key));
+    const newFields: VerificationField[] = so.verificationFields.map((f) =>
+      targetKeys.has(f.key) ? { ...f, resolution: 'awaiting_po' } : f
+    );
+    const newStatus = deriveVerificationStatus(newFields);
+    updateSalesOrder(so.id, {
+      verificationFields: newFields,
+      verificationStatus: newStatus,
+      reviewDate,
+      activity: [
+        ...so.activity,
+        { id: `act-${so.id}-po-${Date.now()}`, date: TODAY_TS, actor: currentUser.fullName, action: 'Requested updated PO from customer', detail: `${targetKeys.size} field(s) flagged · next review ${reviewDate}` },
+      ],
+    });
+    recordOutgoing(so, false);
+    // Reset the composer — the PO conversation stays open for the correction.
+    updateEmail(email.id, { reviewDate, needsReview: newStatus !== 'verified', draft: undefined, composeIntent: undefined, draftSaved: false });
+    addToast({ type: 'success', title: 'Updated PO requested', message: `Sent to ${draft.to}. Case moved to Awaiting Corrected PO.` });
+  };
+
+  // ---- PO verification — Path 2: send the corrected quotation. The quote was
+  // already corrected + saved by the right panel. ----
+  const sendQuoteCorrection = () => {
+    if (!canFinalSend || !salesOrder) return;
+    const so = salesOrder;
+    const targetKeys = new Set(actionableFields(so.verificationFields).map((f) => f.key));
+    const newFields: VerificationField[] = so.verificationFields.map((f) =>
+      targetKeys.has(f.key) ? { ...f, resolution: 'awaiting_quote' } : f
+    );
+    const newStatus = deriveVerificationStatus(newFields);
+    updateSalesOrder(so.id, {
+      verificationFields: newFields,
+      verificationStatus: newStatus,
+      reviewDate,
+      activity: [
+        ...so.activity,
+        { id: `act-${so.id}-qc-${Date.now()}`, date: TODAY_TS, actor: currentUser.fullName, action: 'Sent corrected quotation to customer', detail: `${email.attachedQuote?.qtnNumber ?? so.quotationNumber ?? ''} → ${draft.to} · next review ${reviewDate}` },
+      ],
+    });
+    if (quotation) {
+      updateQuotation(quotation.id, {
+        reviewDate,
+        lastUpdated: '2026-08-13',
+        activity: [
+          ...quotation.activity,
+          { id: `act-${quotation.id}-qc-${Date.now()}`, date: TODAY_TS, actor: currentUser.fullName, action: 'Corrected quotation sent to customer', detail: `PO ${so.poNumber} · next review ${reviewDate}` },
+        ],
+      });
+    }
+    recordOutgoing(so, true);
+    updateEmail(email.id, { reviewDate, needsReview: newStatus !== 'verified', draft: undefined, composeIntent: undefined, attachedQuote: undefined, draftSaved: false });
+    addToast({ type: 'success', title: 'Corrected quotation sent', message: `Sent to ${draft.to}. Case moved to Updated Quote Sent.` });
+  };
+
+  const onWorkflowSend = () => {
+    if (mode === 'quote-send') sendQuote();
+    else if (mode === 'revision') sendRevision();
+    else if (mode === 'po-verify') (intent === 'po-request' ? sendPoRequest() : sendQuoteCorrection());
+  };
+
+  const headingKey = mode === 'po-verify' ? intent ?? 'po-request' : mode;
+  const heading = COMPOSE_HEADING[headingKey] ?? 'Outgoing Email';
+
   return (
     <div className="flex h-full flex-col">
       {/* Read + compose share one scroll area */}
@@ -217,12 +454,10 @@ export function InboxCenterPanel({
         <EmailCenter email={email} embedded />
 
         {/* Composer */}
-        <div className="border-t border-surface-100 px-5 py-4">
+        <div ref={composerRef} className="border-t border-surface-100 px-5 py-4">
           <div className="mb-2 flex items-center justify-between">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-surface-400">
-              {quoteSend ? 'Reply — Send Quotation' : 'Outgoing Email'}
-            </p>
-            {draft.aiGenerated && (
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-surface-400">{heading}</p>
+            {composePrepared && draft.aiGenerated && (
               <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-medium text-brand-700 ring-1 ring-inset ring-brand-200">
                 <Sparkles className="h-2.5 w-2.5" /> AI-drafted
               </span>
@@ -235,89 +470,118 @@ export function InboxCenterPanel({
             </div>
           )}
 
-          <div className="space-y-2.5">
-            <TextField label="From" value={draft.from} disabled onChange={() => {}} className="py-1.5 text-[13px]" />
-            <TextField label="To" required value={draft.to} onChange={(e) => setD('to', e.target.value)} disabled={readOnly} error={!isValidEmail(draft.to) ? 'Valid recipient required' : undefined} className="py-1.5 text-[13px]" />
-            <TextField label="Cc" value={draft.cc} onChange={(e) => setD('cc', e.target.value)} disabled={readOnly} className="py-1.5 text-[13px]" />
-            <TextField label="Subject" required value={draft.subject} onChange={(e) => setD('subject', e.target.value)} disabled={readOnly} className="py-1.5 text-[13px]" />
-            <TextAreaField label="Body" required rows={8} value={draft.body} onChange={(e) => setD('body', e.target.value)} disabled={readOnly} className="text-[13px]" />
+          {isWorkflow && !composePrepared && !email.sent ? (
+            /* Awaiting preparation from the right-hand workspace */
+            <div className="flex items-start gap-2.5 rounded-lg border border-dashed border-surface-300 bg-surface-50/70 px-3.5 py-3 text-[12px] text-surface-500">
+              <Wand2 className="mt-0.5 h-4 w-4 flex-none text-brand-400" />
+              <span>
+                Prepare this reply from the workspace on the right.{' '}
+                {mode === 'revision'
+                  ? 'Edit the quote, then use “Add Revised Quote to Email”'
+                  : 'Use “Request Updated PO” or “Correct Quote”'}{' '}
+                — it will appear here to review, set the next review date, and send.
+              </span>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              <TextField label="From" value={draft.from} disabled onChange={() => {}} className="py-1.5 text-[13px]" />
+              <TextField
+                label="To"
+                required
+                value={draft.to}
+                onChange={(e) => setD('to', e.target.value)}
+                disabled={readOnly}
+                error={!isValidEmail(draft.to) ? 'Valid recipient required' : undefined}
+                className="py-1.5 text-[13px]"
+              />
+              <TextField label="Cc" value={draft.cc} onChange={(e) => setD('cc', e.target.value)} disabled={readOnly} className="py-1.5 text-[13px]" />
+              <TextField label="Subject" required value={draft.subject} onChange={(e) => setD('subject', e.target.value)} disabled={readOnly} className="py-1.5 text-[13px]" />
+              <TextAreaField label="Body" required rows={8} value={draft.body} onChange={(e) => setD('body', e.target.value)} disabled={readOnly} className="text-[13px]" />
 
-            {quoteSend ? (
-              <>
-                {/* Required next review date */}
-                <TextField
-                  label="Review Date"
-                  type="date"
-                  required
-                  min={TODAY_ISO}
-                  value={reviewDate}
-                  onChange={(e) => setReviewDate(e.target.value)}
-                  disabled={readOnly}
-                  error={!reviewDate ? 'Next review date is required' : undefined}
-                  className="py-1.5 text-[13px]"
-                />
+              {isWorkflow ? (
+                <>
+                  {/* Required next review date */}
+                  <TextField
+                    label="Next Review Date"
+                    type="date"
+                    required
+                    min={TODAY_ISO}
+                    value={reviewDate}
+                    onChange={(e) => setReviewDate(e.target.value)}
+                    disabled={readOnly}
+                    error={!reviewDate ? 'Next review date is required' : undefined}
+                    className="py-1.5 text-[13px]"
+                  />
 
-                {/* Attached quotation indicator */}
-                <div>
-                  <p className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-surface-500">
-                    <Paperclip className="h-3.5 w-3.5" /> Attached Quotation
-                  </p>
-                  {email.attachedQuote ? (
-                    <div className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2">
-                      <FileText className="h-4 w-4 flex-none text-brand-600" />
-                      <div className="min-w-0">
-                        <p className="truncate text-[12px] font-medium text-surface-800">{email.attachedQuote.fileName}</p>
-                        <p className="truncate text-[11px] text-surface-500">
-                          {email.attachedQuote.qtnNumber} · {email.attachedQuote.fileType}
+                  {/* Attachment chip — only for sends that carry a quotation PDF */}
+                  {requireAttachment && (
+                    <div>
+                      <p className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-surface-500">
+                        <Paperclip className="h-3.5 w-3.5" /> Attached Quotation
+                      </p>
+                      {email.attachedQuote ? (
+                        <div className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2">
+                          <FileText className="h-4 w-4 flex-none text-brand-600" />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[12px] font-medium text-surface-800">{email.attachedQuote.qtnNumber}</p>
+                            <p className="truncate text-[11px] text-surface-500">
+                              {email.attachedQuote.version ? `${email.attachedQuote.version} · ` : ''}
+                              {email.attachedQuote.fileType}
+                              {email.attachedQuote.sizeLabel ? ` · ${email.attachedQuote.sizeLabel}` : ''}
+                            </p>
+                          </div>
+                          {quotation && (
+                            <button onClick={() => setAttachPreview(true)} className="flex-none rounded p-1 text-surface-400 transition-colors hover:bg-white hover:text-brand-600" title="Preview attachment">
+                              <Eye className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          {!email.sent && (
+                            <button onClick={removeAttachment} className="flex-none rounded p-1 text-surface-400 transition-colors hover:bg-white hover:text-rose-600" title="Remove attachment">
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 rounded-lg border border-dashed border-surface-300 bg-surface-50 px-3 py-2 text-[12px] text-surface-500">
+                          <Paperclip className="h-4 w-4 flex-none" />
+                          {mode === 'revision'
+                            ? 'No quotation attached — use “Add Revised Quote to Email” in the workspace.'
+                            : 'No quotation attached — use “Add Corrected Quote to Email” in the workspace.'}
+                        </div>
+                      )}
+                      {attachmentStale && !email.sent && (
+                        <p className="mt-1 flex items-center gap-1.5 text-[11px] font-medium text-amber-600">
+                          <AlertTriangle className="h-3.5 w-3.5 flex-none" /> The quotation has changed. Add the latest version before sending.
                         </p>
-                      </div>
-                      {!email.sent && (
-                        <button
-                          onClick={removeAttachment}
-                          className="ml-auto flex-none rounded p-1 text-surface-400 transition-colors hover:bg-white hover:text-rose-600"
-                          title="Remove attachment"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
                       )}
                     </div>
-                  ) : (
-                    <div className="flex items-center gap-2 rounded-lg border border-dashed border-surface-300 bg-surface-50 px-3 py-2 text-[12px] text-surface-500">
-                      <Paperclip className="h-4 w-4 flex-none" />
-                      No quotation attached — use “Add as Attachment in Email” in the Quote Tools panel.
-                    </div>
                   )}
-                  {attachmentStale && !email.sent && (
-                    <p className="mt-1 flex items-center gap-1.5 text-[11px] font-medium text-amber-600">
-                      <AlertTriangle className="h-3.5 w-3.5 flex-none" /> The quotation has changed. Add the latest version before sending.
-                    </p>
-                  )}
+                </>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <TextField label="Related Document" value={draft.relatedDoc ?? ''} onChange={(e) => setD('relatedDoc', e.target.value)} disabled={readOnly} className="py-1.5 text-[13px]" placeholder="QTN / PO / SO no." />
+                  <TextField label="Amount (₹)" type="number" value={draft.amount ?? ''} onChange={(e) => setD('amount', e.target.value ? Number(e.target.value) : undefined)} disabled={readOnly} className="py-1.5 text-[13px]" />
                 </div>
-              </>
-            ) : (
-              <div className="grid grid-cols-2 gap-2">
-                <TextField label="Related Document" value={draft.relatedDoc ?? ''} onChange={(e) => setD('relatedDoc', e.target.value)} disabled={readOnly} className="py-1.5 text-[13px]" placeholder="QTN / PO / SO no." />
-                <TextField label="Amount (₹)" type="number" value={draft.amount ?? ''} onChange={(e) => setD('amount', e.target.value ? Number(e.target.value) : undefined)} disabled={readOnly} className="py-1.5 text-[13px]" />
-              </div>
-            )}
+              )}
 
-            {/* Blockers */}
-            {!email.sent && blockers.length > 0 && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-                <p className="flex items-center gap-1.5 text-[12px] font-semibold text-amber-800"><ShieldCheck className="h-3.5 w-3.5" /> Send is blocked:</p>
-                <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[11px] text-amber-700">
-                  {blockers.map((b, i) => <li key={i}>{b}</li>)}
-                </ul>
-              </div>
-            )}
-          </div>
+              {/* Blockers */}
+              {!email.sent && blockers.length > 0 && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                  <p className="flex items-center gap-1.5 text-[12px] font-semibold text-amber-800"><ShieldCheck className="h-3.5 w-3.5" /> Send is blocked:</p>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[11px] text-amber-700">
+                    {blockers.map((b, i) => <li key={i}>{b}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Footer actions */}
-      {!email.sent && (
+      {!email.sent && (isWorkflow ? composePrepared : true) && (
         <div className="flex-none border-t border-surface-100 bg-surface-50/60 px-4 py-3">
-          {quoteSend ? (
+          {isWorkflow ? (
             <>
               <Button variant="secondary" size="sm" className="w-full" leftIcon={<Save className="h-4 w-4" />} onClick={saveDraft} disabled={!canDraft}>Save Draft</Button>
               <Button
@@ -325,9 +589,9 @@ export function InboxCenterPanel({
                 size="sm"
                 className="mt-2 w-full"
                 leftIcon={canFinalSend ? <Send className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
-                onClick={sendQuote}
+                onClick={onWorkflowSend}
                 disabled={!canFinalSend}
-                title={blockReason || 'Send the quotation email'}
+                title={blockReason || 'Send this email'}
               >
                 Send Email
               </Button>
@@ -353,15 +617,54 @@ export function InboxCenterPanel({
           )}
           {!canFinalSend && blockReason && (
             <p className={classNames('mt-1.5 flex items-center justify-center gap-1 text-center text-[11px]', !permissionOk ? 'font-medium text-rose-600' : 'text-amber-600')}>
-              {quoteSend && <CalendarClock className="h-3 w-3 flex-none" />}
+              {isWorkflow && <CalendarClock className="h-3 w-3 flex-none" />}
               {blockReason}
             </p>
           )}
         </div>
       )}
 
+      {/* Attachment preview — read-only quotation exactly as attached */}
+      {quotation && (
+        <Modal
+          open={attachPreview}
+          onClose={() => setAttachPreview(false)}
+          size="lg"
+          title="Quotation Preview"
+          subtitle={`${quotation.number} · ${quotation.customerName}`}
+          footer={<Button variant="secondary" onClick={() => setAttachPreview(false)}>Close Preview</Button>}
+        >
+          <div className="overflow-hidden rounded-xl border border-surface-200">
+            <table className="w-full border-collapse text-[12px]">
+              <thead>
+                <tr className="border-b border-surface-200 bg-surface-50 text-[10.5px] font-semibold uppercase tracking-[0.02em] text-surface-500">
+                  <th className="px-3 py-2 text-left">Item</th>
+                  <th className="px-2 py-2 text-right">Qty</th>
+                  <th className="px-2 py-2 text-right">Unit Price</th>
+                  <th className="px-3 py-2 text-right">Line Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-surface-100">
+                {quotation.items.map((it) => (
+                  <tr key={it.id}>
+                    <td className="px-3 py-2"><p className="font-medium text-surface-800">{it.description}</p><p className="text-[10.5px] text-surface-400">{it.itemCode}</p></td>
+                    <td className="px-2 py-2 text-right text-surface-700">{it.quantity} {it.unit}</td>
+                    <td className="px-2 py-2 text-right text-surface-700">{formatINR(it.unitPrice)}</td>
+                    <td className="px-3 py-2 text-right font-medium text-surface-800">{formatINR(lineTotal(it.quantity, it.unitPrice, it.discountPct))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="flex items-center justify-between border-t border-surface-200 px-3 py-2">
+              <span className="text-[12px] font-medium text-surface-600">Grand Total</span>
+              <span className="text-[14px] font-bold text-surface-900">{formatINR(quotation.value)}</span>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {/* Preview modal — final human review before send (normal mode only) */}
-      {!quoteSend && (
+      {mode === 'normal' && (
         <Modal
           open={preview}
           onClose={() => setPreview(false)}

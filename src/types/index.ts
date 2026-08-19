@@ -469,6 +469,9 @@ export interface QuoteAttachment {
   signature: string; // staleness signature of the quote at attach time
   addedBy: string;
   addedAt: string; // ISO datetime
+  version?: string; // e.g. "V2 · Revised" / "Corrected" — shown on the chip
+  sizeLabel?: string; // e.g. "146 KB" — friendly file size on the chip
+  kind?: 'quotation' | 'revised' | 'corrected'; // which workflow generated it
 }
 
 export interface InboxEmail {
@@ -505,6 +508,11 @@ export interface InboxEmail {
   queueLabel?: string; // e.g. "Quote Needs Revision"
   requestedChanges?: RequestedChange[]; // customer-requested old → new changes
   reviewDate?: string; // manually-set next review date on the linked record
+  // Which right-panel workflow has PREPARED this email for the shared middle
+  // composer. Set when a right-panel "Add … to Email" / "Request Updated PO"
+  // action populates the composer; cleared once the email is sent / reset. For
+  // PO verification it also distinguishes the two resolution paths.
+  composeIntent?: 'revision' | 'po-request' | 'quote-correct';
   // Focused quote-send workflow: the system-generated quotation PDF attached to
   // this outgoing email. Only ever set/cleared from the Quote Tools panel.
   attachedQuote?: QuoteAttachment;
