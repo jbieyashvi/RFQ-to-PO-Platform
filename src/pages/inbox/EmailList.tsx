@@ -39,9 +39,11 @@ export function EmailList({
             <button
               onClick={() => onSelect(e.id)}
               className={classNames(
-                'flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/50',
-                active ? 'bg-brand-50' : 'hover:bg-surface-50',
-                !e.read && !e.sent && 'bg-brand-50/30'
+                // 3px left indicator on every row keeps text alignment steady;
+                // only the selected row lights up the brand colour + background.
+                'flex w-full flex-col gap-0.5 border-l-[3px] px-4 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/50',
+                active ? 'border-brand-600 bg-brand-50' : 'border-transparent hover:bg-surface-50',
+                !active && !e.read && !e.sent && 'bg-brand-50/30'
               )}
             >
               <div className="flex items-center gap-2">

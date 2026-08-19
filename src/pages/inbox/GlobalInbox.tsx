@@ -156,11 +156,28 @@ export default function GlobalInbox() {
         </div>
       </div>
 
-      {/* Three-panel workspace */}
-      <div className="grid grid-cols-1 gap-4 lg:h-[calc(100vh-268px)] lg:min-h-[520px] lg:grid-cols-[336px_minmax(0,1fr)_400px]">
-        {/* Left: list */}
-        <div className={classNames('card overflow-hidden lg:flex lg:flex-col', mobileView === 'detail' && 'hidden lg:flex')}>
-          <div className="flex-1 overflow-y-auto">
+      {/* Connected three-panel workspace — one surface, vertical dividers, no
+          gaps. The fr ratios (0.62 / 1 / 1.12) give the intended visual
+          hierarchy: narrow list · comfortable reading · widest action panel.
+          Enabled at ≥1180px; below that we fall back to progressive list →
+          detail navigation so the panels never squeeze or scroll sideways. */}
+      <div
+        className={classNames(
+          'grid grid-cols-1 gap-4',
+          'min-[1180px]:h-[calc(100vh-268px)] min-[1180px]:min-h-[520px] min-[1180px]:gap-0',
+          'min-[1180px]:overflow-hidden min-[1180px]:rounded-xl min-[1180px]:border min-[1180px]:border-surface-200 min-[1180px]:bg-white min-[1180px]:shadow-card',
+          'min-[1180px]:grid-cols-[minmax(230px,0.62fr)_minmax(290px,1fr)_minmax(330px,1.12fr)]'
+        )}
+      >
+        {/* Left: email list — narrowest, compact, subtly muted, divider on right */}
+        <div
+          className={classNames(
+            'card overflow-hidden min-[1180px]:flex min-[1180px]:flex-col',
+            'min-[1180px]:rounded-none min-[1180px]:border-0 min-[1180px]:border-r min-[1180px]:border-surface-200 min-[1180px]:bg-surface-50/40 min-[1180px]:shadow-none',
+            mobileView === 'detail' && 'hidden min-[1180px]:flex'
+          )}
+        >
+          <div className="min-h-0 flex-1 overflow-y-auto">
             <EmailList emails={filtered} selectedId={selectedId} onSelect={onSelect} />
           </div>
         </div>
@@ -168,10 +185,17 @@ export default function GlobalInbox() {
         {/* Center + Right */}
         {selected ? (
           <>
-            <div className={classNames('card overflow-hidden lg:flex lg:flex-col', mobileView === 'list' && 'hidden lg:flex')}>
+            {/* Center: reading panel — comfortable width, divider on right */}
+            <div
+              className={classNames(
+                'card overflow-hidden min-[1180px]:flex min-[1180px]:flex-col',
+                'min-[1180px]:rounded-none min-[1180px]:border-0 min-[1180px]:border-r min-[1180px]:border-surface-200 min-[1180px]:bg-white min-[1180px]:shadow-none',
+                mobileView === 'list' && 'hidden min-[1180px]:flex'
+              )}
+            >
               <button
                 onClick={() => setMobileView('list')}
-                className="flex flex-none items-center gap-1.5 border-b border-surface-100 px-4 py-2 text-[13px] font-medium text-brand-600 lg:hidden"
+                className="flex flex-none items-center gap-1.5 border-b border-surface-100 px-4 py-2 text-[13px] font-medium text-brand-600 min-[1180px]:hidden"
               >
                 <ArrowLeft className="h-4 w-4" /> Back to list
               </button>
@@ -179,14 +203,21 @@ export default function GlobalInbox() {
                 <EmailCenter email={selected} />
               </div>
             </div>
-            <div className={classNames('card overflow-hidden lg:flex lg:flex-col', mobileView === 'list' && 'hidden lg:flex')}>
+            {/* Right: business action / composer — widest, most interactive */}
+            <div
+              className={classNames(
+                'card overflow-hidden min-[1180px]:flex min-[1180px]:flex-col',
+                'min-[1180px]:rounded-none min-[1180px]:border-0 min-[1180px]:bg-white min-[1180px]:shadow-none',
+                mobileView === 'list' && 'hidden min-[1180px]:flex'
+              )}
+            >
               <div className="min-h-0 flex-1">
                 <EmailActionPanel email={selected} />
               </div>
             </div>
           </>
         ) : (
-          <div className="card hidden items-center justify-center lg:col-span-2 lg:flex">
+          <div className="card hidden items-center justify-center min-[1180px]:col-span-2 min-[1180px]:flex min-[1180px]:rounded-none min-[1180px]:border-0 min-[1180px]:shadow-none">
             <EmptyState icon={<MailOpen className="h-7 w-7" />} title="No email selected" message="Select an email from the list to view its details, AI extraction and the reply composer." />
           </div>
         )}
