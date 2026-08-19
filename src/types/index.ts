@@ -398,6 +398,14 @@ export interface SalesOrder {
   // Customer-PO provenance captured on manual creation.
   poProofType?: PoProofType;
   poProofNotes?: string;
+  // Structured commercial-terms snapshot captured at creation (optional; older
+  // seed / PO-verified records store only the flattened `paymentTerms` string).
+  // When present the View drawer renders exact per-bucket payment percentages.
+  commercials?: {
+    packingPct: number;
+    payment: PaymentTerms;
+    creditDays: number;
+  };
   revisionDraft?: SORevisionSnapshot; // working edits before approval/send
   revisionPreviewed?: boolean;
   versions: SORevisionVersion[]; // [Original, Rev 1, …] — original never overwritten

@@ -314,6 +314,11 @@ export default function CreateSalesOrder() {
       officeAdmin: form.officeAdmin || undefined,
       poProofType: form.poProofType,
       poProofNotes: form.poProofNotes || undefined,
+      commercials: {
+        packingPct: form.packingPct,
+        payment: { ...form.payment },
+        creditDays: form.creditDays,
+      },
       sentAt: opts.withHandoff ? now : undefined,
       erpHandoff: opts.withHandoff ? { state: 'pending', source: 'manual', submittedAt: now, submittedBy: currentUser.fullName } : undefined,
       revisionNumber: 0,
