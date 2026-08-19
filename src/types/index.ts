@@ -206,13 +206,6 @@ export interface ActivityEvent {
   detail?: string;
 }
 
-export interface Attachment {
-  id: string;
-  name: string;
-  size: string;
-  uploadedOn: string;
-}
-
 export interface Quotation {
   id: string;
   number: string;
@@ -242,7 +235,6 @@ export interface Quotation {
   deliveryTerms: string;
   warranty: string;
   packingCharges: number;
-  attachments: Attachment[];
   revisions: RevisionRecord[];
   // Immutable version history — populated when a revised quote is sent so the
   // previous version is preserved (List of Quotations shows the latest).
@@ -281,7 +273,6 @@ export interface SORevisionVersion {
   reason: string;
   notes?: string;
   snapshot: SORevisionSnapshot;
-  attachments: Attachment[];
 }
 // PM-confirmed prototype statuses (see lib/labels VERIFICATION_STATUS):
 //   pending            → Pending Comparison
@@ -404,7 +395,6 @@ export interface SalesOrder {
   poProofType?: PoProofType;
   poProofNotes?: string;
   revisionDraft?: SORevisionSnapshot; // working edits before approval/send
-  revisionAttachments: Attachment[];
   revisionPreviewed?: boolean;
   versions: SORevisionVersion[]; // [Original, Rev 1, …] — original never overwritten
   items: LineItem[];
@@ -435,17 +425,9 @@ export type InboxAction =
   | 'draft_reply'
   | 'approve'
   | 'send'
-  | 'reassign'
-  | 'download_attachment';
+  | 'reassign';
 
 export type InboxPermissions = Record<InboxAction, boolean>;
-
-export interface EmailAttachment {
-  id: string;
-  name: string;
-  size: string;
-  type: string; // PDF, XLSX, PNG, DOCX …
-}
 
 export interface ThreadMessage {
   id: string;
@@ -469,7 +451,6 @@ export interface OutgoingDraft {
   cc: string;
   subject: string;
   body: string;
-  attachments: EmailAttachment[];
   relatedDoc?: string;
   amount?: number;
   aiGenerated: boolean;
@@ -485,7 +466,6 @@ export interface InboxEmail {
   receivedAt: string; // ISO datetime
   body: string;
   thread: ThreadMessage[];
-  attachments: EmailAttachment[];
   classification: EmailClassification;
   aiConfidence: number; // 0–100 overall
   read: boolean;
@@ -512,7 +492,6 @@ export interface InboxEmail {
   reviewDate?: string; // manually-set next review date on the linked record
   extraction: ExtractionField[];
   extractionConfirmed: boolean;
-  requiredAttachment?: boolean; // outgoing reply must carry an attachment (e.g. quote PDF)
   validationFailed?: boolean; // commercial validation failed (e.g. PO vs quote mismatch)
   draft?: OutgoingDraft;
   draftSaved: boolean;

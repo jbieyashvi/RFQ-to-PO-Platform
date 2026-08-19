@@ -30,7 +30,6 @@ export function sendBlockers(email: InboxEmail): string[] {
   if (!isValidEmail(d.to)) b.push('Recipient is missing or invalid');
   if (!d.subject.trim()) b.push('Subject is empty');
   if (!d.body.trim()) b.push('Email body is empty');
-  if (email.requiredAttachment && d.attachments.length === 0) b.push('Required attachment is missing');
   if (email.classification === 'unclassified') b.push('Email must be classified before sending');
   const um = unresolvedMandatory(email);
   if (um.length) b.push(`Missing / low-confidence required field(s): ${um.join(', ')}`);

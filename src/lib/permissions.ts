@@ -76,7 +76,6 @@ export function defaultInboxPermissionsFor(role: Role): InboxPermissions {
     approve: false,
     send: false,
     reassign: false,
-    download_attachment: true,
   };
 }
 

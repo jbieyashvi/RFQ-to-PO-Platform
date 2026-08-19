@@ -37,7 +37,7 @@ export const FP_ACTION_LABELS: Record<string, string> = {
   // Quotations
   review: 'Review',
   send: 'Send',
-  upload_revision: 'Upload Revision',
+  upload_revision: 'Revise Quote',
   change_status: 'Change Status',
   change_review_date: 'Change Review Date',
   // PO vs Quote Verification
@@ -57,7 +57,6 @@ export const FP_ACTION_LABELS: Record<string, string> = {
   draft_reply: 'Draft Reply',
   approve: 'Approve',
   reassign: 'Reassign',
-  download_attachment: 'Download Attachment',
   // ERP Handoff
   handover: 'Handover to ERP',
 };
@@ -130,7 +129,7 @@ export const PERMISSION_GROUPS: GroupConfig[] = [
       {
         key: 'global_inbox',
         label: 'Global Inbox',
-        actions: ['view', 'classify', 'edit_extraction', 'draft_reply', 'approve', 'send', 'reassign', 'download_attachment'],
+        actions: ['view', 'classify', 'edit_extraction', 'draft_reply', 'approve', 'send', 'reassign'],
       },
     ],
   },
@@ -268,7 +267,7 @@ export function makeFeaturePermissions(role: Role): FeaturePermissions {
   fill(fp, 'so_list', ['view', 'download']);
   fill(fp, 'so_revision', ['view', 'edit', 'download']);
   fill(fp, 'so_create', ['view', 'create']);
-  fill(fp, 'global_inbox', ['view', 'classify', 'edit_extraction', 'draft_reply', 'download_attachment']);
+  fill(fp, 'global_inbox', ['view', 'classify', 'edit_extraction', 'draft_reply']);
   fill(fp, 'erp_handoff', ['view']);
   return applyDependencies(fp);
 }
@@ -358,6 +357,5 @@ export function deriveInbox(fp: FeaturePermissions): InboxPermissions {
     approve: !!g.approve,
     send: !!g.send,
     reassign: !!g.reassign,
-    download_attachment: !!g.download_attachment,
   };
 }

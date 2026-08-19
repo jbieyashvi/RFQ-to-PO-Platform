@@ -1,4 +1,4 @@
-import { Paperclip, AlertTriangle, Sparkles } from 'lucide-react';
+import { AlertTriangle, Sparkles } from 'lucide-react';
 import type { InboxEmail } from '@/types';
 import { StatusBadge, EmptyState } from '@/components/ui';
 import { INBOX_CLASSIFICATION } from '@/lib/labels';
@@ -80,12 +80,6 @@ export function EmailList({
                 {e.sent && (
                   <span className="rounded-full bg-emerald-50 px-1.5 py-0 text-[10px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
                     Sent
-                  </span>
-                )}
-                {e.attachments.length > 0 && (
-                  <span className="ml-auto inline-flex items-center gap-0.5 text-[10px] text-surface-400">
-                    <Paperclip className="h-3 w-3" />
-                    {e.attachments.length}
                   </span>
                 )}
               </div>

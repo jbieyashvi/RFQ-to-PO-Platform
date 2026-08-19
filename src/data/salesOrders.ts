@@ -1,6 +1,5 @@
 import type {
   ActivityEvent,
-  Attachment,
   FieldResolution,
   LineItem,
   RevisionState,
@@ -247,7 +246,6 @@ function generate(): SalesOrder[] {
         by: q.owner,
         reason: 'Initial sales order',
         snapshot: baseSnapshot,
-        attachments: [],
       },
     ];
 
@@ -281,7 +279,6 @@ function generate(): SalesOrder[] {
       revisionState: isRevision ? 'revision_required' : undefined,
       revisionNumber: 0,
       revisionOwner: isRevision ? q.owner : undefined,
-      revisionAttachments: [],
       reviewDate,
       verifiedBy,
       verifiedAt,
@@ -354,9 +351,6 @@ function seedRevisionSubStates(list: SalesOrder[]) {
     const reason = 'Line item price corrected per customer PO';
     const revised = applyReason(original, 'price');
     const stamp = sent.createdDate;
-    const attachments: Attachment[] = [
-      { id: `att-${sent.id}-po`, name: 'Revised-PO-signed.pdf', size: '218 KB', uploadedOn: stamp },
-    ];
     sent.revisionReason = reason;
     sent.revisionRequestedBy = 'Meera Joshi (Customer)';
     sent.revisionRequestedDate = addDays(stamp, 2);
@@ -366,7 +360,6 @@ function seedRevisionSubStates(list: SalesOrder[]) {
     sent.revisionNotes = 'Unit price corrected to match the customer PO.';
     sent.revisionPreviewed = true;
     sent.revisionDraft = revised;
-    sent.revisionAttachments = attachments;
     // SO Sent Date must reflect the LATEST sent revision, not the original send.
     sent.sentAt = `${addDays(stamp, 3)}T12:00:00`;
     // Apply the revised snapshot to the live SO (original preserved in versions[0]).
@@ -386,7 +379,6 @@ function seedRevisionSubStates(list: SalesOrder[]) {
       reason,
       notes: sent.revisionNotes,
       snapshot: revised,
-      attachments,
     });
     sent.activity.push(
       { id: `act-${sent.id}-revreq`, date: `${addDays(stamp, 2)}T11:00:00`, actor: 'Meera Joshi (Customer)', action: 'Revision requested', detail: reason },

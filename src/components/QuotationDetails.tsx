@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Paperclip, Download, Building2, FileText } from 'lucide-react';
+import { Download, Building2 } from 'lucide-react';
 import type { Quotation, QuotationStage, QuotationStatus } from '@/types';
 import {
   Drawer,
@@ -215,37 +215,6 @@ export function QuotationDetailsDrawer({
                   { label: 'Note', value: q.sendNote ?? '—' },
                 ]}
               />
-            </div>
-
-            {/* Attachments */}
-            <div>
-              <h4 className="mb-2 flex items-center gap-2 text-sm font-semibold text-surface-800">
-                <Paperclip className="h-4 w-4 text-surface-400" /> Attachments
-              </h4>
-              {q.attachments.length === 0 ? (
-                <p className="text-sm text-surface-400">No attachments.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {q.attachments.map((a) => (
-                    <li key={a.id} className="flex items-center gap-3 rounded-lg border border-surface-200 px-3 py-2">
-                      <FileText className="h-4 w-4 text-brand-500" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-surface-700">{a.name}</p>
-                        <p className="text-xs text-surface-400">{a.size} • {formatDate(a.uploadedOn)}</p>
-                      </div>
-                      <button
-                        onClick={() => {
-                          downloadText(a.name.replace(/\.\w+$/, '.txt'), `Attachment: ${a.name}\nQuotation: ${q.number}`);
-                          addToast({ type: 'info', title: 'Download started', message: a.name });
-                        }}
-                        className="rounded p-1.5 text-surface-400 hover:bg-surface-100 hover:text-surface-700"
-                      >
-                        <Download className="h-4 w-4" />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
             </div>
           </div>
         )}

@@ -10,9 +10,6 @@ import {
   Send,
   Eye,
   Save,
-  Paperclip,
-  X,
-  Plus,
   Sparkles,
   AlertTriangle,
   ShieldCheck,
@@ -20,7 +17,7 @@ import {
   CheckCircle2,
   Ban,
 } from 'lucide-react';
-import type { EmailAttachment, InboxEmail, OutgoingDraft } from '@/types';
+import type { InboxEmail, OutgoingDraft } from '@/types';
 import {
   Button,
   TextField,
@@ -47,13 +44,10 @@ function templateFor(email: InboxEmail): OutgoingDraft {
     cc: email.cc.join(', '),
     subject: `RE: ${email.subject}`,
     body: `${greeting}\n\nThank you for your email. We acknowledge receipt and will revert shortly.\n\nWarm regards,\n${email.owner}\nNexus RFQ — ${officeName(email.officeId)}`,
-    attachments: [],
     relatedDoc: email.linkedQuotation ?? email.linkedPO ?? email.linkedSO ?? '',
     aiGenerated: true,
   };
 }
-
-let attSeq = 0;
 
 export function EmailActionPanel({ email }: { email: InboxEmail }) {
   const { updateEmail, canInbox, addToast, quotations, salesOrders, updateQuotation, updateSalesOrder, users, currentUser, role } = useApp();
@@ -97,12 +91,6 @@ export function EmailActionPanel({ email }: { email: InboxEmail }) {
     updateEmail(email.id, { draft, draftSaved: true });
     addToast({ type: 'success', title: 'Draft saved', message: `Reply to ${email.senderName} saved as draft.` });
   };
-
-  const addAttachment = (name = `Attachment-${++attSeq}.pdf`, type = 'PDF') => {
-    const att: EmailAttachment = { id: `att-${Date.now()}-${attSeq}`, name, size: '128 KB', type };
-    setDraft((d) => ({ ...d, attachments: [...d.attachments, att] }));
-  };
-  const removeAttachment = (id: string) => setDraft((d) => ({ ...d, attachments: d.attachments.filter((a) => a.id !== id) }));
 
   const approveAndSend = () => {
     if (!canFinalSend) return;
@@ -236,34 +224,6 @@ export function EmailActionPanel({ email }: { email: InboxEmail }) {
             <TextField label="Amount (₹)" type="number" value={draft.amount ?? ''} onChange={(e) => setD('amount', e.target.value ? Number(e.target.value) : undefined)} disabled={readOnly} className="py-1.5 text-[13px]" />
           </div>
 
-          {/* Attachments */}
-          <div>
-            <label className="mb-1 flex items-center justify-between text-[13px] font-medium text-surface-700">
-              <span className="flex items-center gap-1.5"><Paperclip className="h-3.5 w-3.5" /> Attachments {email.requiredAttachment && <span className="text-rose-500">*</span>}</span>
-              {!readOnly && (
-                <button onClick={() => addAttachment()} className="inline-flex items-center gap-1 text-[12px] font-medium text-brand-600 hover:underline">
-                  <Plus className="h-3 w-3" /> Attach
-                </button>
-              )}
-            </label>
-            {draft.attachments.length === 0 ? (
-              <p className={classNames('rounded-lg border border-dashed px-3 py-2 text-[12px]', email.requiredAttachment ? 'border-rose-300 bg-rose-50 text-rose-600' : 'border-surface-200 text-surface-400')}>
-                {email.requiredAttachment ? 'A quotation attachment is required before sending.' : 'No attachments.'}
-              </p>
-            ) : (
-              <ul className="space-y-1.5">
-                {draft.attachments.map((a) => (
-                  <li key={a.id} className="flex items-center gap-2 rounded-lg border border-surface-200 px-3 py-1.5">
-                    <FileText className="h-4 w-4 text-brand-500" />
-                    <span className="flex-1 truncate text-[12px] text-surface-700">{a.name}</span>
-                    <span className="text-[11px] text-surface-400">{a.type}</span>
-                    {!readOnly && <button onClick={() => removeAttachment(a.id)} aria-label={`Remove ${a.name}`} className="rounded p-0.5 text-surface-400 hover:text-rose-500"><X className="h-3.5 w-3.5" /></button>}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
           {/* Blockers */}
           {!email.sent && blockers.length > 0 && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
@@ -331,18 +291,6 @@ export function EmailActionPanel({ email }: { email: InboxEmail }) {
               <p><span className="text-surface-400">Subject:</span> <span className="font-medium text-surface-800">{draft.subject || '—'}</span></p>
             </div>
             <div className="whitespace-pre-wrap px-4 py-3 text-[13px] leading-relaxed text-surface-700">{draft.body || '—'}</div>
-            {draft.attachments.length > 0 && (
-              <div className="border-t border-surface-100 px-4 py-3">
-                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-surface-400">Attachments</p>
-                <ul className="flex flex-wrap gap-2">
-                  {draft.attachments.map((a) => (
-                    <li key={a.id} className="flex items-center gap-1.5 rounded-lg border border-surface-200 px-2.5 py-1 text-[12px] text-surface-700">
-                      <FileText className="h-3.5 w-3.5 text-brand-500" /> {a.name} <span className="text-surface-400">({a.type})</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
           </div>
 
           <div className="grid grid-cols-1 gap-x-6 gap-y-1.5 rounded-xl border border-surface-200 px-4 py-3 text-[13px] sm:grid-cols-2">

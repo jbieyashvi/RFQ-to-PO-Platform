@@ -13,12 +13,11 @@ import {
   ClipboardCheck,
   FileSpreadsheet,
   Mail,
-  Paperclip,
   Lock,
   Inbox,
   ShieldCheck,
 } from 'lucide-react';
-import type { EmailAttachment, InboxEmail, SalesOrder, VerificationField } from '@/types';
+import type { InboxEmail, SalesOrder, VerificationField } from '@/types';
 import { Button, Modal, StatusBadge } from '@/components/ui';
 import { useApp } from '@/context/AppContext';
 import { officeName } from '@/data/offices';
@@ -70,7 +69,6 @@ export function PoVerificationPanel({ email }: { email: InboxEmail }) {
   const [to, setTo] = useState('');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
-  const [attachments, setAttachments] = useState<EmailAttachment[]>([]);
   const [reviewDate, setReviewDate] = useState('');
   const [dateError, setDateError] = useState<string | null>(null);
   const [preview, setPreview] = useState(false);
@@ -122,19 +120,14 @@ export function PoVerificationPanel({ email }: { email: InboxEmail }) {
           `Request you to kindly share a revised Purchase Order reflecting the accepted terms so we may proceed with the Sales Order.\n\n` +
           `Warm regards,\n${so.owner}\nNexus RFQ — ${officeName(so.officeId)}`
       );
-      setAttachments([]);
     } else {
-      const pdfName = `${(so.quotationNumber ?? 'quotation').replace(/\//g, '-')}-latest.pdf`;
       setSubject(`Updated quotation ${so.quotationNumber ?? ''} — ${so.customerName}`);
       setBody(
-        `Dear ${contact},\n\nFollowing your Purchase Order ${so.poNumber}, please find attached our latest quotation ${so.quotationNumber ?? ''} reflecting the correct terms for the following field(s):\n\n` +
+        `Dear ${contact},\n\nFollowing your Purchase Order ${so.poNumber}, our latest quotation ${so.quotationNumber ?? ''} reflects the correct terms for the following field(s):\n\n` +
           `${mismatchLines}\n\n` +
-          `Kindly review and confirm so we may align the Purchase Order and proceed with the Sales Order.\n\n` +
+          `You can review the latest quotation ${so.quotationNumber ?? ''} on record. Kindly confirm so we may align the Purchase Order and proceed with the Sales Order.\n\n` +
           `Warm regards,\n${so.owner}\nNexus RFQ — ${officeName(so.officeId)}`
       );
-      setAttachments([
-        { id: `att-q-${so.id}`, name: pdfName, size: '212 KB', type: 'PDF' },
-      ]);
     }
     setReviewDate(so.reviewDate ?? '');
     setDateError(null);
@@ -169,7 +162,7 @@ export function PoVerificationPanel({ email }: { email: InboxEmail }) {
     const detail =
       mode === 'po'
         ? `${targetKeys.size} field(s) flagged · next review ${reviewDate}`
-        : `${so.quotationNumber ?? ''} attached · next review ${reviewDate}`;
+        : `${so.quotationNumber ?? ''} referenced · next review ${reviewDate}`;
 
     updateSalesOrder(so.id, {
       verificationFields: newFields,
@@ -193,7 +186,6 @@ export function PoVerificationPanel({ email }: { email: InboxEmail }) {
       receivedAt: TODAY_TS,
       body,
       thread: [],
-      attachments,
       classification: 'purchase_order',
       aiConfidence: 100,
       read: true,
@@ -377,11 +369,19 @@ export function PoVerificationPanel({ email }: { email: InboxEmail }) {
             <Sparkles className="h-4 w-4 flex-none" />
             {composer === 'po'
               ? 'Draft prepared for the customer. Edit anything before sending — nothing is sent until you confirm.'
-              : 'The latest quotation PDF is attached automatically. Edit the message before sending — nothing is sent until you confirm.'}
+              : 'This references the latest quotation on record. Edit the message before sending — nothing is sent until you confirm.'}
           </div>
 
           <LabeledInput label="To" value={to} onChange={setTo} />
           <LabeledInput label="Subject" value={subject} onChange={setSubject} />
+          {composer === 'quote' && so.quotationNumber && (
+            <div>
+              <label className="mb-1 block text-[12px] font-medium text-surface-600">Related Document</label>
+              <div className="flex items-center gap-2 rounded-lg border border-surface-200 bg-surface-50 px-3 py-1.5 text-[12px] font-medium text-surface-700">
+                <FileText className="h-4 w-4 text-brand-500" /> {so.quotationNumber}
+              </div>
+            </div>
+          )}
           <div>
             <label className="mb-1 block text-[12px] font-medium text-surface-600">Message</label>
             <textarea
@@ -390,29 +390,6 @@ export function PoVerificationPanel({ email }: { email: InboxEmail }) {
               rows={9}
               className="input w-full px-2.5 py-1.5 text-[12px]"
             />
-          </div>
-
-          {/* Attachments — the updated-quote PDF is shown clearly */}
-          <div>
-            <label className="mb-1 flex items-center gap-1.5 text-[12px] font-medium text-surface-600">
-              <Paperclip className="h-3.5 w-3.5" /> Attachments
-            </label>
-            {attachments.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-surface-200 px-3 py-2 text-[12px] text-surface-400">
-                No attachment required for this request.
-              </p>
-            ) : (
-              <ul className="space-y-1.5">
-                {attachments.map((a) => (
-                  <li key={a.id} className="flex items-center gap-2 rounded-lg border border-surface-200 bg-surface-50 px-3 py-1.5">
-                    <FileText className="h-4 w-4 text-brand-500" />
-                    <span className="flex-1 truncate text-[12px] font-medium text-surface-700">{a.name}</span>
-                    <span className="rounded-full bg-brand-100 px-2 py-0.5 text-[10px] font-semibold text-brand-700">Latest quotation</span>
-                    <span className="text-[11px] text-surface-400">{a.type}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>
 
           {/* Mandatory review date */}
@@ -462,15 +439,9 @@ export function PoVerificationPanel({ email }: { email: InboxEmail }) {
               <p><span className="text-surface-400">Subject:</span> <span className="font-medium text-surface-800">{subject}</span></p>
             </div>
             <div className="whitespace-pre-wrap px-4 py-3 text-[13px] leading-relaxed text-surface-700">{body}</div>
-            {attachments.length > 0 && (
-              <div className="border-t border-surface-100 px-4 py-3">
-                <ul className="flex flex-wrap gap-2">
-                  {attachments.map((a) => (
-                    <li key={a.id} className="flex items-center gap-1.5 rounded-lg border border-surface-200 px-2.5 py-1 text-[12px] text-surface-700">
-                      <FileText className="h-3.5 w-3.5 text-brand-500" /> {a.name}
-                    </li>
-                  ))}
-                </ul>
+            {composer === 'quote' && so.quotationNumber && (
+              <div className="border-t border-surface-100 px-4 py-3 text-[12px] text-surface-600">
+                <span className="text-surface-400">Related document:</span> <span className="font-medium text-surface-800">{so.quotationNumber}</span>
               </div>
             )}
           </div>

@@ -1,10 +1,7 @@
 import { useState } from 'react';
 import {
-  Paperclip,
-  Download,
   Building2,
   UserRound,
-  FileText,
   Sparkles,
   CheckCircle2,
   Pencil,
@@ -17,7 +14,7 @@ import type { EmailClassification, ExtractionField, InboxEmail } from '@/types';
 import { StatusBadge, Button } from '@/components/ui';
 import { INBOX_CLASSIFICATION } from '@/lib/labels';
 import { officeName } from '@/data/offices';
-import { classNames, downloadText, formatDateTime } from '@/lib/format';
+import { classNames, formatDateTime } from '@/lib/format';
 import { useApp } from '@/context/AppContext';
 import { unresolvedMandatory } from './helpers';
 
@@ -36,7 +33,6 @@ export function EmailCenter({ email }: { email: InboxEmail }) {
 
   const canEditExtraction = canInbox('edit_extraction');
   const canClassify = canInbox('classify');
-  const canDownload = canInbox('download_attachment');
   const unresolved = unresolvedMandatory(email);
 
   const setField = (idx: number, value: string) => {
@@ -118,36 +114,6 @@ export function EmailCenter({ email }: { email: InboxEmail }) {
       <div className="flex-1 overflow-y-auto px-5 py-4">
         {/* Body */}
         <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-surface-700">{email.body}</div>
-
-        {/* Attachments */}
-        {email.attachments.length > 0 && (
-          <div className="mt-4">
-            <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-surface-400">
-              <Paperclip className="h-3.5 w-3.5" /> Attachments
-            </p>
-            <ul className="flex flex-wrap gap-2">
-              {email.attachments.map((a) => (
-                <li key={a.id} className="flex items-center gap-2 rounded-lg border border-surface-200 px-3 py-2">
-                  <FileText className="h-4 w-4 text-brand-500" />
-                  <div>
-                    <p className="text-[13px] font-medium text-surface-700">{a.name}</p>
-                    <p className="text-[11px] text-surface-400">{a.type} · {a.size}</p>
-                  </div>
-                  {canDownload && (
-                    <button
-                      onClick={() => { downloadText(a.name.replace(/\.\w+$/, '.txt'), `Attachment: ${a.name}\nFrom email: ${email.subject}`); addToast({ type: 'info', title: 'Download started', message: a.name }); }}
-                      aria-label={`Download ${a.name}`}
-                      title="Download attachment"
-                      className="ml-1 rounded-lg p-1.5 text-surface-400 hover:bg-surface-100 hover:text-surface-700"
-                    >
-                      <Download className="h-4 w-4" />
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
 
         {/* Thread */}
         {email.thread.length > 0 && (

@@ -187,7 +187,6 @@ export default function QuotesRevisions() {
       thread: [
         { id: `th-${q.id}-1`, from: q.owner, date: `${q.quoteDate}T16:45:00`, snippet: `Sharing our quotation ${q.number} for your review…` },
       ],
-      attachments: [{ id: `att-rev-${q.id}`, name: `Revision-Request-${r.inquiryNo.replace(/\//g, '-')}.pdf`, size: '74 KB', type: 'PDF' }],
       classification: 'quotation_revision',
       aiConfidence: 92,
       read: true,
@@ -210,7 +209,6 @@ export default function QuotesRevisions() {
         { key: 'changes', label: 'Changes Requested', value: changes.map((c) => c.label).join('; '), confidence: 'high', required: true },
       ],
       extractionConfirmed: true,
-      requiredAttachment: true,
       draftSaved: false,
       sent: false,
     };

@@ -15,8 +15,6 @@ export { RowActionMenu } from './RowActionMenu';
 export type { RowAction } from './RowActionMenu';
 export { FilterBar, FilterSelect } from './FilterBar';
 export type { FilterChip } from './FilterBar';
-export { FileUpload } from './FileUpload';
-export type { UploadedFile } from './FileUpload';
 export { ActivityTimeline } from './ActivityTimeline';
 export { PermissionMatrix } from './PermissionMatrix';
 export { PermissionGroups } from './PermissionGroups';

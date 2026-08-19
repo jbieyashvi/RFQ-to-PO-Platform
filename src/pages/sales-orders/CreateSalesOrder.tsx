@@ -10,7 +10,6 @@ import {
   Eye,
   Send,
   Download,
-  Upload,
   Phone,
   MessageSquare,
 } from 'lucide-react';
@@ -22,13 +21,11 @@ import {
   SelectField,
   TextAreaField,
   ItemLineEditor,
-  FileUpload,
   Modal,
   ConfirmDialog,
   InfoRow,
   StatusBadge,
   Toggle,
-  type UploadedFile,
 } from '@/components/ui';
 import { useApp } from '@/context/AppContext';
 import { OFFICES, officeName } from '@/data/offices';
@@ -53,8 +50,8 @@ const PAYMENT_LABEL: Record<keyof PaymentTerms, string> = {
   afterInstall: 'After Installation %',
 };
 
-const PO_PROOF_OPTIONS: { value: PoProofType; label: string; icon: typeof Upload }[] = [
-  { value: 'uploaded', label: 'Uploaded PO Document', icon: Upload },
+const PO_PROOF_OPTIONS: { value: PoProofType; label: string; icon: typeof Phone }[] = [
+  { value: 'uploaded', label: 'PO Document', icon: FileText },
   { value: 'phone_call', label: 'Phone Call', icon: Phone },
   { value: 'message', label: 'Message / WhatsApp', icon: MessageSquare },
 ];
@@ -127,7 +124,6 @@ export default function CreateSalesOrder() {
   const [form, setForm] = useState<FormState>(() => initialForm(defaultOffice, commercialTerms));
   const deliveryChoices = useMemo(() => activeDeliveryOptions(commercialTerms), [commercialTerms]);
   const [lines, setLines] = useState<LineItem[]>([]);
-  const [poFiles, setPoFiles] = useState<UploadedFile[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState(false);
   const [confirmCreate, setConfirmCreate] = useState(false);
@@ -256,10 +252,15 @@ export default function CreateSalesOrder() {
     if (!form.officeId) e.officeId = 'Sales office is required';
     if (!form.owner) e.owner = 'Owner is required';
 
-    // PO proof — required evidence depends on how the PO arrived.
-    if (form.poProofType === 'uploaded' && poFiles.length === 0) e.poProof = 'Upload the PO document';
-    if (form.poProofType === 'phone_call' && !form.poProofNotes.trim()) e.poProof = 'Add proof notes for the phone call';
-    if (form.poProofType === 'message' && poFiles.length === 0) e.poProof = 'Upload the message / WhatsApp screenshot';
+    // PO proof — captured as notes (PO reference, who confirmed, when). No file upload.
+    if (!form.poProofNotes.trim()) {
+      e.poProof =
+        form.poProofType === 'uploaded'
+          ? 'Add the PO document reference and details'
+          : form.poProofType === 'phone_call'
+          ? 'Add proof notes for the phone call'
+          : 'Add the message / WhatsApp reference and details';
+    }
 
     if (!form.expectedDelivery) e.expectedDelivery = 'Expected delivery date is required';
     if (paymentSum !== 100) e.payment = 'Payment terms must total 100%.';
@@ -316,7 +317,6 @@ export default function CreateSalesOrder() {
       sentAt: opts.withHandoff ? now : undefined,
       erpHandoff: opts.withHandoff ? { state: 'pending', submittedAt: now, submittedBy: currentUser.fullName } : undefined,
       revisionNumber: 0,
-      revisionAttachments: [],
       versions: [
         {
           id: `ver-${Date.now()}-0`,
@@ -333,7 +333,6 @@ export default function CreateSalesOrder() {
             billingAddress: form.billingAddress,
             shippingAddress: shipping,
           },
-          attachments: [],
         },
       ],
       items: lines,
@@ -482,20 +481,20 @@ export default function CreateSalesOrder() {
                 </div>
               </div>
 
-              {form.poProofType !== 'phone_call' && (
-                <div className="sm:col-span-2">
-                  <label className="label">Upload Proof {form.poProofType === 'message' ? '(screenshot / document)' : '(PO document)'}</label>
-                  <FileUpload files={poFiles} onChange={(f) => { setPoFiles(f); setDirty(true); }} label={form.poProofType === 'message' ? 'Upload message / WhatsApp screenshot' : 'Upload customer PO document'} multiple={false} />
-                </div>
-              )}
               <TextAreaField
                 wrapClassName="sm:col-span-2"
-                label={form.poProofType === 'phone_call' ? 'Proof Notes' : 'Proof Notes (optional)'}
-                required={form.poProofType === 'phone_call'}
+                label={form.poProofType === 'uploaded' ? 'PO Document Reference & Notes' : 'Proof Notes'}
+                required
                 rows={2}
                 value={form.poProofNotes}
                 onChange={(e) => set('poProofNotes', e.target.value)}
-                placeholder={form.poProofType === 'phone_call' ? 'Who confirmed the PO by phone, when, and key details…' : 'Any additional context about the PO proof…'}
+                placeholder={
+                  form.poProofType === 'phone_call'
+                    ? 'Who confirmed the PO by phone, when, and key details…'
+                    : form.poProofType === 'message'
+                    ? 'Message / WhatsApp reference, sender and key details…'
+                    : 'PO document number, reference and key details…'
+                }
               />
               {errors.poProof && <p className="-mt-2 text-xs font-medium text-rose-600 sm:col-span-2">{errors.poProof}</p>}
             </div>

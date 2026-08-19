@@ -471,7 +471,7 @@ export function RevisionQuotePanel({ email }: { email: InboxEmail }) {
       >
         <div className="space-y-3">
           <div className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-[12px] text-brand-700">
-            <RefreshCw className="h-4 w-4 flex-none" /> The revised quote is attached and saved as a new version. The previous version is preserved.
+            <RefreshCw className="h-4 w-4 flex-none" /> The revised quote is saved as a new quotation version. The previous version is preserved.
           </div>
           {!reviewDate && (
             <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-800">

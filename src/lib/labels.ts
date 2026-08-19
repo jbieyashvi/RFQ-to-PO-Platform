@@ -159,7 +159,6 @@ export const INBOX_ACTION_LABELS: Record<InboxAction, string> = {
   approve: 'Approve',
   send: 'Send',
   reassign: 'Reassign',
-  download_attachment: 'Download Attachment',
 };
 
 export const INBOX_ACTION_ORDER: InboxAction[] = [
@@ -170,7 +169,6 @@ export const INBOX_ACTION_ORDER: InboxAction[] = [
   'approve',
   'send',
   'reassign',
-  'download_attachment',
 ];
 
 export const CONFIDENCE_META: Record<

@@ -182,12 +182,6 @@ function generate(): Quotation[] {
       deliveryTerms: DELIVERY_TERMS[i % DELIVERY_TERMS.length],
       warranty: '12 months against manufacturing defects',
       packingCharges: rand() > 0.5 ? Math.round(grandTotal * 0.02) : 0,
-      attachments: [
-        { id: `att-${i}-1`, name: `${`QTN-2026-${pad(1000 + i + 1, 4)}`}.pdf`, size: '182 KB', uploadedOn: quoteDate },
-        ...(rand() > 0.6
-          ? [{ id: `att-${i}-2`, name: 'Technical-Datasheet.pdf', size: '640 KB', uploadedOn: quoteDate }]
-          : []),
-      ],
       revisions,
       activity: [
         { id: `act-${i}-1`, date: `${createdDate}T09:15:00`, actor: owner, action: 'Quotation created', detail: `From RFQ enquiry — ${party.companyName}` },
