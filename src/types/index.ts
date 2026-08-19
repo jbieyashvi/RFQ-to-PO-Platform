@@ -48,6 +48,23 @@ export interface User {
 }
 
 // ---------- Masters ----------
+export interface TechnicalSpecs {
+  make?: string;
+  product?: string;
+  model?: string;
+  decodification?: string;
+  operatingPressure?: string;
+  operatingTemperature?: string;
+  lineSize?: string;
+  dimensions?: string;
+  deliverySchedule?: string;
+  expectedArrival?: string;
+  documentsRequired?: string;
+  mocConnection?: string;
+  accessories?: string;
+  otherDetails?: string;
+}
+
 export interface Item {
   id: string;
   code: string;
@@ -57,6 +74,7 @@ export interface Item {
   unit: string;
   unitPrice: number;
   active: boolean;
+  technicalSpecs?: TechnicalSpecs;
 }
 
 export interface Party {
@@ -499,6 +517,11 @@ export interface SalesOrderAttachment {
   addedBy: string;
   addedAt: string; // ISO datetime
   sizeLabel?: string; // e.g. "148 KB" — friendly file size on the chip
+  // Set when this is a revised Sales Order Acknowledgement (SO Revision flow).
+  // Drives the revision label shown on the composer chip.
+  revisionNumber?: number; // e.g. 2 → "Revision 2"
+  revisionLabel?: string; // e.g. "Rev 2 · Revised"
+  kind?: 'sales_order' | 'revised'; // which workflow generated it
 }
 
 export interface InboxEmail {
@@ -531,6 +554,10 @@ export interface InboxEmail {
   // Revision workflow (Quotes Needing Revision → Open). When set, the inbox
   // right panel renders the Quote Generator instead of the generic composer.
   revisionSendId?: string; // quotation id this revision targets
+  // Sales Order Revision workflow (Sales Order Revisions → Open). When set, the
+  // inbox right panel renders the Sales Order Revision workspace instead of the
+  // generic composer. Holds the linked SalesOrder id being revised.
+  soRevisionId?: string;
   inquiryNo?: string; // linked inquiry identifier shown in the centre panel
   queueLabel?: string; // e.g. "Quote Needs Revision"
   requestedChanges?: RequestedChange[]; // customer-requested old → new changes
@@ -539,7 +566,7 @@ export interface InboxEmail {
   // composer. Set when a right-panel "Add … to Email" / "Request Updated PO"
   // action populates the composer; cleared once the email is sent / reset. For
   // PO verification it also distinguishes the two resolution paths.
-  composeIntent?: 'revision' | 'po-request' | 'quote-correct' | 'so-send';
+  composeIntent?: 'revision' | 'po-request' | 'quote-correct' | 'so-send' | 'so-revise';
   // Focused quote-send workflow: the system-generated quotation PDF attached to
   // this outgoing email. Only ever set/cleared from the Quote Tools panel.
   attachedQuote?: QuoteAttachment;

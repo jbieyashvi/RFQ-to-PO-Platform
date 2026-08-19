@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Inbox, ArrowLeft, MailOpen, FileText, RefreshCw, ClipboardCheck } from 'lucide-react';
+import { Inbox, ArrowLeft, MailOpen, FileText, RefreshCw, ClipboardCheck, FilePenLine } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import { SearchInput, FilterSelect, EmptyState } from '@/components/ui';
 import { Tabs } from '@/components/ui/misc';
@@ -16,6 +16,7 @@ import { InboxCenterPanel } from './InboxCenterPanel';
 import { QuoteToolsPanel } from './QuoteToolsPanel';
 import { RevisionQuotePanel } from './RevisionQuotePanel';
 import { PoVerificationPanel } from './PoVerificationPanel';
+import { SoRevisionPanel } from './SoRevisionPanel';
 
 type Tab = 'all' | 'needs_review' | 'drafts';
 
@@ -166,9 +167,19 @@ export default function GlobalInbox() {
     () => (poSalesOrder ? quotations.find((q) => q.id === poSalesOrder.quotationId) ?? null : null),
     [poSalesOrder, quotations]
   );
+  // Sales Order Revision context — the SO being revised and its linked quotation.
+  const soRevisionSalesOrder = useMemo(
+    () => (selected?.soRevisionId ? salesOrders.find((s) => s.id === selected.soRevisionId) ?? null : null),
+    [selected, salesOrders]
+  );
+  const soRevisionQuote = useMemo(
+    () => (soRevisionSalesOrder ? quotations.find((q) => q.id === soRevisionSalesOrder.quotationId) ?? null : null),
+    [soRevisionSalesOrder, quotations]
+  );
 
   const isRevision = !showQuoteTools && !!selected?.revisionSendId;
   const isPoVerify = !showQuoteTools && !isRevision && !!selected?.poVerifyId;
+  const isSoRevision = !showQuoteTools && !isRevision && !isPoVerify && !!selected?.soRevisionId && !!soRevisionSalesOrder;
 
   // Keep the URL describing the current conversation + its workflow so a reload
   // restores exactly what the user is looking at.
@@ -178,6 +189,10 @@ export default function GlobalInbox() {
     if (e.poVerifyId) {
       const so = salesOrders.find((s) => s.id === e.poVerifyId);
       return { mode: 'po-verification', email: e.id, po: so?.poNumber ?? '', qtn: so?.quotationNumber ?? '' };
+    }
+    if (e.soRevisionId) {
+      const so = salesOrders.find((s) => s.id === e.soRevisionId);
+      return { mode: 'so-revision', email: e.id, so: so?.number ?? '' };
     }
     return { email: e.id };
   };
@@ -293,6 +308,11 @@ export default function GlobalInbox() {
                   <ClipboardCheck className="h-3.5 w-3.5" /> PO vs Quote verification — {poSalesOrder?.poNumber ?? selected.linkedPO ?? ''}
                 </div>
               )}
+              {isSoRevision && (
+                <div className="flex flex-none items-center gap-1.5 border-b border-brand-100 bg-brand-50/70 px-4 py-2 text-[12px] font-medium text-brand-700">
+                  <FilePenLine className="h-3.5 w-3.5" /> Sales Order revision — {soRevisionSalesOrder?.number ?? selected.linkedSO ?? ''}
+                </div>
+              )}
               <div className="min-h-0 flex-1">
                 {showQuoteTools ? (
                   <InboxCenterPanel email={selected} mode="quote-send" quotation={quoteSendQuotation} focusTick={focusTick} />
@@ -300,6 +320,8 @@ export default function GlobalInbox() {
                   <InboxCenterPanel email={selected} mode="revision" quotation={revisionQuotation} focusTick={focusTick} />
                 ) : isPoVerify ? (
                   <InboxCenterPanel email={selected} mode="po-verify" salesOrder={poSalesOrder} quotation={poQuote} focusTick={focusTick} />
+                ) : isSoRevision ? (
+                  <InboxCenterPanel email={selected} mode="so-revision" salesOrder={soRevisionSalesOrder} quotation={soRevisionQuote} focusTick={focusTick} />
                 ) : (
                   <InboxCenterPanel email={selected} />
                 )}
@@ -320,6 +342,8 @@ export default function GlobalInbox() {
                   <RevisionQuotePanel email={selected} onPrepared={onPrepared} />
                 ) : isPoVerify ? (
                   <PoVerificationPanel email={selected} onPrepared={onPrepared} />
+                ) : isSoRevision ? (
+                  <SoRevisionPanel email={selected} salesOrder={soRevisionSalesOrder!} onPrepared={onPrepared} />
                 ) : (
                   <EmailActionPanel email={selected} />
                 )}

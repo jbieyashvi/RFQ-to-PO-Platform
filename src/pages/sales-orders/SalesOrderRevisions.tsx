@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import {
@@ -11,7 +12,6 @@ import {
   type Column,
   type FilterChip,
 } from '@/components/ui';
-import { RevisionDetailDrawer } from '@/components/RevisionDetailDrawer';
 import { useApp, useOfficeScope } from '@/context/AppContext';
 import { OFFICES, officeName } from '@/data/offices';
 import type { SalesOrder } from '@/types';
@@ -19,19 +19,24 @@ import { formatDate } from '@/lib/format';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 
 export default function SalesOrderRevisions() {
-  const { salesOrders, role } = useApp();
+  const { salesOrders, role, emails } = useApp();
   const inScope = useOfficeScope();
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [office, setOffice] = useState('');
-  const [activeId, setActiveId] = useState<string | null>(null);
   const loading = useSimulatedLoading([]);
 
   const ownerOf = (so: SalesOrder) => so.revisionOwner ?? so.owner;
 
-  const active = useMemo(
-    () => (activeId ? salesOrders.find((s) => s.id === activeId) ?? null : null),
-    [activeId, salesOrders]
-  );
+  // Sales Order Revision is handled through the client conversation in the
+  // Global Inbox, consistent with Quotes Revision and PO vs Quote. Open finds
+  // the seeded revision-request email for this SO and deep-links to the inbox
+  // with the Sales Order Revision workspace in the right panel.
+  const openInbox = (so: SalesOrder) => {
+    const match = emails.find((e) => e.soRevisionId === so.id && !e.sent);
+    const emailId = match?.id ?? `em-so-rev-${so.id}`;
+    navigate(`/inbox?mode=so-revision&so=${encodeURIComponent(so.number)}&email=${emailId}`);
+  };
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
@@ -64,7 +69,7 @@ export default function SalesOrderRevisions() {
       sticky: 'right',
       render: (r) => (
         <div className="flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
-          <Button size="sm" variant="secondary" rightIcon={<ArrowRight className="h-3.5 w-3.5" />} aria-label={`Open ${r.number}`} onClick={() => setActiveId(r.id)}>
+          <Button size="sm" variant="secondary" rightIcon={<ArrowRight className="h-3.5 w-3.5" />} aria-label={`Open ${r.number}`} onClick={() => openInbox(r)}>
             Open
           </Button>
         </div>
@@ -76,7 +81,7 @@ export default function SalesOrderRevisions() {
     <>
       <PageHeader
         title="Sales Order Revision"
-        description="Sales orders under revision. Open a record to compare the original and revised order and confirm the manufacturing team."
+        description="Sales orders under revision. Open a record to handle the client's revision request in the Global Inbox and issue a revised Sales Order."
         crumbs={[{ label: 'Sales Orders' }, { label: 'Sales Order Revision' }]}
       />
 
@@ -87,11 +92,9 @@ export default function SalesOrderRevisions() {
             {role === 'super_admin' && <FilterSelect value={office} onChange={setOffice} placeholder="All offices" options={OFFICES.map((o) => ({ value: o.id, label: o.name }))} />}
           </FilterBar>
         </div>
-        <DataTable columns={columns} rows={pageRows} rowKey={(r) => r.id} loading={loading} onRowClick={(r) => setActiveId(r.id)} emptyTitle="No revisions here" emptyMessage="No sales orders are currently under revision." />
+        <DataTable columns={columns} rows={pageRows} rowKey={(r) => r.id} loading={loading} onRowClick={(r) => openInbox(r)} emptyTitle="No revisions here" emptyMessage="No sales orders are currently under revision." />
         {!loading && total > 0 && <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={setPageSize} />}
       </div>
-
-      <RevisionDetailDrawer order={active} onClose={() => setActiveId(null)} />
     </>
   );
 }

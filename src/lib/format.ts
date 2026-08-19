@@ -132,3 +132,35 @@ export function downloadText(filename: string, content: string, type = 'text/pla
 export function classNames(...xs: (string | false | null | undefined)[]): string {
   return xs.filter(Boolean).join(' ');
 }
+
+// Indian-system amount in words, e.g. 1,25,000 → "Rupees One Lakh Twenty Five
+// Thousand Only". Used on Sales Order / revision documents.
+export function amountInWords(value: number): string {
+  const n = Math.round(Math.abs(value));
+  if (n === 0) return 'Rupees Zero Only';
+  const ones = [
+    '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+    'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
+    'Seventeen', 'Eighteen', 'Nineteen',
+  ];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  const twoDigits = (num: number): string => {
+    if (num < 20) return ones[num];
+    return `${tens[Math.floor(num / 10)]}${num % 10 ? ' ' + ones[num % 10] : ''}`;
+  };
+  const threeDigits = (num: number): string => {
+    const h = Math.floor(num / 100);
+    const rest = num % 100;
+    return `${h ? ones[h] + ' Hundred' + (rest ? ' ' : '') : ''}${rest ? twoDigits(rest) : ''}`;
+  };
+  const crore = Math.floor(n / 10000000);
+  const lakh = Math.floor((n % 10000000) / 100000);
+  const thousand = Math.floor((n % 100000) / 1000);
+  const hundred = n % 1000;
+  const parts: string[] = [];
+  if (crore) parts.push(`${twoDigits(crore)} Crore`);
+  if (lakh) parts.push(`${twoDigits(lakh)} Lakh`);
+  if (thousand) parts.push(`${twoDigits(thousand)} Thousand`);
+  if (hundred) parts.push(threeDigits(hundred));
+  return `Rupees ${parts.join(' ').trim()} Only`;
+}

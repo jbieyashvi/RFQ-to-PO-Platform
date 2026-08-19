@@ -17,17 +17,20 @@ import {
   Wand2,
 } from 'lucide-react';
 import type {
+  ErpHandoff,
   InboxEmail,
   OutgoingDraft,
   Quotation,
   SalesOrder,
+  SORevisionSnapshot,
+  SORevisionVersion,
   VerificationField,
 } from '@/types';
 import { Button, TextField, TextAreaField, Modal, StatusBadge } from '@/components/ui';
 import { useApp } from '@/context/AppContext';
 import { INBOX_CLASSIFICATION } from '@/lib/labels';
 import { officeName } from '@/data/offices';
-import { classNames, formatINR, lineTotal } from '@/lib/format';
+import { classNames, computeTotals, formatINR, lineTotal } from '@/lib/format';
 import { TODAY_ISO } from '@/lib/quotationWorkflow';
 import { actionableFields, deriveVerificationStatus } from '@/lib/verification';
 import { EmailCenter } from './EmailCenter';
@@ -43,7 +46,7 @@ import {
 const TODAY_TS = '2026-08-13T12:30:00';
 const SENT_TS = '2026-08-13T12:45:00';
 
-export type ComposeMode = 'normal' | 'quote-send' | 'revision' | 'po-verify';
+export type ComposeMode = 'normal' | 'quote-send' | 'revision' | 'po-verify' | 'so-revision';
 
 function templateFor(email: InboxEmail): OutgoingDraft {
   const greeting = `Dear ${email.senderName.split(' ')[0] || 'Sir/Madam'},`;
@@ -78,6 +81,7 @@ const COMPOSE_HEADING: Record<string, string> = {
   'po-request': 'Reply — Request Updated PO',
   'quote-correct': 'Reply — Send Corrected Quotation',
   'so-send': 'Reply — Send Sales Order',
+  'so-revise': 'Reply — Send Revised Sales Order',
   normal: 'Outgoing Email',
 };
 
@@ -119,10 +123,13 @@ export function InboxCenterPanel({
   } = useApp();
 
   const isWorkflow = mode !== 'normal';
-  const intent = email.composeIntent; // 'revision' | 'po-request' | 'quote-correct' | 'so-send'
+  const intent = email.composeIntent; // 'revision' | 'po-request' | 'quote-correct' | 'so-send' | 'so-revise'
   // so-send carries the generated Sales Order PDF (not a quotation) and skips
   // the next-review-date gate — it is the terminal step of the SO workflow.
   const isSoSend = mode === 'po-verify' && intent === 'so-send';
+  // so-revision carries the revised Sales Order Acknowledgement PDF and, unlike
+  // so-send, KEEPS the next-review-date gate — the client conversation continues.
+  const isSoRevise = mode === 'so-revision';
 
   const [draft, setDraft] = useState<OutgoingDraft>(
     email.draft ?? (isWorkflow ? blankDraft(email) : templateFor(email))
@@ -230,11 +237,25 @@ export function InboxCenterPanel({
     return b;
   }, [draft.to, draft.subject, draft.body, email.attachedSalesOrder]);
 
+  // so-revision gate: valid recipient + subject + body + the revised SO attached
+  // + a next review date. The revised SO must have been saved & attached first.
+  const soReviseBlockers = useMemo(() => {
+    const b: string[] = [];
+    if (!isValidEmail(draft.to)) b.push('A valid recipient email is required.');
+    if (!draft.subject.trim()) b.push('Subject is required.');
+    if (!draft.body.trim()) b.push('Email body is required.');
+    if (!email.attachedSalesOrder) b.push('Add the revised Sales Order to the email before sending.');
+    if (!reviewDate) b.push('Next review date is required.');
+    return b;
+  }, [draft.to, draft.subject, draft.body, email.attachedSalesOrder, reviewDate]);
+
   const baseBlockers =
     mode === 'quote-send'
       ? quoteBlockersBase
       : mode === 'normal'
       ? normalBlockers
+      : isSoRevise
+      ? soReviseBlockers
       : isSoSend
       ? soSendBlockers
       : workflowBlockersBase;
@@ -487,9 +508,79 @@ export function InboxCenterPanel({
     addToast({ type: 'success', title: 'Sales Order sent successfully.', message: `${so.number} emailed to ${draft.to}. ERP Handoff remains Pending.` });
   };
 
+  // ---- Sales Order Revision send (Send Email): the SO was already revised,
+  // saved and attached by the right panel. Here we promote the saved revised
+  // snapshot to a NEW immutable version, increment the revision number, stamp the
+  // SO Sent Date, mark the revision request completed, and update the EXISTING
+  // ERP Handoff to flag that a revised SO is available — no duplicate SO or
+  // handoff, and manufacturing is NOT auto-confirmed. ----
+  const sendSoRevision = () => {
+    if (!canFinalSend || !salesOrder) return;
+    const so = salesOrder;
+    const snapshot: SORevisionSnapshot = so.revisionDraft ?? {
+      items: so.items.map((it) => ({ ...it })),
+      paymentTerms: so.paymentTerms,
+      deliveryTerms: so.deliveryTerms,
+      deliveryDate: so.deliveryDate,
+      billingAddress: so.billingAddress,
+      shippingAddress: so.shippingAddress,
+    };
+    const nextNum = so.revisionNumber + 1;
+    const newValue = computeTotals(snapshot.items, so.packingCharges).grandTotal;
+    const newVersion: SORevisionVersion = {
+      id: `ver-${so.id}-${nextNum}`,
+      label: `Rev ${nextNum}`,
+      version: nextNum,
+      createdAt: SENT_TS,
+      by: currentUser.fullName,
+      reason: so.revisionReason ?? 'Customer-requested Sales Order revision',
+      notes: so.revisionNotes,
+      snapshot,
+    };
+    // Update (never duplicate) the ERP Handoff so operations see a revised SO is
+    // available. Existing handoff → annotate in place; none → create the single
+    // handoff record. State stays as-is (manufacturing is not auto-confirmed).
+    const handoffNote = `Revised Sales Order ${so.number} (Rev ${nextNum}) available for ERP update.`;
+    const erpHandoff: ErpHandoff = so.erpHandoff
+      ? { ...so.erpHandoff, reference: handoffNote }
+      : {
+          state: 'pending',
+          source: 'po_verification',
+          submittedAt: SENT_TS,
+          submittedBy: currentUser.fullName,
+          reference: handoffNote,
+        };
+    updateSalesOrder(so.id, {
+      revisionNumber: nextNum,
+      revisionState: 'revised_sent',
+      revisionDraft: undefined,
+      revisionPreviewed: false,
+      sentAt: SENT_TS,
+      status: 'so_sent',
+      items: snapshot.items.map((it) => ({ ...it })),
+      paymentTerms: snapshot.paymentTerms,
+      deliveryTerms: snapshot.deliveryTerms,
+      deliveryDate: snapshot.deliveryDate,
+      billingAddress: snapshot.billingAddress,
+      shippingAddress: snapshot.shippingAddress,
+      value: newValue,
+      versions: [...so.versions, newVersion],
+      erpHandoff,
+      reviewDate,
+      activity: [
+        ...so.activity,
+        { id: `act-${so.id}-sorev-${nextNum}`, date: SENT_TS, actor: currentUser.fullName, action: 'Revised Sales Order sent to customer', detail: `${email.attachedSalesOrder?.soNumber ?? so.number} · Rev ${nextNum} → ${draft.to} · next review ${reviewDate}` },
+        { id: `act-${so.id}-erp-${nextNum}`, date: SENT_TS, actor: currentUser.fullName, action: 'ERP Handoff updated', detail: handoffNote },
+      ],
+    });
+    updateEmail(email.id, { draft, draftSaved: true, sent: true, sentAt: SENT_TS, needsReview: false, reviewDate });
+    addToast({ type: 'success', title: 'Revised Sales Order sent successfully.', message: `${so.number} (Rev ${nextNum}) emailed to ${draft.to}. ERP Handoff flagged for update.` });
+  };
+
   const onWorkflowSend = () => {
     if (mode === 'quote-send') sendQuote();
     else if (mode === 'revision') sendRevision();
+    else if (mode === 'so-revision') sendSoRevision();
     else if (mode === 'po-verify') {
       if (intent === 'po-request') sendPoRequest();
       else if (intent === 'so-send') sendSalesOrder();
@@ -531,6 +622,8 @@ export function InboxCenterPanel({
                 Prepare this reply from the workspace on the right.{' '}
                 {mode === 'revision'
                   ? 'Edit the quote, then use “Add Revised Quote to Email”'
+                  : isSoRevise
+                  ? 'Edit the revised Sales Order, then use “Add Revised SO to Email”'
                   : 'Use “Request Updated PO” or “Correct Quote”'}{' '}
                 — it will appear here to review, set the next review date, and send.
               </span>
@@ -568,17 +661,24 @@ export function InboxCenterPanel({
                     />
                   )}
 
-                  {/* SO attachment chip — the generated Sales Order PDF */}
-                  {isSoSend && (
+                  {/* SO attachment chip — the generated / revised Sales Order PDF */}
+                  {(isSoSend || isSoRevise) && (
                     <div>
                       <p className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-surface-500">
-                        <Paperclip className="h-3.5 w-3.5" /> Attached Sales Order
+                        <Paperclip className="h-3.5 w-3.5" /> {isSoRevise ? 'Attached Revised Sales Order' : 'Attached Sales Order'}
                       </p>
                       {email.attachedSalesOrder ? (
                         <div className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2">
                           <FileSpreadsheet className="h-4 w-4 flex-none text-brand-600" />
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-[12px] font-medium text-surface-800">{email.attachedSalesOrder.soNumber}</p>
+                            <p className="flex items-center gap-1.5 truncate text-[12px] font-medium text-surface-800">
+                              {email.attachedSalesOrder.soNumber}
+                              {email.attachedSalesOrder.revisionLabel && (
+                                <span className="inline-flex flex-none items-center rounded-full bg-brand-100 px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-brand-700">
+                                  {email.attachedSalesOrder.revisionLabel}
+                                </span>
+                              )}
+                            </p>
                             <p className="truncate text-[11px] text-surface-500">
                               {email.attachedSalesOrder.fileType}
                               {email.attachedSalesOrder.sizeLabel ? ` · ${email.attachedSalesOrder.sizeLabel}` : ''}
@@ -599,7 +699,9 @@ export function InboxCenterPanel({
                       ) : (
                         <div className="flex items-center gap-2 rounded-lg border border-dashed border-surface-300 bg-surface-50 px-3 py-2 text-[12px] text-surface-500">
                           <Paperclip className="h-4 w-4 flex-none" />
-                          No Sales Order attached — use “Add Sales Order to Email” in the workspace.
+                          {isSoRevise
+                            ? 'No revised Sales Order attached — use “Add Revised SO to Email” in the workspace.'
+                            : 'No Sales Order attached — use “Add Sales Order to Email” in the workspace.'}
                         </div>
                       )}
                     </div>
@@ -755,14 +857,22 @@ export function InboxCenterPanel({
         </Modal>
       )}
 
-      {/* Sales Order preview — read-only document exactly as attached */}
-      {salesOrder && (
+      {/* Sales Order preview — read-only document exactly as attached. For a
+          revision, reflect the saved revised draft (falls back to the live SO). */}
+      {salesOrder && (() => {
+        const snap = isSoRevise ? salesOrder.revisionDraft ?? null : null;
+        const soItems = snap ? snap.items : salesOrder.items;
+        const soValue = snap ? computeTotals(snap.items, salesOrder.packingCharges).grandTotal : salesOrder.value;
+        const soDelivery = snap ? snap.deliveryTerms : salesOrder.deliveryTerms;
+        const soPayment = snap ? snap.paymentTerms : salesOrder.paymentTerms;
+        const revLabel = email.attachedSalesOrder?.revisionLabel;
+        return (
         <Modal
           open={soPreview}
           onClose={() => setSoPreview(false)}
           size="lg"
-          title="Sales Order Preview"
-          subtitle={`${salesOrder.number} · ${salesOrder.customerName}`}
+          title={isSoRevise ? 'Revised Sales Order Preview' : 'Sales Order Preview'}
+          subtitle={`${salesOrder.number}${revLabel ? ` · ${revLabel}` : ''} · ${salesOrder.customerName}`}
           footer={<Button variant="secondary" onClick={() => setSoPreview(false)}>Close Preview</Button>}
         >
           <div className="space-y-3">
@@ -771,8 +881,8 @@ export function InboxCenterPanel({
               <p><span className="text-surface-400">Quotation:</span> <span className="font-medium text-surface-800">{salesOrder.quotationNumber ?? '—'}</span></p>
               <p><span className="text-surface-400">Sales Office:</span> <span className="font-medium text-surface-800">{officeName(salesOrder.officeId)}</span></p>
               <p><span className="text-surface-400">Owner:</span> <span className="font-medium text-surface-800">{salesOrder.owner}</span></p>
-              <p><span className="text-surface-400">Delivery:</span> <span className="font-medium text-surface-800">{salesOrder.deliveryTerms}</span></p>
-              <p><span className="text-surface-400">Payment:</span> <span className="font-medium text-surface-800">{salesOrder.paymentTerms}</span></p>
+              <p><span className="text-surface-400">Delivery:</span> <span className="font-medium text-surface-800">{soDelivery}</span></p>
+              <p><span className="text-surface-400">Payment:</span> <span className="font-medium text-surface-800">{soPayment}</span></p>
             </div>
             <div className="overflow-hidden rounded-xl border border-surface-200">
               <table className="w-full border-collapse text-[12px]">
@@ -785,7 +895,7 @@ export function InboxCenterPanel({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-surface-100">
-                  {salesOrder.items.map((it) => (
+                  {soItems.map((it) => (
                     <tr key={it.id}>
                       <td className="px-3 py-2"><p className="font-medium text-surface-800">{it.description}</p><p className="text-[10.5px] text-surface-400">{it.itemCode}{it.hsnCode ? ` · HSN ${it.hsnCode}` : ''}</p></td>
                       <td className="px-2 py-2 text-right text-surface-700">{it.quantity} {it.unit}</td>
@@ -797,12 +907,13 @@ export function InboxCenterPanel({
               </table>
               <div className="flex items-center justify-between border-t border-surface-200 px-3 py-2">
                 <span className="text-[12px] font-medium text-surface-600">Grand Total</span>
-                <span className="text-[14px] font-bold text-surface-900">{formatINR(salesOrder.value)}</span>
+                <span className="text-[14px] font-bold text-surface-900">{formatINR(soValue)}</span>
               </div>
             </div>
           </div>
         </Modal>
-      )}
+        );
+      })()}
 
       {/* Preview modal — final human review before send (normal mode only) */}
       {mode === 'normal' && (
