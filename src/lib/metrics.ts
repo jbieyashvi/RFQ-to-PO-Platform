@@ -171,10 +171,6 @@ export interface MetricRow {
   hint?: string;
 }
 
-export interface ConversionRow extends MetricRow {
-  breakdown?: { label: string; count: number; to?: string }[];
-}
-
 export interface ActionRow {
   key: string;
   label: string;
@@ -217,6 +213,7 @@ export function pipelineFunnel(quotations: Quotation[], salesOrders: SalesOrder[
       key: 'quotes_sent',
       label: 'Total Quotes Sent',
       count: quotations.filter(isQuoteSent).length,
+      to: '/quotations',
       hint: 'Quotations dispatched to customers',
     },
     {
@@ -257,43 +254,7 @@ export function pipelineFunnel(quotations: Quotation[], salesOrders: SalesOrder[
   ];
 }
 
-// -- 2) Conversion funnel ----------------------------------------------------
-/** 4-stage conversion view with a combined PO+Finalised stage (deduped). */
-export function conversionFunnel(
-  quotations: Quotation[],
-  salesOrders: SalesOrder[]
-): ConversionRow[] {
-  const poReceived = salesOrders.length; // each SO carries one received PO record
-  const finalisedQuotes = quotations.filter((q) => q.stage === 'finalised');
-  // Combined stage counts DISTINCT quotations that either produced a PO or were
-  // finalised, deduped by quotation id so a finalised quote that also has a PO
-  // is not double-counted.
-  const combined = new Set<string>();
-  salesOrders.forEach((so) => so.quotationId && combined.add(so.quotationId));
-  finalisedQuotes.forEach((q) => combined.add(q.id));
-  return [
-    { key: 'queries', label: 'Total Queries', count: quotations.length, to: '/quotations' },
-    { key: 'quote_sent', label: 'Quote Sent', count: quotations.filter(isQuoteSent).length },
-    {
-      key: 'po_finalised',
-      label: 'PO Received + Finalised Quotes',
-      count: combined.size,
-      hint: 'Distinct quotations converted (deduped by quotation)',
-      breakdown: [
-        { label: 'PO Received', count: poReceived, to: '/sales-orders' },
-        { label: 'Finalised', count: finalisedQuotes.length, to: '/quotations?stage=finalised' },
-      ],
-    },
-    {
-      key: 'so_sent',
-      label: 'Total SO Sent',
-      count: salesOrders.filter(isSOSent).length,
-      to: '/sales-orders?status=so_sent',
-    },
-  ];
-}
-
-// -- 3) Action required ------------------------------------------------------
+// -- 2) Action required ------------------------------------------------------
 /** Five action cards; each count equals its destination's in-scope list. */
 export function actionRequired(quotations: Quotation[], salesOrders: SalesOrder[]): ActionRow[] {
   const pending = quotations.filter(isQuotePending);

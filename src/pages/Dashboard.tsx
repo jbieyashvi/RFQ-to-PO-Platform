@@ -1,11 +1,17 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Filter,
-  ArrowRightLeft,
   ListChecks,
   CalendarClock,
   RotateCcw,
+  Inbox,
+  FileText,
+  Send,
+  ChevronRight,
+  ArrowUpRight,
+  AlertTriangle,
+  LayoutGrid,
 } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import { FilterSelect } from '@/components/ui';
@@ -13,7 +19,6 @@ import { useApp, useOfficeScope } from '@/context/AppContext';
 import { OFFICES } from '@/data/offices';
 import {
   pipelineFunnel,
-  conversionFunnel,
   actionRequired,
   overdueTasks,
   scopeRecords,
@@ -21,28 +26,10 @@ import {
   DEFAULT_SECTION_FILTER,
   type SectionFilter,
   type MetricRow,
-  type ConversionRow,
   type ActionRow,
   type OverdueRow,
 } from '@/lib/metrics';
 import { classNames } from '@/lib/format';
-
-// Funnel-bar fills — muted navy/blue/slate/amber/violet/pink/green, in keeping
-// with the white/indigo design system (no bright gradients).
-const PIPELINE_COLORS = [
-  'bg-brand-700',
-  'bg-brand-500',
-  'bg-slate-600',
-  'bg-amber-600',
-  'bg-violet-600',
-  'bg-rose-600',
-  'bg-emerald-600',
-];
-const CONVERSION_COLORS = ['bg-brand-700', 'bg-brand-500', 'bg-violet-600', 'bg-emerald-600'];
-
-// Shared field styling — 36px control height, 13px filter text.
-const DATE_CLS =
-  'h-9 rounded-lg border border-surface-200 bg-white px-2.5 text-[13px] text-surface-700 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20';
 
 // ---------------------------------------------------------------------------
 // Per-section independent Branch + From/To date filter.
@@ -66,85 +53,63 @@ function useSectionFilter() {
 
 type SectionFilterState = ReturnType<typeof useSectionFilter>;
 
+// Consistent 36px control height across every section's filters.
+const DATE_INPUT =
+  'h-full w-[128px] bg-transparent px-2.5 text-[13px] text-surface-700 focus:outline-none';
+
 function SectionFilters({
   state,
   branchOptions,
-  variant = 'inline',
 }: {
   state: SectionFilterState;
   branchOptions: { value: string; label: string }[];
-  /** `stack` = narrow column: full-width Branch, then two dates in one row. */
-  variant?: 'inline' | 'stack';
 }) {
   const { branch, setBranch, from, setFrom, to, setTo, error, dirty, reset } = state;
-
-  const resetBtn = (
-    <button
-      onClick={reset}
-      className="inline-flex items-center gap-1 text-xs font-semibold text-surface-500 hover:text-brand-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
-    >
-      <RotateCcw className="h-3.5 w-3.5" /> Reset
-    </button>
-  );
-
-  const fromInput = (
-    <input
-      type="date"
-      aria-label="From date"
-      value={from}
-      max={to || undefined}
-      onChange={(e) => setFrom(e.target.value)}
-      className={classNames(DATE_CLS, variant === 'stack' && 'min-w-0 flex-1', error && 'border-rose-400')}
-    />
-  );
-  const toInput = (
-    <input
-      type="date"
-      aria-label="To date"
-      value={to}
-      min={from || undefined}
-      onChange={(e) => setTo(e.target.value)}
-      className={classNames(DATE_CLS, variant === 'stack' && 'min-w-0 flex-1', error && 'border-rose-400')}
-    />
-  );
-
-  if (variant === 'stack') {
-    // Action Required lives in the narrower right column: a full-width Branch
-    // filter, then the two compact date fields on one row so nothing clips.
-    return (
-      <div className="flex w-full flex-col gap-2">
-        <FilterSelect
-          value={branch === 'all' ? '' : branch}
-          onChange={(v) => setBranch(v || 'all')}
-          placeholder="All Branches"
-          options={branchOptions}
-          className="w-full !text-[13px]"
-        />
-        <div className="flex items-center gap-2">
-          {fromInput}
-          <span className="flex-none text-xs text-surface-400">to</span>
-          {toInput}
-        </div>
-        {error && <p className="text-xs font-medium text-rose-600">{error}</p>}
-        {dirty && <div className="flex justify-end">{resetBtn}</div>}
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap">
         <FilterSelect
           value={branch === 'all' ? '' : branch}
           onChange={(v) => setBranch(v || 'all')}
           placeholder="All Branches"
           options={branchOptions}
-          className="!text-[13px]"
+          className="!h-9 min-w-[148px] flex-none !text-[13px]"
         />
-        {fromInput}
-        <span className="text-xs text-surface-400">to</span>
-        {toInput}
-        {dirty && resetBtn}
+        {/* From/To grouped into a single date-range control. */}
+        <div
+          className={classNames(
+            'flex h-9 flex-none items-center rounded-lg border bg-white shadow-sm transition',
+            error
+              ? 'border-rose-400'
+              : 'border-surface-200 focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20'
+          )}
+        >
+          <input
+            type="date"
+            aria-label="From date"
+            value={from}
+            max={to || undefined}
+            onChange={(e) => setFrom(e.target.value)}
+            className={classNames(DATE_INPUT, 'rounded-l-lg')}
+          />
+          <span className="flex-none text-xs text-surface-300">–</span>
+          <input
+            type="date"
+            aria-label="To date"
+            value={to}
+            min={from || undefined}
+            onChange={(e) => setTo(e.target.value)}
+            className={classNames(DATE_INPUT, 'rounded-r-lg')}
+          />
+        </div>
+        {dirty && (
+          <button
+            onClick={reset}
+            className="inline-flex flex-none items-center gap-1 rounded text-xs font-semibold text-surface-500 transition hover:text-brand-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
+          >
+            <RotateCcw className="h-3.5 w-3.5" /> Reset
+          </button>
+        )}
       </div>
       {error && <p className="text-xs font-medium text-rose-600">{error}</p>}
     </div>
@@ -156,28 +121,18 @@ function DashSection({
   icon,
   filters,
   children,
-  className,
-  headerStack,
 }: {
   title: string;
-  icon: React.ReactNode;
-  filters: React.ReactNode;
-  children: React.ReactNode;
-  className?: string;
-  /** Keep the filters below the title even on desktop (used by narrow columns). */
-  headerStack?: boolean;
+  icon: ReactNode;
+  filters: ReactNode;
+  children: ReactNode;
 }) {
   return (
-    <section className={classNames('card overflow-hidden', className)}>
-      <div
-        className={classNames(
-          'flex flex-col gap-2.5 border-b border-surface-100 px-4 py-3 sm:px-5',
-          !headerStack && 'lg:flex-row lg:items-start lg:justify-between'
-        )}
-      >
-        <div className="flex items-center gap-2 pt-1">
+    <section className="card overflow-hidden">
+      <div className="flex flex-col gap-2.5 border-b border-surface-100 px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-center gap-2">
           {icon}
-          <h3 className="text-sm font-semibold leading-5 text-surface-800">{title}</h3>
+          <h2 className="text-[15px] font-semibold leading-5 text-surface-800">{title}</h2>
         </div>
         {filters}
       </div>
@@ -186,103 +141,183 @@ function DashSection({
   );
 }
 
-function FunnelBar({
-  row,
-  width,
-  color,
-  onOpen,
-}: {
-  row: MetricRow;
-  width: number;
-  color: string;
-  onOpen: (to: string) => void;
-}) {
-  const inner = (
-    <>
-      <span className="truncate text-[13px] font-medium leading-[18px]">{row.label}</span>
-      <span className="ml-3 flex-none text-lg font-bold leading-6 tabular-nums">{row.count}</span>
-    </>
-  );
-  const base = classNames(
-    'flex items-center justify-between rounded-lg px-4 py-2.5 text-white shadow-sm',
-    color
-  );
-  if (row.to) {
-    const to = row.to;
-    return (
-      <button
-        type="button"
-        onClick={() => onOpen(to)}
-        style={{ width: `${width}%` }}
-        aria-label={`${row.label}: ${row.count}${row.hint ? '. ' + row.hint : ''}. Open list`}
-        className={classNames(
-          base,
-          'transition hover:brightness-110 hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-1'
-        )}
-      >
-        {inner}
-      </button>
-    );
-  }
+// -- Pipeline Overview ------------------------------------------------------
+const KPI_ICON: Record<string, ReactNode> = {
+  queries: <Inbox className="h-4 w-4" />,
+  quotes_sent: <FileText className="h-4 w-4" />,
+  so_sent: <Send className="h-4 w-4" />,
+};
+
+/** Compact, clickable KPI card — one consistent brand accent for all metrics. */
+function KpiCard({ row, onOpen }: { row: MetricRow; onOpen: (to: string) => void }) {
+  const clickable = !!row.to;
   return (
-    <div style={{ width: `${width}%` }} className={base} aria-label={`${row.label}: ${row.count}`}>
-      {inner}
-    </div>
+    <button
+      type="button"
+      disabled={!clickable}
+      onClick={() => row.to && onOpen(row.to)}
+      aria-label={`${row.label}: ${row.count}${row.hint ? '. ' + row.hint : ''}${
+        clickable ? '. Open list' : ''
+      }`}
+      className={classNames(
+        'group flex flex-col rounded-xl border border-surface-200 bg-white p-3.5 text-left shadow-sm transition',
+        clickable &&
+          'cursor-pointer hover:border-brand-300 hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50'
+      )}
+    >
+      <div className="flex items-center justify-between">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+          {KPI_ICON[row.key]}
+        </span>
+        {clickable && (
+          <ArrowUpRight className="h-4 w-4 text-surface-300 transition group-hover:text-brand-500" />
+        )}
+      </div>
+      <span className="mt-2.5 text-[26px] font-bold leading-8 tracking-tight tabular-nums text-surface-900">
+        {row.count}
+      </span>
+      <span className="mt-0.5 text-[13px] font-semibold leading-[18px] text-surface-700">
+        {row.label}
+      </span>
+      {row.hint && <span className="mt-0.5 text-[11px] leading-4 text-surface-400">{row.hint}</span>}
+    </button>
   );
 }
 
+const STAGE_META: Record<string, { name: string; bar: string; track: string }> = {
+  no_followup: { name: 'No Follow-up', bar: 'bg-slate-400', track: 'bg-slate-100' },
+  budgetary: { name: 'Budgetary', bar: 'bg-teal-500', track: 'bg-teal-100' },
+  negotiation: { name: 'Negotiation', bar: 'bg-amber-500', track: 'bg-amber-100' },
+  finalise: { name: 'Finalise', bar: 'bg-violet-500', track: 'bg-violet-100' },
+};
+
+/** Quotation-stage card with a compact proportional progress bar. */
+function StageCard({
+  row,
+  max,
+  onOpen,
+}: {
+  row: MetricRow;
+  max: number;
+  onOpen: (to: string) => void;
+}) {
+  const meta = STAGE_META[row.key];
+  const pct = max > 0 && row.count > 0 ? Math.max(6, Math.round((row.count / max) * 100)) : 0;
+  const clickable = !!row.to;
+  return (
+    <button
+      type="button"
+      disabled={!clickable}
+      onClick={() => row.to && onOpen(row.to)}
+      aria-label={`Quotation stage ${meta.name}: ${row.count}. Open filtered quotations`}
+      className={classNames(
+        'group flex flex-col rounded-xl border border-surface-200 bg-white p-3.5 text-left shadow-sm transition',
+        clickable &&
+          'cursor-pointer hover:border-surface-300 hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50'
+      )}
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-[13px] font-semibold text-surface-700">{meta.name}</span>
+        <span className="text-lg font-bold leading-6 tabular-nums text-surface-900">{row.count}</span>
+      </div>
+      <div className={classNames('mt-2 h-1.5 w-full overflow-hidden rounded-full', meta.track)}>
+        <div
+          className={classNames('h-full rounded-full transition-all', meta.bar)}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className="mt-1.5 text-[11px] text-surface-400">Quotation stage</span>
+    </button>
+  );
+}
+
+// -- Action Required --------------------------------------------------------
+const ACTION_EDGE: Record<ActionRow['severity'], string> = {
+  high: 'border-l-rose-500',
+  medium: 'border-l-amber-500',
+  low: 'border-l-brand-400',
+};
+
 function ActionCard({ row, onOpen }: { row: ActionRow; onOpen: (to: string) => void }) {
-  const edge =
-    row.severity === 'high'
-      ? 'border-l-rose-500'
-      : row.severity === 'medium'
-      ? 'border-l-amber-500'
-      : 'border-l-brand-400';
   return (
     <button
       type="button"
       onClick={() => onOpen(row.to)}
       aria-label={`${row.label}: ${row.count}. ${row.description}`}
       className={classNames(
-        'flex w-full items-center gap-3 rounded-lg border border-surface-200 border-l-4 bg-white px-3.5 py-3 text-left shadow-sm transition hover:border-surface-300 hover:bg-surface-50 hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
-        edge
+        'group flex h-full items-start gap-3 rounded-xl border border-surface-200 border-l-4 bg-white p-3.5 text-left shadow-sm transition hover:border-surface-300 hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
+        ACTION_EDGE[row.severity]
       )}
     >
       <span className="min-w-0 flex-1">
-        <span className="block text-[13px] font-semibold leading-[18px] text-surface-800">{row.label}</span>
-        <span className="mt-0.5 block text-xs leading-4 text-surface-500">{row.description}</span>
+        <span className="block text-[13px] font-semibold leading-[18px] text-surface-800">
+          {row.label}
+        </span>
+        <span className="mt-0.5 block text-[11px] leading-4 text-surface-500">{row.description}</span>
         {row.sub && (
-          <span className="mt-1 inline-block text-xs font-medium text-surface-600">
-            {row.sub.label}: <span className="text-surface-800">{row.sub.count}</span>
+          <span className="mt-1 inline-block text-[11px] font-medium text-surface-500">
+            {row.sub.label}: <span className="text-surface-700">{row.sub.count}</span>
           </span>
         )}
       </span>
-      <span className="flex-none text-lg font-bold leading-6 tabular-nums text-surface-900">{row.count}</span>
+      <span className="flex-none text-xl font-bold leading-7 tabular-nums text-surface-900">
+        {row.count}
+      </span>
     </button>
   );
 }
 
+// -- Overdue Tasks ----------------------------------------------------------
 function OverdueItem({ row, onOpen }: { row: OverdueRow; onOpen: (to: string) => void }) {
   return (
     <button
       type="button"
       onClick={() => onOpen(row.to)}
       aria-label={`${row.label}: ${row.count}. ${row.note}`}
-      className="flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-left transition hover:bg-surface-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
+      className="group flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition hover:bg-surface-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
     >
       <span className="min-w-0 flex-1">
-        <span className="block text-[13px] font-medium leading-[18px] text-surface-800">{row.label}</span>
-        <span className="block text-xs text-surface-400">{row.note}</span>
+        <span className="block text-[13px] font-medium leading-[18px] text-surface-800">
+          {row.label}
+        </span>
+        <span className="block text-[11px] leading-4 text-surface-400">{row.note}</span>
       </span>
       <span
         className={classNames(
-          'flex-none rounded-md px-2 py-0.5 text-sm font-semibold tabular-nums',
+          'flex-none rounded-md px-2 py-0.5 text-[13px] font-semibold tabular-nums',
           row.count > 0 ? 'bg-rose-50 text-rose-600' : 'bg-surface-100 text-surface-500'
         )}
       >
         {row.count}
       </span>
+      <ChevronRight className="h-4 w-4 flex-none text-surface-300 transition group-hover:text-surface-500" />
     </button>
+  );
+}
+
+function OverdueColumn({
+  title,
+  total,
+  rows,
+  onOpen,
+}: {
+  title: string;
+  total: number;
+  rows: OverdueRow[];
+  onOpen: (to: string) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-surface-200 bg-white p-2.5 shadow-sm">
+      <div className="mb-1.5 flex items-center justify-between border-b border-surface-100 px-1 pb-1.5">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-surface-500">{title}</h3>
+        <span className="text-xs font-semibold text-surface-600 tabular-nums">{total}</span>
+      </div>
+      <div className="space-y-0.5">
+        {rows.map((row) => (
+          <OverdueItem key={row.key} row={row} onOpen={onOpen} />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -293,8 +328,7 @@ export default function Dashboard() {
   const onOpen = (to: string) => navigate(to);
 
   // Branch options mirror the Sales Office Master; office-scoped roles only see
-  // their own office. (The header office selector was removed — each section
-  // filters independently.)
+  // their own office. Each section filters independently.
   const branchOptions = useMemo(
     () =>
       (role === 'super_admin' ? OFFICES : visibleOffices).map((o) => ({
@@ -316,7 +350,6 @@ export default function Dashboard() {
 
   // One independent filter per section.
   const pipelineF = useSectionFilter();
-  const conversionF = useSectionFilter();
   const actionF = useSectionFilter();
   const overdueF = useSectionFilter();
 
@@ -328,12 +361,6 @@ export default function Dashboard() {
     const so = scopeRecords(baseSalesOrders, pipelineF.filter, soBy);
     return pipelineFunnel(q, so);
   }, [baseQuotations, baseSalesOrders, pipelineF.filter]);
-
-  const conversion = useMemo(() => {
-    const q = scopeRecords(baseQuotations, conversionF.filter, qBy);
-    const so = scopeRecords(baseSalesOrders, conversionF.filter, soBy);
-    return conversionFunnel(q, so);
-  }, [baseQuotations, baseSalesOrders, conversionF.filter]);
 
   const actions = useMemo(() => {
     const q = scopeRecords(baseQuotations, actionF.filter, qBy);
@@ -347,147 +374,107 @@ export default function Dashboard() {
     return overdueTasks(q, so);
   }, [baseQuotations, baseSalesOrders, overdueF.filter]);
 
+  // Split the pipeline rows into the summary KPIs and the quotation-stage cards.
+  const byKey = useMemo(
+    () => Object.fromEntries(pipeline.map((r) => [r.key, r] as const)),
+    [pipeline]
+  );
+  const summary = ['queries', 'quotes_sent', 'so_sent']
+    .map((k) => byKey[k])
+    .filter(Boolean) as MetricRow[];
+  const stages = ['no_followup', 'budgetary', 'negotiation', 'finalise']
+    .map((k) => byKey[k])
+    .filter(Boolean) as MetricRow[];
+  const stageMax = Math.max(1, ...stages.map((s) => s.count));
+
   return (
     <>
       <PageHeader
         title="Operations Dashboard"
-        description="Pipeline, conversion and the tasks that need attention across your sales offices."
+        description="Pipeline health and tasks requiring attention across your sales offices."
       />
 
-      {/* 60/40 desktop split — Action Required gets the wider right column. */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-        {/* LEFT COLUMN (60%) — Pipeline + Conversion funnels */}
-        <div className="flex flex-col gap-4 lg:col-span-3">
-          <DashSection
-            title="Pipeline Funnel"
-            icon={<Filter className="h-4 w-4 text-brand-500" />}
-            filters={<SectionFilters state={pipelineF} branchOptions={branchOptions} />}
-          >
-            <div className="space-y-1.5">
-              {pipeline.map((row, i) => (
-                <FunnelBar
-                  key={row.key}
-                  row={row}
-                  width={100 - i * 9}
-                  color={PIPELINE_COLORS[i]}
-                  onOpen={onOpen}
-                />
+      <div className="flex flex-col gap-4 md:gap-5">
+        {/* 1 — PIPELINE OVERVIEW */}
+        <DashSection
+          title="Pipeline Overview"
+          icon={<Filter className="h-4 w-4 text-brand-500" />}
+          filters={<SectionFilters state={pipelineF} branchOptions={branchOptions} />}
+        >
+          {/* Summary metrics row */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {summary.map((row) => (
+              <KpiCard key={row.key} row={row} onOpen={onOpen} />
+            ))}
+          </div>
+
+          {/* Quotation Stage Distribution */}
+          <div className="mt-4">
+            <h3 className="mb-2 text-[13px] font-semibold text-surface-600">
+              Quotation Stage Distribution
+            </h3>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {stages.map((row) => (
+                <StageCard key={row.key} row={row} max={stageMax} onOpen={onOpen} />
               ))}
             </div>
-          </DashSection>
+          </div>
+        </DashSection>
 
-          <DashSection
-            title="Conversion Funnel"
-            icon={<ArrowRightLeft className="h-4 w-4 text-brand-500" />}
-            filters={<SectionFilters state={conversionF} branchOptions={branchOptions} />}
-          >
-            <div className="space-y-1.5">
-              {conversion.map((row: ConversionRow, i) => (
-                <div key={row.key}>
-                  <FunnelBar row={row} width={100 - i * 13} color={CONVERSION_COLORS[i]} onOpen={onOpen} />
-                  {row.breakdown && (
-                    <div
-                      className="mt-1.5 flex flex-wrap gap-2"
-                      style={{ width: `${100 - i * 13}%` }}
-                    >
-                      {row.breakdown.map((b) =>
-                        b.to ? (
-                          <button
-                            key={b.label}
-                            type="button"
-                            onClick={() => onOpen(b.to!)}
-                            className="chip transition hover:border-brand-300 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
-                          >
-                            {b.label}: <span className="font-semibold text-surface-800">{b.count}</span>
-                          </button>
-                        ) : (
-                          <span key={b.label} className="chip">
-                            {b.label}: <span className="font-semibold text-surface-800">{b.count}</span>
-                          </span>
-                        )
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </DashSection>
-        </div>
-
-        {/* RIGHT COLUMN (40%) — Action Required */}
+        {/* 2 — ACTION REQUIRED */}
         <DashSection
           title="Action Required"
           icon={<ListChecks className="h-4 w-4 text-amber-500" />}
-          filters={<SectionFilters state={actionF} branchOptions={branchOptions} variant="stack" />}
-          headerStack
-          className="lg:col-span-2"
+          filters={<SectionFilters state={actionF} branchOptions={branchOptions} />}
         >
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {actions.map((row) => (
               <ActionCard key={row.key} row={row} onOpen={onOpen} />
             ))}
           </div>
         </DashSection>
-      </div>
 
-      {/* LOWER — Overdue Tasks (full width) */}
-      <div className="mt-4">
+        {/* 3 — OVERDUE TASKS */}
         <DashSection
           title="Overdue Tasks"
           icon={<CalendarClock className="h-4 w-4 text-rose-500" />}
           filters={<SectionFilters state={overdueF} branchOptions={branchOptions} />}
         >
-          <div className="mb-3 flex flex-wrap items-center gap-2 text-[13px]">
-            <span className="chip">
-              Internal Ops: <span className="font-semibold text-surface-800">{overdue.internalTotal}</span>
-            </span>
-            <span className="chip">
-              Sales Team: <span className="font-semibold text-surface-800">{overdue.salesTotal}</span>
-            </span>
+          {/* Compact summary */}
+          <div className="mb-3 flex flex-wrap items-center gap-2">
             <span
               className={classNames(
-                'inline-flex items-center gap-1.5 rounded-md px-2 py-1 font-semibold',
+                'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[13px] font-semibold',
                 overdue.total > 0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'
               )}
             >
-              Total overdue: {overdue.total}
+              <AlertTriangle className="h-3.5 w-3.5" /> Total Overdue: {overdue.total}
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-surface-50 px-2.5 py-1 text-[13px] text-surface-600">
+              <LayoutGrid className="h-3.5 w-3.5 text-surface-400" /> Internal Ops:{' '}
+              <span className="font-semibold text-surface-800">{overdue.internalTotal}</span>
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-surface-50 px-2.5 py-1 text-[13px] text-surface-600">
+              <Send className="h-3.5 w-3.5 text-surface-400" /> Sales Team:{' '}
+              <span className="font-semibold text-surface-800">{overdue.salesTotal}</span>
             </span>
           </div>
 
-          {overdue.total === 0 ? (
-            <p className="rounded-lg border border-dashed border-surface-200 py-8 text-center text-sm text-surface-400">
-              Nothing is overdue for the selected branch and date range. 🎉
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
-              <div>
-                <div className="mb-2 flex items-center justify-between border-b border-surface-100 pb-1.5">
-                  <h4 className="text-xs font-semibold uppercase tracking-wide text-surface-500">
-                    Internal Ops
-                  </h4>
-                  <span className="text-xs font-semibold text-surface-600">{overdue.internalTotal}</span>
-                </div>
-                <div className="space-y-1">
-                  {overdue.internalOps.map((row) => (
-                    <OverdueItem key={row.key} row={row} onOpen={onOpen} />
-                  ))}
-                </div>
-              </div>
-              <div>
-                <div className="mb-2 flex items-center justify-between border-b border-surface-100 pb-1.5">
-                  <h4 className="text-xs font-semibold uppercase tracking-wide text-surface-500">
-                    Sales Team
-                  </h4>
-                  <span className="text-xs font-semibold text-surface-600">{overdue.salesTotal}</span>
-                </div>
-                <div className="space-y-1">
-                  {overdue.salesTeam.map((row) => (
-                    <OverdueItem key={row.key} row={row} onOpen={onOpen} />
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Two equal columns */}
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <OverdueColumn
+              title="Internal Ops"
+              total={overdue.internalTotal}
+              rows={overdue.internalOps}
+              onOpen={onOpen}
+            />
+            <OverdueColumn
+              title="Sales Team"
+              total={overdue.salesTotal}
+              rows={overdue.salesTeam}
+              onOpen={onOpen}
+            />
+          </div>
         </DashSection>
       </div>
     </>
