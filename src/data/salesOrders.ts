@@ -171,6 +171,7 @@ function generate(): SalesOrder[] {
       // keep some as sent for demo, but bias drafts when not verified
       if (mismatch) status = 'revision_required';
     }
+    const isSent = status === 'so_sent' || status === 'finalised';
 
     const receivedDate = addDays('2026-08-13', -(3 + Math.floor(rand() * 30)));
     const poDate = addDays(receivedDate, -2);
@@ -229,6 +230,14 @@ function generate(): SalesOrder[] {
       activity.push({ id: `act-${i}-verified`, date: verifiedAt, actor: q.owner, action: 'PO verified against quotation', detail: 'All fields matched — ready for Sales Order generation' });
     }
 
+    // Successful-dispatch timestamp for sent/finalised orders. Deterministic and
+    // distinct from created/delivery dates. Revised sent orders get this
+    // overwritten with the latest revision's sent time in seedRevisionSubStates.
+    const sentAt = isSent ? `${addDays(createdDate, 1 + Math.floor(rand() * 3))}T16:45:00` : undefined;
+    if (sentAt) {
+      activity.push({ id: `act-${i}-sent`, date: sentAt, actor: q.owner, action: 'Sales Order sent', detail: `${`SO/2026/${pad(500 + i + 1, 4)}`} dispatched to customer` });
+    }
+
     const versions: SORevisionVersion[] = [
       {
         id: `ver-${i}-0`,
@@ -277,6 +286,7 @@ function generate(): SalesOrder[] {
       verifiedBy,
       verifiedAt,
       soGenerated: flavor === 'verified' && (status === 'so_sent' || status === 'finalised'),
+      sentAt,
       versions,
       items,
       paymentTerms: q.paymentTerms,
@@ -357,6 +367,8 @@ function seedRevisionSubStates(list: SalesOrder[]) {
     sent.revisionPreviewed = true;
     sent.revisionDraft = revised;
     sent.revisionAttachments = attachments;
+    // SO Sent Date must reflect the LATEST sent revision, not the original send.
+    sent.sentAt = `${addDays(stamp, 3)}T12:00:00`;
     // Apply the revised snapshot to the live SO (original preserved in versions[0]).
     sent.items = revised.items.map((it) => ({ ...it }));
     sent.paymentTerms = revised.paymentTerms;

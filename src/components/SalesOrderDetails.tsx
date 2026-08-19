@@ -12,7 +12,7 @@ import {
 import { useApp } from '@/context/AppContext';
 import { SO_STATUS, VERIFICATION_STATUS } from '@/lib/labels';
 import { officeName } from '@/data/offices';
-import { computeTotals, downloadText, formatDate, formatINR, lineTotal } from '@/lib/format';
+import { computeTotals, downloadText, formatDate, formatDateTime, formatINR, lineTotal } from '@/lib/format';
 
 export function SalesOrderDetailsDrawer({
   order,
@@ -78,6 +78,7 @@ export function SalesOrderDetailsDrawer({
                 { label: 'Owner', value: so.owner },
                 { label: 'Created', value: formatDate(so.createdDate) },
                 { label: 'Delivery Date', value: formatDate(so.deliveryDate) },
+                { label: 'SO Sent Date', value: so.sentAt ? formatDateTime(so.sentAt) : 'Not sent' },
                 { label: 'Order Value', value: formatINR(so.value) },
               ]}
             />

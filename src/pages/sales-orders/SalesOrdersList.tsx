@@ -1,115 +1,82 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { Download, Eye, Send, RotateCcw, Plus } from 'lucide-react';
+import { Download, Eye, Plus } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import {
   Button,
   DataTable,
-  StatusBadge,
   SearchInput,
   FilterBar,
   FilterSelect,
   Pagination,
-  Modal,
-  TextAreaField,
-  ConfirmDialog,
-  RowActionMenu,
   type Column,
   type FilterChip,
-  type RowAction,
 } from '@/components/ui';
 import { SalesOrderDetailsDrawer } from '@/components/SalesOrderDetails';
 import { useApp, useOfficeScope } from '@/context/AppContext';
 import { OFFICES, officeName } from '@/data/offices';
-import { SO_STATUS } from '@/lib/labels';
-import type { SalesOrder, SOStatus } from '@/types';
-import { downloadCSV, downloadText, formatDate, formatINR } from '@/lib/format';
+import type { SalesOrder } from '@/types';
+import { downloadCSV, downloadText, formatDateTime, formatINR } from '@/lib/format';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 
+const iconBtn =
+  'inline-flex h-7 w-7 items-center justify-center rounded-lg text-surface-500 transition-colors hover:bg-surface-100 hover:text-surface-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent';
+
 export default function SalesOrdersList() {
-  const { salesOrders, role, currentUser, can, updateSalesOrder, addToast } = useApp();
+  const { salesOrders, role, can, addToast } = useApp();
   const inScope = useOfficeScope();
   const [params, setParams] = useSearchParams();
 
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState(params.get('status') ?? '');
   const [office, setOffice] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
   const [active, setActive] = useState<SalesOrder | null>(null);
-  const [reqRevision, setReqRevision] = useState<SalesOrder | null>(null);
-  const [revReason, setRevReason] = useState('');
-  const [markSent, setMarkSent] = useState<SalesOrder | null>(null);
   const loading = useSimulatedLoading([]);
 
+  // Clear any legacy status deep-link param (the status filter was removed).
   useEffect(() => {
-    if (params.get('status')) setStatus(params.get('status')!);
     if ([...params.keys()].length) setParams({}, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const ownerOf = (so: SalesOrder) => so.owner?.trim() || 'Unassigned';
+  const sentLabel = (so: SalesOrder) => (so.sentAt ? formatDateTime(so.sentAt) : 'Not sent');
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
     return salesOrders.filter((so) => {
       if (!inScope(so.officeId)) return false;
-      if (status && so.status !== status) return false;
       if (office && so.officeId !== office) return false;
       if (dateFrom && so.createdDate < dateFrom) return false;
       if (dateTo && so.createdDate > dateTo) return false;
-      if (s && !`${so.number} ${so.poNumber} ${so.quotationNumber} ${so.customerName}`.toLowerCase().includes(s)) return false;
+      // Search by SO number, customer name and owner only (never PO number).
+      if (s && !`${so.number} ${so.customerName} ${ownerOf(so)}`.toLowerCase().includes(s)) return false;
       return true;
     });
-  }, [salesOrders, inScope, search, status, office, dateFrom, dateTo]);
+  }, [salesOrders, inScope, search, office, dateFrom, dateTo]);
 
   const { page, pageSize, setPage, setPageSize, pageRows, total } = usePaginated(filtered, 10);
 
   const chips: FilterChip[] = [];
-  if (status) chips.push({ key: 's', label: `Status: ${SO_STATUS[status as SOStatus].label}`, onRemove: () => setStatus('') });
   if (office) chips.push({ key: 'o', label: `Office: ${officeName(office)}`, onRemove: () => setOffice('') });
   if (dateFrom || dateTo) chips.push({ key: 'd', label: `Created: ${dateFrom || '…'} → ${dateTo || '…'}`, onRemove: () => { setDateFrom(''); setDateTo(''); } });
   if (search) chips.push({ key: 'q', label: `Search: "${search}"`, onRemove: () => setSearch('') });
 
-  const clearAll = () => { setSearch(''); setStatus(''); setOffice(''); setDateFrom(''); setDateTo(''); };
+  const clearAll = () => { setSearch(''); setOffice(''); setDateFrom(''); setDateTo(''); };
 
   const exportCSV = () => {
-    const header = ['SO Number', 'PO Number', 'Quotation No', 'Customer', 'Sales Office', 'Owner', 'Value (INR)', 'SO Status', 'Created', 'Delivery Date'];
-    const rows = filtered.map((so) => [so.number, so.poNumber, so.quotationNumber ?? '', so.customerName, officeName(so.officeId), so.owner, so.value, SO_STATUS[so.status].label, so.createdDate, so.deliveryDate]);
+    const header = ['SO No', 'Customer', 'Sales Office', 'Owner', 'Value (INR)', 'SO Sent Date'];
+    const rows = filtered.map((so) => [so.number, so.customerName, officeName(so.officeId), ownerOf(so), so.value, sentLabel(so)]);
     downloadCSV('sales-orders-filtered.csv', [header, ...rows]);
     addToast({ type: 'success', title: 'Export complete', message: `${filtered.length} sales order(s) exported.` });
   };
 
-  const doMarkSent = (so: SalesOrder) => {
-    updateSalesOrder(so.id, { status: 'so_sent' });
-    addToast({ type: 'success', title: 'SO marked as sent', message: `${so.number} dispatched to customer.` });
-    setMarkSent(null);
-  };
-
-  const doRequestRevision = () => {
-    if (!reqRevision) return;
-    updateSalesOrder(reqRevision.id, {
-      status: 'revision_required',
-      revisionState: 'revision_required',
-      revisionReason: revReason || 'Revision requested',
-      revisionRequestedDate: '2026-08-13',
-      revisionRequestedBy: currentUser.fullName,
-      revisionOwner: reqRevision.owner,
-      revisionDraft: undefined,
-      revisionNotes: undefined,
-      revisionAttachments: [],
-      revisionPreviewed: false,
-      activity: [
-        ...reqRevision.activity,
-        { id: `act-${reqRevision.id}-${Date.now()}`, date: new Date().toISOString(), actor: currentUser.fullName, action: 'Revision requested', detail: revReason || 'Revision requested' },
-      ],
-    });
-    addToast({ type: 'success', title: 'Revision requested', message: `${reqRevision.number} moved to revision queue.` });
-    setReqRevision(null);
-    setRevReason('');
-  };
-
+  // Download the latest Sales Order PDF directly. For revised records the live SO
+  // already reflects the latest approved revision (original kept in versions[0]).
   const downloadOne = (so: SalesOrder) => {
-    downloadText(`${so.number.replace(/\//g, '-')}.txt`, `SALES ORDER ${so.number}\nPO ${so.poNumber}\nCustomer ${so.customerName}\nValue ${formatINR(so.value)}`);
+    downloadText(`${so.number.replace(/\//g, '-')}.txt`, `SALES ORDER ${so.number}\nPO ${so.poNumber}\nCustomer ${so.customerName}\nOwner ${ownerOf(so)}\nValue ${formatINR(so.value)}`);
     addToast({ type: 'info', title: 'Download started', message: so.number });
   };
 
@@ -117,7 +84,7 @@ export default function SalesOrdersList() {
     {
       key: 'so',
       header: 'SO No',
-      width: '132px',
+      width: '140px',
       sticky: 'left',
       sortValue: (r) => r.number,
       render: (r) => (
@@ -131,41 +98,33 @@ export default function SalesOrdersList() {
         </span>
       ),
     },
-    {
-      key: 'po',
-      header: 'PO No',
-      width: '134px',
-      render: (r) => (
-        <div className="min-w-0">
-          <p className="truncate text-surface-700" title={r.poNumber}>{r.poNumber}</p>
-          <p className="truncate text-[11px] text-surface-400" title={r.quotationNumber ?? undefined}>{r.quotationNumber ?? '—'}</p>
-        </div>
-      ),
-    },
     { key: 'customer', header: 'Customer', truncate: true, title: (r) => r.customerName, sortValue: (r) => r.customerName, render: (r) => <span className="font-medium text-surface-800">{r.customerName}</span> },
     { key: 'office', header: 'Sales Office', truncate: true, title: (r) => officeName(r.officeId), render: (r) => <span className="text-surface-600">{officeName(r.officeId)}</span> },
-    { key: 'value', header: 'Value', width: '100px', align: 'right', sortValue: (r) => r.value, render: (r) => <span className="font-medium text-surface-800">{formatINR(r.value)}</span> },
-    { key: 'status', header: 'SO Status', width: '140px', render: (r) => <StatusBadge tone={SO_STATUS[r.status].tone} label={SO_STATUS[r.status].label} /> },
-    { key: 'delivery', header: 'Delivery', width: '96px', sortValue: (r) => r.deliveryDate, render: (r) => <span className="text-surface-600">{formatDate(r.deliveryDate, { short: true })}</span> },
+    { key: 'owner', header: 'Owner', truncate: true, title: (r) => ownerOf(r), sortValue: (r) => ownerOf(r), render: (r) => <span className="text-surface-600">{ownerOf(r)}</span> },
+    { key: 'value', header: 'Value', width: '104px', align: 'right', sortValue: (r) => r.value, render: (r) => <span className="font-medium text-surface-800">{formatINR(r.value)}</span> },
+    {
+      key: 'sentAt',
+      header: 'SO Sent Date',
+      width: '176px',
+      sortValue: (r) => r.sentAt ?? '',
+      render: (r) => (r.sentAt ? <span className="text-surface-600">{formatDateTime(r.sentAt)}</span> : <span className="text-surface-400">Not sent</span>),
+    },
     {
       key: 'actions',
       header: 'Actions',
-      width: '72px',
+      width: '84px',
       align: 'right',
       sticky: 'right',
-      render: (r) => {
-        const actions: RowAction[] = [
-          { label: 'View', icon: <Eye className="h-4 w-4" />, onClick: () => setActive(r) },
-        ];
-        if (can('sales_orders', 'download')) actions.push({ label: 'Download', icon: <Download className="h-4 w-4" />, onClick: () => downloadOne(r) });
-        if (can('sales_orders', 'edit') && r.status !== 'so_sent' && r.status !== 'finalised') actions.push({ label: 'Mark as Sent', icon: <Send className="h-4 w-4" />, onClick: () => setMarkSent(r) });
-        if (can('sales_orders', 'edit') && r.status !== 'revision_required') actions.push({ label: 'Request Revision', icon: <RotateCcw className="h-4 w-4" />, onClick: () => { setReqRevision(r); setRevReason(''); } });
-        return (
-          <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
-            <RowActionMenu actions={actions} label={`Actions for ${r.number}`} />
-          </div>
-        );
-      },
+      render: (r) => (
+        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+          <button type="button" className={iconBtn} title="View Sales Order" aria-label={`View ${r.number}`} onClick={() => setActive(r)}>
+            <Eye className="h-4 w-4" />
+          </button>
+          <button type="button" className={iconBtn} title="Download Sales Order" aria-label={`Download ${r.number}`} disabled={!can('sales_orders', 'download')} onClick={() => downloadOne(r)}>
+            <Download className="h-4 w-4" />
+          </button>
+        </div>
+      ),
     },
   ];
 
@@ -173,7 +132,7 @@ export default function SalesOrdersList() {
     <>
       <PageHeader
         title="List of Sales Orders"
-        description="All sales orders across offices, with their PO and quotation linkage."
+        description="All sales orders across offices. Open a record for its PO, quotation and verification detail."
         crumbs={[{ label: 'Sales Orders' }, { label: 'List of Sales Orders' }]}
         actions={
           <>
@@ -186,8 +145,7 @@ export default function SalesOrdersList() {
       <div className="card">
         <div className="border-b border-surface-100 p-4">
           <FilterBar chips={chips} onClearAll={clearAll}>
-            <SearchInput value={search} onChange={setSearch} placeholder="Search SO, PO, customer…" className="w-full sm:w-72" />
-            <FilterSelect value={status} onChange={setStatus} placeholder="All SO statuses" options={Object.entries(SO_STATUS).map(([k, v]) => ({ value: k, label: v.label }))} />
+            <SearchInput value={search} onChange={setSearch} placeholder="Search SO number or customer…" className="w-full sm:w-72" />
             {role === 'super_admin' && <FilterSelect value={office} onChange={setOffice} placeholder="All offices" options={OFFICES.map((o) => ({ value: o.id, label: o.name }))} />}
             <div className="flex items-center gap-1.5">
               <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="input h-9 py-1.5 text-sm" title="Created from" />
@@ -201,26 +159,6 @@ export default function SalesOrdersList() {
       </div>
 
       <SalesOrderDetailsDrawer order={active} onClose={() => setActive(null)} />
-
-      <ConfirmDialog
-        open={!!markSent}
-        onClose={() => setMarkSent(null)}
-        onConfirm={() => markSent && doMarkSent(markSent)}
-        title="Mark sales order as sent?"
-        message={`${markSent?.number} will be marked SO Sent and shared with ${markSent?.customerName}.`}
-        confirmLabel="Mark as Sent"
-      />
-
-      <Modal
-        open={!!reqRevision}
-        onClose={() => setReqRevision(null)}
-        title="Request Revision"
-        subtitle={reqRevision?.number}
-        size="md"
-        footer={<><Button variant="secondary" onClick={() => setReqRevision(null)}>Cancel</Button><Button variant="primary" onClick={doRequestRevision}>Request Revision</Button></>}
-      >
-        <TextAreaField label="Revision reason" required rows={3} value={revReason} onChange={(e) => setRevReason(e.target.value)} placeholder="Describe what needs to change…" />
-      </Modal>
     </>
   );
 }

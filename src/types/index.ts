@@ -355,6 +355,10 @@ export interface SalesOrder {
   verifiedBy?: string;
   verifiedAt?: string;
   soGenerated?: boolean;
+  // Timestamp the latest sent Sales Order version was successfully dispatched.
+  // For revised SOs this is the sent time of the latest sent revision. Undefined
+  // until the order has actually been sent (drafts / revision-required).
+  sentAt?: string;
   revisionNotes?: string;
   revisionDraft?: SORevisionSnapshot; // working edits before approval/send
   revisionAttachments: Attachment[];
