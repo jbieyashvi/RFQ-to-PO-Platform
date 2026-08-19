@@ -21,6 +21,7 @@ import Verification from '@/pages/sales-orders/Verification';
 import SalesOrdersList from '@/pages/sales-orders/SalesOrdersList';
 import SalesOrderRevisions from '@/pages/sales-orders/SalesOrderRevisions';
 import CreateSalesOrder from '@/pages/sales-orders/CreateSalesOrder';
+import ErpHandoff from '@/pages/erp-handoff/ErpHandoff';
 import NotFound from '@/pages/NotFound';
 
 export default function App() {
@@ -151,6 +152,16 @@ export default function App() {
           element={
             <RequirePermission module="sales_orders">
               <CreateSalesOrder />
+            </RequirePermission>
+          }
+        />
+
+        {/* ERP Handoff */}
+        <Route
+          path="/erp-handoff"
+          element={
+            <RequirePermission module="erp_handoff">
+              <ErpHandoff />
             </RequirePermission>
           }
         />

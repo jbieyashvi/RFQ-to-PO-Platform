@@ -28,6 +28,8 @@ interface Props<T> {
   rows: T[];
   rowKey: (row: T) => string;
   onRowClick?: (row: T) => void;
+  /** Optional extra classes per row (e.g. to highlight a freshly-created record). */
+  rowClassName?: (row: T) => string | undefined;
   loading?: boolean;
   emptyTitle?: string;
   emptyMessage?: string;
@@ -46,6 +48,7 @@ export function DataTable<T>({
   rows,
   rowKey,
   onRowClick,
+  rowClassName,
   loading,
   emptyTitle = 'No records found',
   emptyMessage = 'Try adjusting your filters or search terms.',
@@ -196,7 +199,8 @@ export function DataTable<T>({
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
                   className={classNames(
                     'group transition-colors',
-                    onRowClick && 'cursor-pointer hover:bg-brand-50/40'
+                    onRowClick && 'cursor-pointer hover:bg-brand-50/40',
+                    rowClassName?.(row)
                   )}
                 >
                   {columns.map((col) => (

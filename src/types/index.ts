@@ -9,7 +9,8 @@ export type ModuleKey =
   | 'hsn_master'
   | 'tc_master'
   | 'quotations'
-  | 'sales_orders';
+  | 'sales_orders'
+  | 'erp_handoff';
 
 export type ActionKey = 'view' | 'create' | 'edit' | 'delete' | 'download';
 
@@ -320,6 +321,25 @@ export interface VerificationField {
   resolution?: FieldResolution; // working state (defaults derived from `match`)
 }
 
+// ---------- ERP Handoff ----------
+// A Sales Order enters the ERP Handoff queue when created via the manual flow.
+// It starts Pending and becomes Handed Over once someone confirms it is ready
+// for manufacturing / ERP processing. No real ERP is called — this records the
+// operational handoff step only.
+export type ErpHandoffState = 'pending' | 'handed_over';
+
+export interface ErpHandoff {
+  state: ErpHandoffState;
+  submittedAt: string; // ISO datetime the SO was submitted to the handoff queue
+  submittedBy: string;
+  reference?: string; // ERP reference / handoff note captured on handover
+  handedOverBy?: string;
+  handedOverAt?: string; // ISO datetime
+}
+
+// How the customer PO reached us — drives the required proof on Create SO.
+export type PoProofType = 'uploaded' | 'phone_call' | 'message';
+
 export interface SalesOrder {
   id: string;
   number: string;
@@ -369,6 +389,20 @@ export interface SalesOrder {
     confirmedBy: string;
     confirmedAt: string; // ISO datetime
   };
+  // ERP Handoff — set once the SO is created via the manual flow and pushed to
+  // the ERP Handoff queue. Absent for legacy / non-handoff sales orders.
+  erpHandoff?: ErpHandoff;
+  // Extended client details captured on manual creation (optional; older seed
+  // records omit these). Billing/shipping addresses live above.
+  customerPhone?: string;
+  customerEmail?: string;
+  pincode?: string;
+  kindAttentionName?: string;
+  kindAttentionEmail?: string;
+  officeAdmin?: string;
+  // Customer-PO provenance captured on manual creation.
+  poProofType?: PoProofType;
+  poProofNotes?: string;
   revisionDraft?: SORevisionSnapshot; // working edits before approval/send
   revisionAttachments: Attachment[];
   revisionPreviewed?: boolean;

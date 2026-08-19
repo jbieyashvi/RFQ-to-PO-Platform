@@ -9,6 +9,7 @@ import {
   FileSpreadsheet,
   ClipboardCheck,
   Inbox,
+  ArrowLeftRight,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -78,6 +79,13 @@ export const NAV: NavItem[] = [
       { label: 'Sales Order Revision', to: '/sales-orders/revisions' },
       { label: 'Create SO Manually', to: '/sales-orders/create' },
     ],
+  },
+  {
+    key: 'erp_handoff',
+    label: 'ERP Handoff',
+    icon: ArrowLeftRight,
+    to: '/erp-handoff',
+    module: 'erp_handoff',
   },
 ];
 

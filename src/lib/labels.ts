@@ -1,6 +1,7 @@
 import type {
   ActionKey,
   EmailClassification,
+  ErpHandoffState,
   InboxAction,
   ModuleKey,
   QuotationDeliveryState,
@@ -38,6 +39,7 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   tc_master: 'T&C Master',
   quotations: 'Sales Quotations',
   sales_orders: 'Sales Orders',
+  erp_handoff: 'ERP Handoff',
 };
 
 export const ACTION_LABELS: Record<ActionKey, string> = {
@@ -57,6 +59,7 @@ export const MODULE_ORDER: ModuleKey[] = [
   'tc_master',
   'quotations',
   'sales_orders',
+  'erp_handoff',
 ];
 
 export const ACTION_ORDER: ActionKey[] = ['view', 'create', 'edit', 'delete', 'download'];
@@ -94,6 +97,11 @@ export const SO_STATUS: Record<SOStatus, { label: string; tone: BadgeTone }> = {
   so_sent: { label: 'SO Sent', tone: 'blue' },
   revision_required: { label: 'Revision Required', tone: 'amber' },
   finalised: { label: 'Finalised', tone: 'green' },
+};
+
+export const ERP_HANDOFF_STATE: Record<ErpHandoffState, { label: string; tone: BadgeTone }> = {
+  pending: { label: 'Pending', tone: 'amber' },
+  handed_over: { label: 'Handed Over', tone: 'green' },
 };
 
 export const REVISION_STATE: Record<

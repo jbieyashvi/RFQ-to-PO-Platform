@@ -59,8 +59,7 @@ export const FP_ACTION_LABELS: Record<string, string> = {
   reassign: 'Reassign',
   download_attachment: 'Download Attachment',
   // ERP Handoff
-  submit: 'Submit',
-  retry: 'Retry',
+  handover: 'Handover to ERP',
 };
 
 export const PERMISSION_GROUPS: GroupConfig[] = [
@@ -138,7 +137,7 @@ export const PERMISSION_GROUPS: GroupConfig[] = [
   {
     key: 'erp_handoff',
     label: 'ERP Handoff',
-    sections: [{ key: 'erp_handoff', label: 'ERP Handoff', actions: ['view', 'submit', 'retry', 'download'] }],
+    sections: [{ key: 'erp_handoff', label: 'ERP Handoff', actions: ['view', 'download', 'handover'] }],
   },
 ];
 
@@ -337,6 +336,14 @@ export function deriveLegacyPermissions(fp: FeaturePermissions): PermissionMatri
   m.sales_orders.create = !!fp.so_create.create;
   m.sales_orders.download = any(ssec, 'download');
   m.sales_orders.delete = false;
+
+  // ERP Handoff — its own top-level module. "Handover to ERP" maps to the coarse
+  // `edit` action so can('erp_handoff','edit') gates the handover control.
+  m.erp_handoff.view = !!fp.erp_handoff?.view;
+  m.erp_handoff.download = !!fp.erp_handoff?.download;
+  m.erp_handoff.edit = !!fp.erp_handoff?.handover;
+  m.erp_handoff.create = false;
+  m.erp_handoff.delete = false;
 
   return m;
 }
