@@ -282,18 +282,42 @@ export interface SORevisionVersion {
   snapshot: SORevisionSnapshot;
   attachments: Attachment[];
 }
+// PM-confirmed prototype statuses (see lib/labels VERIFICATION_STATUS):
+//   pending            → Pending Comparison
+//   mismatch           → Mismatch Found
+//   corrected_awaited  → Updated PO Awaited
+//   updated_quote_sent → Updated Quote Sent
+//   pending_review     → Pending Review
+//   verified           → Verified
+// "Matched" is deliberately NOT a final state — an SO is only ever Verified once
+// every required field is resolved.
 export type VerificationStatus =
   | 'pending'
-  | 'matched'
   | 'mismatch'
   | 'corrected_awaited'
+  | 'updated_quote_sent'
+  | 'pending_review'
   | 'verified';
 
+// Per-field resolution state in the PO vs Quote comparison. A field counts as
+// resolved (and lets Sales Order generation proceed) only when it originally
+// matched automatically, or corrected PO/quotation data was received & accepted.
+export type FieldResolution =
+  | 'pending' // comparison not yet generated
+  | 'matched' // auto-matched → resolved
+  | 'mismatch' // needs a resolution path chosen
+  | 'pending_review' // flagged for manual review
+  | 'awaiting_po' // Request Updated PO sent to customer
+  | 'awaiting_quote' // Updated Quote sent to customer
+  | 'resolved'; // updated data received & accepted
+
 export interface VerificationField {
+  key: string;
   label: string;
   quoteValue: string;
   poValue: string;
-  match: boolean;
+  match: boolean; // original automatic comparison result
+  resolution?: FieldResolution; // working state (defaults derived from `match`)
 }
 
 export interface SalesOrder {
@@ -325,6 +349,12 @@ export interface SalesOrder {
   revisionState?: RevisionState;
   revisionNumber: number; // latest applied revision number (0 = original)
   revisionOwner?: string;
+  // PO vs Quote verification — the review date manually set when an updated PO
+  // or updated quote email is sent, and who/when the SO was finally verified.
+  reviewDate?: string;
+  verifiedBy?: string;
+  verifiedAt?: string;
+  soGenerated?: boolean;
   revisionNotes?: string;
   revisionDraft?: SORevisionSnapshot; // working edits before approval/send
   revisionAttachments: Attachment[];
@@ -422,6 +452,10 @@ export interface InboxEmail {
   linkedPO?: string;
   linkedSO?: string;
   quotationSendId?: string; // set when this is an outbound "Review & Send" for a quotation
+  // PO vs Quote Verification (Verification list → Open). When set, the inbox
+  // right panel renders the two-step verification workflow instead of the
+  // generic composer. Holds the linked SalesOrder id.
+  poVerifyId?: string;
   // Revision workflow (Quotes Needing Revision → Open). When set, the inbox
   // right panel renders the Quote Generator instead of the generic composer.
   revisionSendId?: string; // quotation id this revision targets

@@ -35,6 +35,7 @@ import { officeName } from '@/data/offices';
 import { classNames, formatINR } from '@/lib/format';
 import { sendBlockers, isValidEmail } from './helpers';
 import { RevisionQuotePanel } from './RevisionQuotePanel';
+import { PoVerificationPanel } from './PoVerificationPanel';
 
 const TODAY_TS = '2026-08-13T12:30:00';
 
@@ -162,6 +163,13 @@ export function EmailActionPanel({ email }: { email: InboxEmail }) {
   // instead of the generic reply composer.
   if (email.revisionSendId) {
     return <RevisionQuotePanel email={email} />;
+  }
+
+  // PO vs Quote Verification → Open lands here: render the two-step verification
+  // workflow (comparison + resolution, then gated SO generation) instead of the
+  // generic composer.
+  if (email.poVerifyId) {
+    return <PoVerificationPanel email={email} />;
   }
 
   return (

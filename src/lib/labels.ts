@@ -119,10 +119,11 @@ export const VERIFICATION_STATUS: Record<
   VerificationStatus,
   { label: string; tone: BadgeTone }
 > = {
-  pending: { label: 'Pending Verification', tone: 'slate' },
-  matched: { label: 'Matched', tone: 'teal' },
+  pending: { label: 'Pending Comparison', tone: 'slate' },
   mismatch: { label: 'Mismatch Found', tone: 'red' },
-  corrected_awaited: { label: 'Corrected PO Awaited', tone: 'amber' },
+  corrected_awaited: { label: 'Updated PO Awaited', tone: 'amber' },
+  updated_quote_sent: { label: 'Updated Quote Sent', tone: 'violet' },
+  pending_review: { label: 'Pending Review', tone: 'blue' },
   verified: { label: 'Verified', tone: 'green' },
 };
 

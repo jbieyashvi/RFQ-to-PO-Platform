@@ -1,6 +1,7 @@
 import type {
   ActivityEvent,
   Attachment,
+  FieldResolution,
   LineItem,
   RevisionState,
   SalesOrder,
@@ -8,9 +9,9 @@ import type {
   SORevisionVersion,
   SOStatus,
   VerificationField,
-  VerificationStatus,
 } from '@/types';
 import { computeTotals, formatINR } from '@/lib/format';
+import { deriveVerificationStatus } from '@/lib/verification';
 import { QUOTATIONS } from './quotations';
 import { PARTIES } from './masters';
 
@@ -74,14 +75,32 @@ function rng(seed: number) {
 }
 
 const SO_STATUSES: SOStatus[] = ['draft', 'so_sent', 'so_sent', 'revision_required', 'finalised'];
-const VERIF: VerificationStatus[] = [
-  'pending',
-  'matched',
+
+// Intended verification "flavour" seeded per record, cycled by position, so the
+// list shows a representative spread of the PM's prototype statuses. The actual
+// verificationStatus is always DERIVED from the field resolutions below.
+type VerifFlavor =
+  | 'verified'
+  | 'mismatch'
+  | 'corrected_awaited'
+  | 'updated_quote_sent'
+  | 'pending_review';
+const VERIF_FLAVOR: VerifFlavor[] = [
+  'verified',
   'mismatch',
   'corrected_awaited',
   'verified',
-  'verified',
+  'updated_quote_sent',
+  'pending_review',
 ];
+
+// Map a mismatch-flavour onto the working resolution its unmatched fields take.
+const FLAVOR_RESOLUTION: Partial<Record<VerifFlavor, FieldResolution>> = {
+  corrected_awaited: 'awaiting_po',
+  updated_quote_sent: 'awaiting_quote',
+  pending_review: 'pending_review',
+};
+
 const REVISION_REASONS = [
   'Customer PO revised — quantity increased',
   'Delivery address correction required',
@@ -100,14 +119,21 @@ function buildVerificationFields(
   const taxMatch = true;
   const payMatch = !mismatch || rand() > 0.6;
   const delMatch = !mismatch || rand() > 0.5;
+  const mk = (
+    key: string,
+    label: string,
+    qv: string,
+    pv: string,
+    match: boolean
+  ): VerificationField => ({ key, label, quoteValue: qv, poValue: pv, match, resolution: match ? 'matched' : 'mismatch' });
   return [
-    { label: 'Item / Description', quoteValue: 'As per accepted quotation', poValue: 'As per customer PO', match: true },
-    { label: 'Quantity (total units)', quoteValue: '48 units', poValue: qtyMatch ? '48 units' : '54 units', match: qtyMatch },
-    { label: 'Unit Price (weighted avg)', quoteValue: '₹12,450', poValue: priceMatch ? '₹12,450' : '₹12,100', match: priceMatch },
-    { label: 'Taxes (GST)', quoteValue: '18% GST', poValue: '18% GST', match: taxMatch },
-    { label: 'Payment Terms', quoteValue: '30% advance, 70% before dispatch', poValue: payMatch ? '30% advance, 70% before dispatch' : 'Net 60 days credit', match: payMatch },
-    { label: 'Delivery Terms', quoteValue: '4-6 weeks Ex-Works', poValue: delMatch ? '4-6 weeks Ex-Works' : 'FOR site, 3 weeks', match: delMatch },
-    { label: 'Total Order Value', quoteValue: formatINR(quoteValue), poValue: formatINR(poValue), match: Math.abs(quoteValue - poValue) < 1 },
+    mk('item', 'Item / Description', 'As per accepted quotation', 'As per customer PO', true),
+    mk('qty', 'Quantity (total units)', '48 units', qtyMatch ? '48 units' : '54 units', qtyMatch),
+    mk('price', 'Unit Price (weighted avg)', '₹12,450', priceMatch ? '₹12,450' : '₹12,100', priceMatch),
+    mk('tax', 'Taxes (GST)', '18% GST', '18% GST', taxMatch),
+    mk('payment', 'Payment Terms', '30% advance, 70% before dispatch', payMatch ? '30% advance, 70% before dispatch' : 'Net 60 days credit', payMatch),
+    mk('delivery', 'Delivery Terms', '4-6 weeks Ex-Works', delMatch ? '4-6 weeks Ex-Works' : 'FOR site, 3 weeks', delMatch),
+    mk('total', 'Total Order Value', formatINR(quoteValue), formatINR(poValue), Math.abs(quoteValue - poValue) < 1),
   ];
 }
 
@@ -123,10 +149,21 @@ function generate(): SalesOrder[] {
     const items: LineItem[] = q.items.map((it) => ({ ...it, id: `so-${it.id}` }));
     const { grandTotal: quoteValue } = computeTotals(items, q.packingCharges);
 
-    const verificationStatus = VERIF[i % VERIF.length];
-    const mismatch = verificationStatus === 'mismatch' || verificationStatus === 'corrected_awaited';
+    const flavor = VERIF_FLAVOR[i % VERIF_FLAVOR.length];
+    const mismatch = flavor !== 'verified';
     // PO value diverges when mismatch
     const poValue = mismatch ? Math.round(quoteValue * (0.94 + rand() * 0.04)) : quoteValue;
+
+    // Automatic comparison, then apply the seeded flavour to the unmatched
+    // fields so the verification status derives to the intended state.
+    const verificationFields = buildVerificationFields(rand, quoteValue, poValue, mismatch);
+    const flavorResolution = FLAVOR_RESOLUTION[flavor];
+    if (flavorResolution) {
+      for (const f of verificationFields) {
+        if (f.resolution === 'mismatch') f.resolution = flavorResolution;
+      }
+    }
+    const verificationStatus = deriveVerificationStatus(verificationFields);
 
     let status: SOStatus = SO_STATUSES[i % SO_STATUSES.length];
     // only verified/matched can be sent or finalised
@@ -170,6 +207,26 @@ function generate(): SalesOrder[] {
         action: 'Revision requested',
         detail: revisionReason,
       });
+    }
+
+    // Comparison is auto-generated when the PO email is processed.
+    activity.push({ id: `act-${i}-compared`, date: `${createdDate}T09:20:00`, actor: 'System (AI)', action: 'PO vs Quote comparison generated', detail: `${verificationFields.filter((f) => !f.match).length} field(s) flagged for review` });
+
+    // Flavour-specific workflow history + the manually-set review date / final
+    // verification stamp that the case detail surfaces.
+    let reviewDate: string | undefined;
+    let verifiedBy: string | undefined;
+    let verifiedAt: string | undefined;
+    if (flavor === 'corrected_awaited') {
+      reviewDate = addDays('2026-08-13', 3 + Math.floor(rand() * 5));
+      activity.push({ id: `act-${i}-reqpo`, date: `${createdDate}T11:30:00`, actor: q.owner, action: 'Requested updated PO from customer', detail: `Next review ${reviewDate}` });
+    } else if (flavor === 'updated_quote_sent') {
+      reviewDate = addDays('2026-08-13', 2 + Math.floor(rand() * 5));
+      activity.push({ id: `act-${i}-sentquote`, date: `${createdDate}T11:30:00`, actor: q.owner, action: 'Sent updated quotation to customer', detail: `${q.number} · next review ${reviewDate}` });
+    } else if (flavor === 'verified') {
+      verifiedBy = q.owner;
+      verifiedAt = `${createdDate}T10:05:00`;
+      activity.push({ id: `act-${i}-verified`, date: verifiedAt, actor: q.owner, action: 'PO verified against quotation', detail: 'All fields matched — ready for Sales Order generation' });
     }
 
     const versions: SORevisionVersion[] = [
@@ -216,6 +273,10 @@ function generate(): SalesOrder[] {
       revisionNumber: 0,
       revisionOwner: isRevision ? q.owner : undefined,
       revisionAttachments: [],
+      reviewDate,
+      verifiedBy,
+      verifiedAt,
+      soGenerated: flavor === 'verified' && (status === 'so_sent' || status === 'finalised'),
       versions,
       items,
       paymentTerms: q.paymentTerms,
@@ -233,7 +294,7 @@ function generate(): SalesOrder[] {
           ]
         : [],
       activity,
-      verificationFields: buildVerificationFields(rand, quoteValue, poValue, mismatch),
+      verificationFields,
     });
   });
 

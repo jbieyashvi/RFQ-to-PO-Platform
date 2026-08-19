@@ -29,6 +29,7 @@ import { DEFAULT_COMMERCIAL_TERMS, cloneCommercialTerms } from '@/lib/commercial
 import { QUOTATIONS } from '@/data/quotations';
 import { SALES_ORDERS } from '@/data/salesOrders';
 import { EMAILS } from '@/data/emails';
+import { PO_VERIFICATION_EMAILS } from '@/data/poEmails';
 import { can as canCheck, canInboxDo } from '@/lib/permissions';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -111,7 +112,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
   const [quotations, setQuotations] = useState<Quotation[]>(QUOTATIONS);
   const [salesOrders, setSalesOrders] = useState<SalesOrder[]>(SALES_ORDERS);
-  const [emails, setEmails] = useState<InboxEmail[]>(EMAILS);
+  const [emails, setEmails] = useState<InboxEmail[]>(() => [...EMAILS, ...PO_VERIFICATION_EMAILS]);
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const currentUser = useMemo(() => {
