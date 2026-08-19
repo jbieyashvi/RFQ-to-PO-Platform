@@ -5,7 +5,6 @@ import { PageHeader } from '@/layout/PageHeader';
 import { SearchInput, FilterSelect, EmptyState } from '@/components/ui';
 import { Tabs } from '@/components/ui/misc';
 import { useApp, useOfficeScope } from '@/context/AppContext';
-import { OFFICES, officeName } from '@/data/offices';
 import { OWNERS } from '@/data/users';
 import { INBOX_CLASSIFICATION } from '@/lib/labels';
 import type { EmailClassification, InboxEmail } from '@/types';
@@ -15,17 +14,18 @@ import { EmailList } from './EmailList';
 import { EmailCenter } from './EmailCenter';
 import { EmailActionPanel } from './EmailActionPanel';
 
-type Tab = 'all' | 'needs_review' | 'drafts' | 'sent';
+type Tab = 'all' | 'needs_review' | 'drafts';
 
 export default function GlobalInbox() {
-  const { emails, role, updateEmail } = useApp();
+  const { emails, updateEmail } = useApp();
+  // Office scope still applies in the background (a user only sees emails for
+  // offices they may access) — but there is no office FILTER on this screen.
   const inScope = useOfficeScope();
   const [params, setParams] = useSearchParams();
 
   const [tab, setTab] = useState<Tab>('all');
   const [search, setSearch] = useState('');
   const [classification, setClassification] = useState('');
-  const [office, setOffice] = useState('');
   const [owner, setOwner] = useState('');
   const [readState, setReadState] = useState('');
   const [confidence, setConfidence] = useState('');
@@ -47,10 +47,11 @@ export default function GlobalInbox() {
 
   const tabCounts = useMemo(
     () => ({
+      // "All Emails" is the full history the user can access — sent emails
+      // included (for audit), so there is no separate Sent tab.
       all: scoped.length,
       needs_review: scoped.filter((e) => e.needsReview && !e.sent).length,
       drafts: scoped.filter((e) => e.draftSaved && !e.sent).length,
-      sent: scoped.filter((e) => e.sent).length,
     }),
     [scoped]
   );
@@ -61,9 +62,7 @@ export default function GlobalInbox() {
       .filter((e) => {
         if (tab === 'needs_review' && !(e.needsReview && !e.sent)) return false;
         if (tab === 'drafts' && !(e.draftSaved && !e.sent)) return false;
-        if (tab === 'sent' && !e.sent) return false;
         if (classification && e.classification !== classification) return false;
-        if (office && e.officeId !== office) return false;
         if (owner && e.owner !== owner) return false;
         if (readState === 'unread' && (e.read || e.sent)) return false;
         if (readState === 'read' && !e.read && !e.sent) return false;
@@ -81,7 +80,7 @@ export default function GlobalInbox() {
         return true;
       })
       .sort((a, b) => ((a.sent && a.sentAt ? a.sentAt : a.receivedAt) < (b.sent && b.sentAt ? b.sentAt : b.receivedAt) ? 1 : -1));
-  }, [scoped, tab, search, classification, office, owner, readState, confidence, dateFrom, dateTo]);
+  }, [scoped, tab, search, classification, owner, readState, confidence, dateFrom, dateTo]);
 
   // Deep-link: ?email=<id> (used by "Review & Send Email" from Quotes Pending)
   useEffect(() => {
@@ -115,9 +114,9 @@ export default function GlobalInbox() {
     if (e && !e.read) updateEmail(id, { read: true });
   };
 
-  const hasFilters = search || classification || office || owner || readState || confidence || dateFrom || dateTo;
+  const hasFilters = search || classification || owner || readState || confidence || dateFrom || dateTo;
   const clearFilters = () => {
-    setSearch(''); setClassification(''); setOffice(''); setOwner(''); setReadState(''); setConfidence(''); setDateFrom(''); setDateTo('');
+    setSearch(''); setClassification(''); setOwner(''); setReadState(''); setConfidence(''); setDateFrom(''); setDateTo('');
   };
 
   return (
@@ -138,7 +137,6 @@ export default function GlobalInbox() {
               { key: 'all', label: 'All Emails', count: tabCounts.all },
               { key: 'needs_review', label: 'Needs Review', count: tabCounts.needs_review },
               { key: 'drafts', label: 'Drafts', count: tabCounts.drafts },
-              { key: 'sent', label: 'Sent', count: tabCounts.sent },
             ]}
           />
         </div>
@@ -148,7 +146,6 @@ export default function GlobalInbox() {
           <FilterSelect value={classification} onChange={setClassification} placeholder="All classifications" options={(Object.keys(INBOX_CLASSIFICATION) as EmailClassification[]).map((c) => ({ value: c, label: INBOX_CLASSIFICATION[c].label }))} />
           <FilterSelect value={confidence} onChange={setConfidence} placeholder="Any AI confidence" options={[{ value: 'high', label: 'High confidence' }, { value: 'medium', label: 'Medium confidence' }, { value: 'low', label: 'Low confidence' }]} />
           <FilterSelect value={readState} onChange={setReadState} placeholder="Read & Unread" options={[{ value: 'unread', label: 'Unread' }, { value: 'read', label: 'Read' }]} />
-          {role === 'super_admin' && <FilterSelect value={office} onChange={setOffice} placeholder="All offices" options={OFFICES.map((o) => ({ value: o.id, label: o.name }))} />}
           <FilterSelect value={owner} onChange={setOwner} placeholder="All owners" options={OWNERS.map((o) => ({ value: o, label: o }))} />
           <input type="date" aria-label="From date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="input h-9 w-auto py-1.5 text-sm" title="From date" />
           <input type="date" aria-label="To date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="input h-9 w-auto py-1.5 text-sm" title="To date" />

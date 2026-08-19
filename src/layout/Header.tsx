@@ -5,12 +5,10 @@ import {
   PanelLeftClose,
   PanelLeft,
   ChevronDown,
-  UserRound,
   LogOut,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { ConfirmDialog } from '@/components/ui';
-import { ROLE_LABELS } from '@/lib/labels';
 
 function useClickOutside<T extends HTMLElement>(onClose: () => void) {
   const ref = useRef<T>(null);
@@ -54,10 +52,6 @@ export function Header({
   }, []);
 
   const initials = profile.fullName.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase();
-  const go = (path: string) => {
-    setUserOpen(false);
-    navigate(path);
-  };
   const confirmSignOut = () => {
     logout();
     navigate('/login', { replace: true });
@@ -96,27 +90,22 @@ export function Header({
           <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-600 text-xs font-semibold text-white">
             {initials}
           </span>
+          {/* Trigger shows only avatar + user name — no role, email or office. */}
           <span className="hidden text-left sm:block">
             <span className="block text-[13px] font-semibold leading-tight text-surface-800">{profile.fullName}</span>
-            <span className="block text-[11px] leading-tight text-surface-400">{ROLE_LABELS[profile.role]}</span>
           </span>
           <ChevronDown className="hidden h-4 w-4 text-surface-400 sm:block" />
         </button>
         {userOpen && (
           <div role="menu" className="absolute right-0 top-full z-30 mt-1.5 w-64 rounded-xl border border-surface-200 bg-white p-1.5 shadow-pop animate-slide-up">
+            {/* Menu shows user name, work email and Sign Out only. */}
             <div className="flex items-center gap-3 px-3 py-2.5">
               <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-brand-600 text-sm font-semibold text-white">{initials}</span>
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-surface-800">{profile.fullName}</p>
                 <p className="truncate text-xs text-surface-400">{profile.email}</p>
-                {/* Current role — read-only text (no role switching in the header) */}
-                <p className="mt-0.5 text-[11px] font-medium text-brand-600">{ROLE_LABELS[profile.role]}</p>
               </div>
             </div>
-            <div className="my-1 border-t border-surface-100" />
-            <button role="menuitem" onClick={() => go('/profile')} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-surface-700 hover:bg-surface-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50">
-              <UserRound className="h-4 w-4 text-surface-400" /> My Profile
-            </button>
             <div className="my-1 border-t border-surface-100" />
             <button role="menuitem" onClick={() => { setUserOpen(false); setSignOutOpen(true); }} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-rose-600 hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50">
               <LogOut className="h-4 w-4" /> Sign Out

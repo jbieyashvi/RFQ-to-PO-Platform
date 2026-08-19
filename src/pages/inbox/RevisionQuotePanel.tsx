@@ -23,6 +23,7 @@ import { classNames, compactINR, computeTotals, downloadText, formatINR, lineTot
 import { buildVersions, fmtDate, grandTotalOf } from '@/lib/revisionQueue';
 
 const SENT_TS = '2026-08-13T12:45:00';
+const REVIEW_DATE_REQUIRED = 'Select the next review date before completing this action.';
 
 const clone = (it: LineItem): LineItem => ({ ...it });
 
@@ -130,6 +131,13 @@ export function RevisionQuotePanel({ email }: { email: InboxEmail }) {
   };
 
   const sendRevised = () => {
+    // Follow-up workflow email: the next review date is mandatory before the
+    // send can complete. Exact validation copy is required by the workflow spec.
+    if (!reviewDate) {
+      setSendError(REVIEW_DATE_REQUIRED);
+      setConfirmOpen(false);
+      return;
+    }
     try {
       const revisedValue = grandTotalOf(items, packing);
       const { existing } = buildVersions(q, currentUser.fullName);
@@ -455,7 +463,7 @@ export function RevisionQuotePanel({ email }: { email: InboxEmail }) {
         footer={
           <>
             <Button variant="secondary" onClick={() => setConfirmOpen(false)}>Back to Edit</Button>
-            <Button variant="primary" leftIcon={<Send className="h-4 w-4" />} onClick={sendRevised} disabled={items.length === 0}>
+            <Button variant="primary" leftIcon={<Send className="h-4 w-4" />} onClick={sendRevised} disabled={items.length === 0 || !reviewDate}>
               Confirm &amp; Send
             </Button>
           </>
@@ -465,6 +473,11 @@ export function RevisionQuotePanel({ email }: { email: InboxEmail }) {
           <div className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-[12px] text-brand-700">
             <RefreshCw className="h-4 w-4 flex-none" /> The revised quote is attached and saved as a new version. The previous version is preserved.
           </div>
+          {!reviewDate && (
+            <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-800">
+              <CalendarClock className="h-4 w-4 flex-none" /> {REVIEW_DATE_REQUIRED}
+            </div>
+          )}
           <div className="rounded-xl border border-surface-200">
             <ul className="divide-y divide-surface-100">
               {items.map((it) => (
