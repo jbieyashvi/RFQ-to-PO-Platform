@@ -31,8 +31,17 @@ export default function GlobalInbox() {
   const [confidence, setConfidence] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [mobileView, setMobileView] = useState<'list' | 'detail'>('list');
+  // Initialise the selection from the deep-link (?email=<id>) so opening an
+  // inquiry from "Quotes Pending" lands on the CORRECT conversation — not the
+  // first email. Without this, the keep-valid effect below would overwrite a
+  // late-set selection with filtered[0].
+  const [selectedId, setSelectedId] = useState<string | null>(() => {
+    const id = params.get('email');
+    return id && emails.some((e) => e.id === id) ? id : null;
+  });
+  const [mobileView, setMobileView] = useState<'list' | 'detail'>(() =>
+    params.get('email') ? 'detail' : 'list'
+  );
 
   const scoped = useMemo(() => emails.filter((e) => inScope(e.officeId)), [emails, inScope]);
 

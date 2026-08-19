@@ -1,113 +1,253 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, Pencil, AlertCircle, AlertTriangle, Upload, Mail, Activity } from 'lucide-react';
+import { Inbox, AlertCircle } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import {
   Button,
   DataTable,
-  StatusBadge,
   SearchInput,
   FilterSelect,
   Pagination,
-  Modal,
-  SelectField,
-  TextField,
-  TextAreaField,
-  FileUpload,
-  RowActionMenu,
   type Column,
-  type RowAction,
-  type UploadedFile,
 } from '@/components/ui';
-import { QuotationDetailsDrawer } from '@/components/QuotationDetails';
 import { useApp, useOfficeScope } from '@/context/AppContext';
-import { OFFICES, officeName } from '@/data/offices';
-import { QUOTATION_DELIVERY } from '@/lib/labels';
+import { officeName, officeCode } from '@/data/offices';
 import type { InboxEmail, Quotation } from '@/types';
-import { ageLabel, classNames, daysBetween, formatDate, formatINR } from '@/lib/format';
+import { classNames } from '@/lib/format';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 
-const TODAY = '2026-08-13';
+// ---------------------------------------------------------------------------
+// Deterministic prototype clock. Due Date = Query Created + exactly 24h, and
+// overdue / due-soon / upcoming states are computed against this fixed "now"
+// (Asia/Kolkata wall-clock) so the demo always shows a representative mix.
+// ---------------------------------------------------------------------------
+const NOW = new Date('2026-08-13T13:00:00');
+const HOUR = 3600 * 1000;
+const DAY = 24 * HOUR;
+const DUE_SOON_WINDOW = 4 * HOUR;
+
+// Minutes between NOW and each pending inquiry's Due Date, cycled by position.
+// Negative = already overdue; 0…240 = due within the next four hours; else upcoming.
+const DUE_OFFSET_MINUTES = [-180, -2880, 150, 780, -480, 210, -7200, 1290, -60, 600];
+// One inquiry in the queue is intentionally left Unassigned to exercise that state.
+const UNASSIGNED_AT = 3;
+
+const OFFICE_PREFIX: Record<string, string> = {
+  'off-mum': 'MUM',
+  'off-del': 'DEL',
+  'off-blr': 'BLR',
+  'off-ahm': 'AHM',
+  'off-che': 'CHE',
+};
+
+type DueState = 'overdue' | 'due_soon' | 'upcoming';
+
+interface PendingRow {
+  q: Quotation;
+  inquiryNo: string;
+  owner: string; // '' → Unassigned
+  queryCreatedAt: string; // ISO
+  dueAt: string; // ISO
+  state: DueState;
+  overdueLabel?: string; // e.g. "Overdue by 3h"
+}
+
+const VALUE_BUCKETS = [
+  { value: 'below1l', label: 'Below ₹1L' },
+  { value: '1lto5l', label: '₹1L–₹5L' },
+  { value: '5lto25l', label: '₹5L–₹25L' },
+  { value: '25lto1cr', label: '₹25L–₹1Cr' },
+  { value: 'above1cr', label: 'Above ₹1Cr' },
+];
+
+const DUE_STATE_OPTIONS = [
+  { value: 'overdue', label: 'Overdue Only' },
+  { value: 'due_soon', label: 'Due Soon' },
+];
+
+function inValueBucket(v: number, bucket: string): boolean {
+  switch (bucket) {
+    case 'below1l':
+      return v < 100000;
+    case '1lto5l':
+      return v >= 100000 && v < 500000;
+    case '5lto25l':
+      return v >= 500000 && v < 2500000;
+    case '25lto1cr':
+      return v >= 2500000 && v < 10000000;
+    case 'above1cr':
+      return v >= 10000000;
+    default:
+      return true;
+  }
+}
+
+// Compact Indian currency matching the PM prototype: ₹7.5L, ₹25L, ₹1.2Cr.
+function compactINR(v: number): string {
+  const trim = (n: number) => String(Math.round(n * 10) / 10);
+  if (v >= 10000000) return `₹${trim(v / 10000000)}Cr`;
+  if (v >= 100000) return `₹${trim(v / 100000)}L`;
+  return `₹${new Intl.NumberFormat('en-IN').format(Math.round(v))}`;
+}
+
+// "01 Aug 2026" — Asia/Kolkata wall-clock date.
+function fmtDate(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+// "09:00 AM" — 12-hour time.
+function fmtTime(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  let h = d.getHours();
+  const m = d.getMinutes();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+// "01 Aug 2026, 09:00 AM" — single-line, used in mobile cards.
+function fmtDateTime(iso: string): string {
+  if (isNaN(new Date(iso).getTime())) return iso;
+  return `${fmtDate(iso)}, ${fmtTime(iso)}`;
+}
+
+function overdueLabel(ms: number): string {
+  const hours = Math.floor(ms / HOUR);
+  if (hours < 24) return `Overdue by ${Math.max(1, hours)}h`;
+  return `Overdue by ${Math.floor(hours / 24)}d`;
+}
+
+function inquiryNumber(q: Quotation, seq: number): string {
+  const prefix = OFFICE_PREFIX[q.officeId] ?? 'INQ';
+  return `INQ/${prefix}/25-26/${String(300 + seq).padStart(5, '0')}`;
+}
 
 function officeEmail(officeId: string) {
   const city = officeName(officeId).split(' ')[0].toLowerCase();
   return `sales.${city}@nexustrade.in`;
 }
 
-const DELIVERY_FILTER_OPTIONS = [
-  { value: 'not_sent', label: 'Not Sent' },
-  { value: 'draft_ready', label: 'Draft Ready' },
-  { value: 'awaiting_approval', label: 'Awaiting Approval' },
-  { value: 'send_failed', label: 'Send Failed' },
-];
-
-const PRIMARY_LABEL: Record<string, string> = {
-  not_sent: 'Prepare Email',
-  draft_ready: 'Review & Send',
-  awaiting_approval: 'Review',
-  send_failed: 'Retry',
-};
-
 export default function QuotesPending() {
-  const { quotations, parties, emails, role, can, currentUser, updateQuotation, addEmail, addToast } = useApp();
+  const { quotations, parties, emails, can, addEmail } = useApp();
   const inScope = useOfficeScope();
   const navigate = useNavigate();
-  const [search, setSearch] = useState('');
-  const [office, setOffice] = useState('');
-  const [deliveryFilter, setDeliveryFilter] = useState('');
-  const [overdueOnly, setOverdueOnly] = useState(false);
-  const [active, setActive] = useState<Quotation | null>(null);
-  const [activeTab, setActiveTab] = useState('overview');
-  const [external, setExternal] = useState<Quotation | null>(null);
   const loading = useSimulatedLoading([]);
 
-  const base = useMemo(
-    () => quotations.filter((q) => q.workState === 'pending_send' && inScope(q.officeId)),
-    [quotations, inScope]
-  );
+  const [search, setSearch] = useState('');
+  const [ownerFilter, setOwnerFilter] = useState('');
+  const [location, setLocation] = useState('');
+  const [valueBucket, setValueBucket] = useState('');
+  const [dueState, setDueState] = useState('');
+
+  // Base pending queue (scoped), enriched into view-model rows.
+  const rows = useMemo<PendingRow[]>(() => {
+    const pending = quotations
+      .filter((q) => q.workState === 'pending_send' && inScope(q.officeId))
+      .sort((a, b) => (a.id < b.id ? -1 : 1));
+    return pending.map((q, i) => {
+      const dueMs = NOW.getTime() + DUE_OFFSET_MINUTES[i % DUE_OFFSET_MINUTES.length] * 60 * 1000;
+      const dueAt = new Date(dueMs);
+      const queryCreatedAt = new Date(dueMs - DAY);
+      const left = dueMs - NOW.getTime();
+      let state: DueState = 'upcoming';
+      let label: string | undefined;
+      if (left <= 0) {
+        state = 'overdue';
+        label = overdueLabel(NOW.getTime() - dueMs);
+      } else if (left <= DUE_SOON_WINDOW) {
+        state = 'due_soon';
+      }
+      return {
+        q,
+        inquiryNo: inquiryNumber(q, i),
+        owner: i === UNASSIGNED_AT ? '' : q.owner,
+        queryCreatedAt: queryCreatedAt.toISOString(),
+        dueAt: dueAt.toISOString(),
+        state,
+        overdueLabel: label,
+      };
+    });
+  }, [quotations, inScope]);
+
+  const overdueCount = rows.filter((r) => r.state === 'overdue').length;
+
+  const ownerOptions = useMemo(() => {
+    const names = Array.from(new Set(rows.filter((r) => r.owner).map((r) => r.owner))).sort();
+    const opts = names.map((n) => ({ value: n, label: n }));
+    if (rows.some((r) => !r.owner)) opts.push({ value: 'unassigned', label: 'Unassigned' });
+    return opts;
+  }, [rows]);
+
+  const locationOptions = useMemo(() => {
+    const ids = Array.from(new Set(rows.map((r) => r.q.officeId)));
+    return ids
+      .map((id) => ({ value: id, label: officeName(id) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [rows]);
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
-    return base.filter((q) => {
-      if (office && q.officeId !== office) return false;
-      if (deliveryFilter && q.deliveryState !== deliveryFilter) return false;
-      if (overdueOnly && daysBetween(q.createdDate) <= 1) return false;
-      if (s && !`${q.number} ${q.customerName} ${q.customerCode} ${q.owner}`.toLowerCase().includes(s)) return false;
-      return true;
-    });
-  }, [base, search, office, deliveryFilter, overdueOnly]);
+    return rows
+      .filter((r) => {
+        if (location && r.q.officeId !== location) return false;
+        if (ownerFilter === 'unassigned' && r.owner) return false;
+        if (ownerFilter && ownerFilter !== 'unassigned' && r.owner !== ownerFilter) return false;
+        if (valueBucket && !inValueBucket(r.q.value, valueBucket)) return false;
+        if (dueState === 'overdue' && r.state !== 'overdue') return false;
+        if (dueState === 'due_soon' && r.state !== 'due_soon') return false;
+        if (s && !`${r.inquiryNo} ${r.q.customerName} ${r.q.customerCode}`.toLowerCase().includes(s))
+          return false;
+        return true;
+      })
+      // Overdue first, then upcoming by nearest Due Date (ascending due time).
+      .sort((a, b) => (a.dueAt < b.dueAt ? -1 : a.dueAt > b.dueAt ? 1 : 0));
+  }, [rows, search, ownerFilter, location, valueBucket, dueState]);
 
   const { page, pageSize, setPage, setPageSize, pageRows, total } = usePaginated(filtered, 10);
 
-  const overdueCount = base.filter((q) => daysBetween(q.createdDate) > 1).length;
-  const hasFilters = !!search || !!office || !!deliveryFilter || overdueOnly;
-  const clearFilters = () => { setSearch(''); setOffice(''); setDeliveryFilter(''); setOverdueOnly(false); };
-
-  const openDrawer = (q: Quotation, tab = 'overview') => { setActiveTab(tab); setActive(q); };
-  const openEmailDraft = (q: Quotation) => {
-    const existing = emails.find((e) => e.quotationSendId === q.id && !e.sent);
-    if (existing) navigate(`/inbox?email=${existing.id}`);
-    else reviewAndSend(q);
+  const hasFilters = !!search || !!ownerFilter || !!location || !!valueBucket || !!dueState;
+  const clearFilters = () => {
+    setSearch('');
+    setOwnerFilter('');
+    setLocation('');
+    setValueBucket('');
+    setDueState('');
   };
 
-  // PRIMARY: open the Global Inbox composer with the quotation & customer linked, prefilled.
-  const reviewAndSend = (q: Quotation) => {
+  // Open the inquiry's linked Global Inbox conversation — selecting the correct
+  // email for THIS inquiry. Nothing is sent; the composer stays for human review.
+  const openInbox = (r: PendingRow) => {
+    const q = r.q;
+    const existing = emails.find((e) => (e.quotationSendId === q.id || e.linkedQuotation === q.number) && !e.sent);
+    if (existing) {
+      navigate(`/inbox?email=${existing.id}`);
+      return;
+    }
+    const id = `em-inq-${q.id}`;
+    if (!emails.some((e) => e.id === id)) addEmail(buildInquiryEmail(q, r, id));
+    navigate(`/inbox?email=${id}`);
+  };
+
+  const buildInquiryEmail = (q: Quotation, r: PendingRow, id: string): InboxEmail => {
     const party = parties.find((p) => p.id === q.partyId);
     const from = officeEmail(q.officeId);
-    const to = party?.email ?? '';
-    const email: InboxEmail = {
-      id: `em-send-${q.id}-${Date.now()}`,
-      senderName: q.customerName,
-      senderEmail: to || 'customer@example.com',
+    const to = party?.email ?? 'procurement@customer.com';
+    return {
+      id,
+      senderName: party?.contactPerson ?? q.customerName,
+      senderEmail: to,
       recipient: from,
       cc: [],
-      subject: `Outbound: Quotation ${q.number} — ${q.customerName}`,
-      receivedAt: '2026-08-13T12:30:00',
-      body: `This is an outbound quotation prepared from “Quotes Pending to be Sent”.\n\nQuotation: ${q.number}\nCustomer: ${q.customerName} (${q.customerCode})\nSales Office: ${officeName(q.officeId)}\nValue: ${formatINR(q.value)}\n\nReview the composed email on the right, confirm the attached quotation, then Approve & Send. Nothing leaves the platform until you approve.`,
+      subject: `Enquiry ${r.inquiryNo} — ${q.customerName}`,
+      receivedAt: r.queryCreatedAt.slice(0, 19),
+      body: `Dear Nexus team,\n\nPlease share your quotation against our enquiry ${r.inquiryNo}. Kindly include GST, delivery and payment terms.\n\nRegards,\n${party?.contactPerson ?? 'Procurement'}\n${q.customerName}`,
       thread: [],
-      attachments: [],
+      attachments: [{ id: `att-req-${q.id}`, name: 'Requirement-Sheet.pdf', size: '92 KB', type: 'PDF' }],
       classification: 'inquiry',
-      aiConfidence: 96,
+      aiConfidence: 95,
       read: true,
       needsReview: false,
       officeId: q.officeId,
@@ -120,8 +260,9 @@ export default function QuotesPending() {
       requiredAttachment: true,
       extraction: [
         { key: 'customer', label: 'Customer', value: q.customerName, confidence: 'high', required: true },
+        { key: 'inquiry', label: 'Inquiry Number', value: r.inquiryNo, confidence: 'high', required: true },
         { key: 'quotation', label: 'Quotation Number', value: q.number, confidence: 'high', required: true },
-        { key: 'amount', label: 'Quotation Value', value: formatINR(q.value), confidence: 'high' },
+        { key: 'amount', label: 'Quotation Value', value: compactINR(q.value), confidence: 'high' },
       ],
       extractionConfirmed: true,
       draft: {
@@ -129,7 +270,7 @@ export default function QuotesPending() {
         to,
         cc: '',
         subject: `Quotation ${q.number} from Nexus RFQ`,
-        body: `Dear ${party?.contactPerson ?? 'Sir/Madam'},\n\nThank you for your enquiry. Please find attached our quotation ${q.number} for your kind review.\n\nGrand total: ${formatINR(q.value)} (inclusive of applicable GST).\nPayment terms: ${q.paymentTerms}.\nDelivery: ${q.deliveryTerms}.\n\nThis quotation is valid for 30 days. We look forward to your confirmation.\n\nWarm regards,\n${q.owner}\nNexus RFQ — ${officeName(q.officeId)}`,
+        body: `Dear ${party?.contactPerson ?? 'Sir/Madam'},\n\nThank you for your enquiry ${r.inquiryNo}. Please find attached our quotation ${q.number} for your kind review.\n\nGrand total: ${compactINR(q.value)} (inclusive of applicable GST).\nPayment terms: ${q.paymentTerms}.\nDelivery: ${q.deliveryTerms}.\n\nThis quotation is valid for 30 days. We look forward to your confirmation.\n\nWarm regards,\n${q.owner}\nNexus RFQ — ${officeName(q.officeId)}`,
         attachments: [{ id: `qa-${q.id}`, name: `${q.number.replace(/\//g, '-')}.pdf`, size: '186 KB', type: 'PDF' }],
         relatedDoc: q.number,
         amount: q.value,
@@ -138,132 +279,126 @@ export default function QuotesPending() {
       draftSaved: true,
       sent: false,
     };
-    addEmail(email);
-    updateQuotation(q.id, {
-      deliveryState: 'awaiting_approval',
-      sendFailureReason: undefined,
-      lastUpdated: TODAY,
-      activity: [...q.activity, { id: `act-${Date.now()}`, date: '2026-08-13T12:30:00', actor: currentUser.fullName, action: 'Opened Review & Send (email)', detail: `Awaiting approval to send ${q.number}` }],
-    });
-    navigate(`/inbox?email=${email.id}`);
   };
 
-  const columns: Column<Quotation>[] = [
+  const canOpen = can('quotations', 'view');
+
+  const columns: Column<PendingRow>[] = [
     {
-      key: 'quote',
-      header: 'Quote & Customer',
+      key: 'inquiry',
+      header: 'Inquiry No.',
       sticky: 'left',
-      sortValue: (r) => r.number,
+      width: '170px',
+      sortValue: (r) => r.inquiryNo,
       render: (r) => (
         <div className="min-w-0 leading-tight">
-          <p className="truncate font-semibold text-surface-800">{r.number}</p>
-          <p className="truncate text-surface-600" title={r.customerName}>{r.customerName}</p>
-          <p className="truncate text-[11px] text-surface-400">{r.customerCode}</p>
+          <p className="truncate font-semibold text-surface-800">{r.inquiryNo}</p>
+          <p className="truncate text-[11px] text-surface-400">{r.q.number}</p>
         </div>
       ),
     },
     {
-      key: 'office',
-      header: 'Office / Owner',
-      sortValue: (r) => officeName(r.officeId),
-      render: (r) => (
-        <div className="min-w-0 leading-tight">
-          <p className="truncate text-surface-700" title={officeName(r.officeId)}>{officeName(r.officeId)}</p>
-          <p className="truncate text-[11px] text-surface-400" title={r.owner}>{r.owner}</p>
-        </div>
-      ),
-    },
-    { key: 'value', header: 'Value', width: '92px', align: 'right', sortValue: (r) => r.value, render: (r) => <span className="font-medium text-surface-800">{formatINR(r.value)}</span> },
-    {
-      key: 'pending',
-      header: 'Pending Since',
-      width: '124px',
-      sortValue: (r) => daysBetween(r.createdDate),
-      render: (r) => {
-        const over = daysBetween(r.createdDate) > 1;
-        return (
-          <span className={classNames('font-medium', over ? 'text-rose-600' : 'text-surface-600')} title={`Created ${formatDate(r.createdDate)}`}>
-            {ageLabel(r.createdDate)}
-          </span>
-        );
-      },
-    },
-    {
-      key: 'delivery',
-      header: 'Delivery Status',
-      width: '150px',
-      sortValue: (r) => r.deliveryState,
-      render: (r) => {
-        const meta = QUOTATION_DELIVERY[r.deliveryState];
-        if (r.deliveryState === 'send_failed') {
-          return (
-            <span className="inline-flex items-center gap-1.5" title={r.sendFailureReason}>
-              <StatusBadge tone={meta.tone} label={meta.label} dot={false} />
-              <AlertTriangle className="h-3.5 w-3.5 flex-none text-rose-500" />
-            </span>
-          );
-        }
-        return <StatusBadge tone={meta.tone} label={meta.label} dot={false} />;
-      },
-    },
-    { key: 'review', header: 'Review Date', width: '96px', sortValue: (r) => r.reviewDate, render: (r) => <span className="text-surface-600">{formatDate(r.reviewDate, { short: true })}</span> },
-    {
-      key: 'actions',
-      header: 'Action',
+      key: 'customer',
+      header: 'Customer',
       width: '146px',
+      truncate: true,
+      title: (r) => r.q.customerName,
+      sortValue: (r) => r.q.customerName,
+      render: (r) => (
+        <div className="min-w-0 leading-tight">
+          <p className="truncate font-medium text-surface-800">{r.q.customerName}</p>
+          <p className="truncate text-[11px] text-surface-400">{r.q.customerCode}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'location',
+      header: 'Location',
+      width: '114px',
+      truncate: true,
+      title: (r) => officeName(r.q.officeId),
+      sortValue: (r) => officeName(r.q.officeId),
+      render: (r) => (
+        <div className="min-w-0 leading-tight">
+          <p className="truncate text-surface-700">{officeName(r.q.officeId)}</p>
+          <p className="truncate text-[11px] text-surface-400">{officeCode(r.q.officeId)}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'owner',
+      header: 'Owner',
+      width: '104px',
+      truncate: true,
+      title: (r) => r.owner || 'Unassigned',
+      sortValue: (r) => r.owner || 'zzz',
+      render: (r) =>
+        r.owner ? (
+          <span className="text-surface-700">{r.owner}</span>
+        ) : (
+          <span className="italic text-surface-400">Unassigned</span>
+        ),
+    },
+    {
+      key: 'value',
+      header: 'Value',
+      width: '78px',
+      align: 'right',
+      sortValue: (r) => r.q.value,
+      render: (r) => <span className="font-medium text-surface-800">{compactINR(r.q.value)}</span>,
+    },
+    {
+      key: 'created',
+      header: 'Query Created',
+      width: '112px',
+      sortValue: (r) => r.queryCreatedAt,
+      render: (r) => (
+        <div className="leading-tight">
+          <p className="whitespace-nowrap text-surface-700">{fmtDate(r.queryCreatedAt)}</p>
+          <p className="text-[11px] text-surface-400">{fmtTime(r.queryCreatedAt)}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'due',
+      header: 'Due Date',
+      width: '150px',
+      sortValue: (r) => r.dueAt,
+      render: (r) => <DueCell row={r} />,
+    },
+    {
+      key: 'action',
+      header: 'Action',
+      width: '96px',
       align: 'right',
       sticky: 'right',
-      render: (r) => {
-        const canEdit = can('quotations', 'edit');
-        const menu: RowAction[] = [{ label: 'View Quotation', icon: <Eye className="h-4 w-4" />, onClick: () => openDrawer(r, 'overview') }];
-        if (canEdit) {
-          menu.push({ label: 'Edit Quotation', icon: <Pencil className="h-4 w-4" />, onClick: () => openDrawer(r, 'overview') });
-          menu.push({ label: 'Open Email Draft', icon: <Mail className="h-4 w-4" />, onClick: () => openEmailDraft(r) });
-          menu.push({ label: 'Mark as Sent Externally', icon: <Upload className="h-4 w-4" />, onClick: () => setExternal(r) });
-        }
-        menu.push({ label: 'View Activity', icon: <Activity className="h-4 w-4" />, onClick: () => openDrawer(r, 'activity') });
-        return (
-          <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-            {canEdit && (
-              <Button
-                size="sm"
-                variant="primary"
-                className="!px-2.5"
-                onClick={() => reviewAndSend(r)}
-                title={r.deliveryState === 'send_failed' ? 'Retry — previous send failed' : 'Open Global Inbox to review & send'}
-              >
-                {PRIMARY_LABEL[r.deliveryState] ?? 'Review & Send'}
-              </Button>
-            )}
-            <RowActionMenu actions={menu} label={`Actions for ${r.number}`} />
-          </div>
-        );
-      },
+      render: (r) => (
+        <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
+          <Button size="sm" variant="primary" leftIcon={<Inbox className="h-4 w-4" />} onClick={() => openInbox(r)} disabled={!canOpen}>
+            Open
+          </Button>
+        </div>
+      ),
     },
   ];
 
-  // State-specific empty content
-  const empty = (() => {
-    if (base.length === 0)
-      return { title: 'Nothing pending', message: 'Every quotation has been sent or marked sent externally. 🎉' };
-    if (deliveryFilter === 'send_failed')
-      return { title: 'No failed sends', message: 'No pending quotation currently has a failed send.' };
-    if (overdueOnly)
-      return { title: 'No overdue quotations', message: 'Nothing is overdue by more than 24 hours.' };
-    if (hasFilters)
-      return {
+  const empty = hasFilters
+    ? {
         title: 'No matching quotations',
         message: 'Try adjusting the search or filters.',
-        action: <Button size="sm" variant="secondary" onClick={clearFilters}>Clear filters</Button>,
-      };
-    return { title: 'Nothing pending', message: 'Every quotation has been sent.' };
-  })();
+        action: (
+          <Button size="sm" variant="secondary" onClick={clearFilters}>
+            Clear filters
+          </Button>
+        ),
+      }
+    : { title: 'Nothing pending', message: 'Every quotation has been sent. 🎉' };
 
   return (
     <>
       <PageHeader
         title="Quotes Pending to be Sent"
-        description="Review, approve, and send pending quotations to customers."
+        description="Open each inquiry in the Global Inbox to review and send its quotation to the customer."
         crumbs={[{ label: 'Sales Quotations' }, { label: 'Quotes Pending to be Sent' }]}
       />
 
@@ -271,10 +406,13 @@ export default function QuotesPending() {
         <div className="mb-3 flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-[13px] text-rose-700">
           <AlertCircle className="h-4 w-4 flex-none" />
           <span className="font-medium">
-            {overdueCount} quotation{overdueCount > 1 ? 's' : ''} overdue by more than 24 hours
+            {overdueCount} quotation{overdueCount > 1 ? 's are' : ' is'} overdue.
           </span>
-          {!overdueOnly && (
-            <button onClick={() => setOverdueOnly(true)} className="ml-auto flex-none text-xs font-semibold underline-offset-2 hover:underline">
+          {dueState !== 'overdue' && (
+            <button
+              onClick={() => setDueState('overdue')}
+              className="ml-auto flex-none text-xs font-semibold underline-offset-2 hover:underline"
+            >
               View overdue only
             </button>
           )}
@@ -284,23 +422,21 @@ export default function QuotesPending() {
       <div className="card">
         {/* Compact filter toolbar */}
         <div className="flex flex-wrap items-center gap-2 border-b border-surface-100 p-3">
-          <SearchInput value={search} onChange={setSearch} placeholder="Search quotation, customer, owner…" className="w-full sm:w-64" />
-          {role === 'super_admin' && (
-            <FilterSelect value={office} onChange={setOffice} placeholder="All offices" options={OFFICES.map((o) => ({ value: o.id, label: o.name }))} />
-          )}
-          <FilterSelect value={deliveryFilter} onChange={setDeliveryFilter} placeholder="All Delivery States" options={DELIVERY_FILTER_OPTIONS} />
-          <button
-            onClick={() => setOverdueOnly((v) => !v)}
-            aria-pressed={overdueOnly}
-            className={classNames(
-              'h-9 rounded-lg border px-3 text-sm font-medium transition-colors',
-              overdueOnly ? 'border-rose-300 bg-rose-50 text-rose-700' : 'border-surface-200 text-surface-600 hover:bg-surface-50'
-            )}
-          >
-            Overdue only
-          </button>
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search inquiry no. or customer…"
+            className="w-full sm:w-64"
+          />
+          <FilterSelect value={ownerFilter} onChange={setOwnerFilter} placeholder="All Owners" options={ownerOptions} />
+          <FilterSelect value={location} onChange={setLocation} placeholder="All Locations" options={locationOptions} />
+          <FilterSelect value={valueBucket} onChange={setValueBucket} placeholder="All Values" options={VALUE_BUCKETS} />
+          <FilterSelect value={dueState} onChange={setDueState} placeholder="All Due States" options={DUE_STATE_OPTIONS} />
           {hasFilters && (
-            <button onClick={clearFilters} className="text-xs font-semibold text-surface-500 hover:text-brand-600 hover:underline">
+            <button
+              onClick={clearFilters}
+              className="text-xs font-semibold text-surface-500 hover:text-brand-600 hover:underline"
+            >
               Clear
             </button>
           )}
@@ -309,104 +445,104 @@ export default function QuotesPending() {
           </span>
         </div>
 
-        <DataTable
-          columns={columns}
-          rows={pageRows}
-          rowKey={(r) => r.id}
-          loading={loading}
-          onRowClick={(r) => openDrawer(r, 'overview')}
-          emptyTitle={empty.title}
-          emptyMessage={empty.message}
-          emptyAction={empty.action}
-        />
-        {!loading && total > 0 && <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={setPageSize} />}
+        {/* Desktop / tablet table */}
+        <div className="hidden md:block">
+          <DataTable
+            columns={columns}
+            rows={pageRows}
+            rowKey={(r) => r.q.id}
+            loading={loading}
+            onRowClick={canOpen ? (r) => openInbox(r) : undefined}
+            emptyTitle={empty.title}
+            emptyMessage={empty.message}
+            emptyAction={empty.action}
+          />
+        </div>
+
+        {/* Mobile cards */}
+        <div className="md:hidden">
+          {pageRows.length === 0 ? (
+            <div className="px-4 py-10 text-center">
+              <p className="text-sm font-semibold text-surface-700">{empty.title}</p>
+              <p className="mt-1 text-[13px] text-surface-500">{empty.message}</p>
+              {empty.action && <div className="mt-3 flex justify-center">{empty.action}</div>}
+            </div>
+          ) : (
+            <ul className="divide-y divide-surface-100">
+              {pageRows.map((r) => (
+                <MobileCard key={r.q.id} row={r} onOpen={() => openInbox(r)} canOpen={canOpen} />
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {!loading && total > 0 && (
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        )}
       </div>
-
-      <QuotationDetailsDrawer quotation={active} initialTab={activeTab} onClose={() => setActive(null)} />
-
-      {external && (
-        <MarkExternalModal
-          quotation={external}
-          onClose={() => setExternal(null)}
-          onConfirm={(payload) => {
-            updateQuotation(external.id, {
-              deliveryState: 'sent_externally',
-              workState: 'sent',
-              sendChannel: payload.channel,
-              sendNote: payload.note || undefined,
-              sentAt: payload.sentAt,
-              sentBy: currentUser.fullName,
-              sendFailureReason: undefined,
-              lastUpdated: TODAY,
-              activity: [
-                ...external.activity,
-                { id: `act-${Date.now()}`, date: payload.sentAt, actor: currentUser.fullName, action: `Marked sent externally via ${payload.channel}`, detail: payload.note || `${external.number} sent outside the platform` },
-              ],
-            });
-            addToast({ type: 'success', title: 'Marked as sent externally', message: `${external.number} recorded as sent via ${payload.channel}.` });
-            setExternal(null);
-          }}
-        />
-      )}
     </>
   );
 }
 
-// ---------- Mark as Sent Externally ----------
-function MarkExternalModal({
-  quotation,
-  onClose,
-  onConfirm,
-}: {
-  quotation: Quotation;
-  onClose: () => void;
-  onConfirm: (p: { channel: string; sentAt: string; note: string; proof: UploadedFile[] }) => void;
-}) {
-  const [channel, setChannel] = useState('Email');
-  const [date, setDate] = useState(TODAY);
-  const [time, setTime] = useState('12:00');
-  const [note, setNote] = useState('');
-  const [proof, setProof] = useState<UploadedFile[]>([]);
-  const [error, setError] = useState('');
-
-  const submit = () => {
-    if (!date || !time) {
-      setError('Sent date and time are required.');
-      return;
-    }
-    onConfirm({ channel, sentAt: `${date}T${time}:00`, note, proof });
-  };
-
+function DueCell({ row }: { row: PendingRow }) {
+  const tone =
+    row.state === 'overdue' ? 'text-rose-600' : row.state === 'due_soon' ? 'text-amber-600' : 'text-surface-700';
   return (
-    <Modal
-      open
-      onClose={onClose}
-      size="lg"
-      title="Mark as Sent Externally"
-      subtitle={`${quotation.number} · ${quotation.customerName}`}
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" leftIcon={<Upload className="h-4 w-4" />} onClick={submit}>Confirm Sent Externally</Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        <div className="rounded-lg border border-surface-200 bg-surface-50 px-3 py-2 text-[13px] text-surface-600">
-          Use this when the quotation was sent to the customer <span className="font-medium">outside the platform</span>. This does not send any email — it records a manual delivery event.
+    <div className="leading-tight">
+      <p className={classNames('whitespace-nowrap font-medium', tone)}>{fmtDate(row.dueAt)}</p>
+      <p className={classNames('whitespace-nowrap text-[11px]', row.state === 'upcoming' ? 'text-surface-400' : tone)}>
+        {fmtTime(row.dueAt)}
+        {row.state === 'overdue' && ` · ${row.overdueLabel?.replace('Overdue by ', 'Overdue ')}`}
+        {row.state === 'due_soon' && ' · Due Soon'}
+      </p>
+    </div>
+  );
+}
+
+function MobileCard({ row, onOpen, canOpen }: { row: PendingRow; onOpen: () => void; canOpen: boolean }) {
+  const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="flex-none text-[11px] font-medium uppercase tracking-wide text-surface-400">{label}</span>
+      <span className="min-w-0 truncate text-right text-[13px] text-surface-700">{children}</span>
+    </div>
+  );
+  return (
+    <li className="space-y-2 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate font-semibold text-surface-800">{row.inquiryNo}</p>
+          <p className="truncate text-[12px] text-surface-500">{row.q.customerName}</p>
         </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <SelectField label="Channel" required value={channel} onChange={(e) => setChannel(e.target.value)} options={[{ value: 'Email', label: 'Email' }, { value: 'WhatsApp', label: 'WhatsApp' }, { value: 'Other', label: 'Other' }]} />
-          <TextField label="Sent Date" required type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          <TextField label="Sent Time" required type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-        </div>
-        <TextAreaField label="Note (optional)" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Shared PDF over WhatsApp with the procurement contact." />
-        <div>
-          <label className="label">Proof / Attachment (optional)</label>
-          <FileUpload files={proof} onChange={setProof} label="Attach a screenshot or sent copy" multiple={false} />
-        </div>
-        {error && <p className="text-xs font-medium text-rose-600">{error}</p>}
+        <span className="flex-none font-semibold text-surface-800">{compactINR(row.q.value)}</span>
       </div>
-    </Modal>
+      <div className="space-y-1.5 rounded-lg bg-surface-50 px-3 py-2">
+        <Field label="Location">{officeName(row.q.officeId)}</Field>
+        <Field label="Owner">
+          {row.owner || <span className="italic text-surface-400">Unassigned</span>}
+        </Field>
+        <Field label="Query Created">{fmtDateTime(row.queryCreatedAt)}</Field>
+        <Field label="Due Date">
+          <span
+            className={classNames(
+              'font-medium',
+              row.state === 'overdue' ? 'text-rose-600' : row.state === 'due_soon' ? 'text-amber-600' : 'text-surface-700'
+            )}
+          >
+            {fmtDateTime(row.dueAt)}
+            {row.state === 'overdue' && ` · ${row.overdueLabel?.replace('Overdue by ', 'Overdue ')}`}
+            {row.state === 'due_soon' && ' · Due Soon'}
+          </span>
+        </Field>
+      </div>
+      <Button size="sm" variant="primary" className="w-full" leftIcon={<Inbox className="h-4 w-4" />} onClick={onOpen} disabled={!canOpen}>
+        Open
+      </Button>
+    </li>
   );
 }
