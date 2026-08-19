@@ -360,6 +360,15 @@ export interface SalesOrder {
   // until the order has actually been sent (drafts / revision-required).
   sentAt?: string;
   revisionNotes?: string;
+  // Manufacturing-contact resolution — the simplified revision outcome. Set once
+  // the manufacturing team is confirmed informed of the SO changes. Deliberately
+  // minimal so a future "Send Revised SO" action can extend it without rework.
+  mfgContact?: {
+    contactPerson: string;
+    notes?: string;
+    confirmedBy: string;
+    confirmedAt: string; // ISO datetime
+  };
   revisionDraft?: SORevisionSnapshot; // working edits before approval/send
   revisionAttachments: Attachment[];
   revisionPreviewed?: boolean;
