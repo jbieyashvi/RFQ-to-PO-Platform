@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
 import type { ModuleKey } from '@/types';
@@ -22,7 +22,7 @@ export function Sidebar({
   mobileOpen: boolean;
   onCloseMobile: () => void;
 }) {
-  const { can, canInbox, emails } = useApp();
+  const { can, canInbox, emails, setSidebarCollapsed } = useApp();
   const inScope = useOfficeScope();
   const location = useLocation();
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
@@ -31,8 +31,38 @@ export function Sidebar({
     sales_orders: true,
   });
 
-  const toggleGroup = (key: string) =>
-    setOpenGroups((g) => ({ ...g, [key]: !g[key] }));
+  // The nav group (if any) that owns the current route — used to highlight the
+  // active section and to auto-open it when the sidebar is reopened.
+  const activeGroupKey = useMemo(() => {
+    for (const item of NAV) {
+      if (!item.children) continue;
+      const hit = item.children.some((c) =>
+        c.to === '/quotations' ? location.pathname === '/quotations' : location.pathname.startsWith(c.to)
+      );
+      if (hit) return item.key;
+    }
+    return null;
+  }, [location.pathname]);
+
+  // When the sidebar is (re)expanded, make sure the group containing the current
+  // route is open so the user lands on their section already unfolded.
+  useEffect(() => {
+    if (!collapsed && activeGroupKey) {
+      setOpenGroups((g) => (g[activeGroupKey] ? g : { ...g, [activeGroupKey]: true }));
+    }
+  }, [collapsed, activeGroupKey]);
+
+  // One shared handler for every expandable parent. Collapsed → expand the
+  // sidebar and open the clicked group (route stays put). Expanded → just toggle
+  // that section's submenu.
+  const handleGroupClick = (key: string) => {
+    if (collapsed) {
+      setSidebarCollapsed(false);
+      setOpenGroups((g) => ({ ...g, [key]: true }));
+    } else {
+      setOpenGroups((g) => ({ ...g, [key]: !g[key] }));
+    }
+  };
 
   const inboxCounts = useMemo(() => {
     const scoped = emails.filter((e) => inScope(e.officeId));
@@ -149,8 +179,13 @@ export function Sidebar({
             return (
               <div key={item.key} className="group relative border-t border-surface-100 pt-1">
                 <button
+                  type="button"
+                  onClick={() => handleGroupClick(item.key)}
+                  aria-label={`Open ${item.label} menu`}
+                  aria-expanded={false}
+                  title={item.label}
                   className={classNames(
-                    'flex w-full items-center justify-center rounded-lg px-3 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
+                    'flex min-h-[40px] w-full items-center justify-center rounded-lg px-3 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
                     groupActive
                       ? 'relative bg-brand-50 text-brand-700 before:absolute before:left-0 before:top-1/2 before:h-5 before:w-[3px] before:-translate-y-1/2 before:rounded-r before:bg-brand-600'
                       : 'text-surface-700 hover:bg-surface-100 hover:text-surface-900'
@@ -185,9 +220,12 @@ export function Sidebar({
           return (
             <div key={item.key} className="border-t border-surface-100 pt-2">
               <button
-                onClick={() => toggleGroup(item.key)}
+                type="button"
+                onClick={() => handleGroupClick(item.key)}
+                aria-label={`Open ${item.label} menu`}
+                aria-expanded={isOpen}
                 className={classNames(
-                  'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
+                  'flex min-h-[40px] w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
                   groupActive
                     ? 'text-brand-700 hover:bg-brand-50/60'
                     : 'text-surface-700 hover:bg-surface-100 hover:text-surface-900'
