@@ -106,12 +106,14 @@ export const SO_STATUS: Record<SOStatus, { label: string; tone: BadgeTone }> = {
 };
 
 export const ERP_HANDOFF_STATE: Record<ErpHandoffState, { label: string; tone: BadgeTone }> = {
-  pending: { label: 'Pending', tone: 'amber' },
-  handed_over: { label: 'Handed Over', tone: 'green' },
+  pending: { label: 'Pending', tone: 'gray' },
+  submitted: { label: 'Submitted', tone: 'blue' },
+  accepted: { label: 'Accepted', tone: 'green' },
+  failed: { label: 'Failed', tone: 'red' },
 };
 
 export const ERP_HANDOFF_SOURCE: Record<ErpHandoffSource, string> = {
-  po_verification: 'PO vs Quote Verification',
+  po_verification: 'Global Inbox',
   manual: 'Create SO Manually',
 };
 

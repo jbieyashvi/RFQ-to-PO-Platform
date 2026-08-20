@@ -66,11 +66,14 @@ export function SalesOrderDetailsDrawer({
             <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
               <Meta label="Status" value={ERP_HANDOFF_STATE[so.erpHandoff.state]?.label ?? so.erpHandoff.state} />
               <Meta label="Source" value={ERP_HANDOFF_SOURCE[so.erpHandoff.source] ?? so.erpHandoff.source} />
+              <Meta label="Revision" value={so.revisionNumber > 0 ? `Rev ${so.revisionNumber}` : 'Original'} />
               <Meta label="Submitted" value={`${formatDateTime(so.erpHandoff.submittedAt)} · ${so.erpHandoff.submittedBy}`} />
-              {so.erpHandoff.handedOverAt && (
-                <Meta label="Handed Over" value={`${formatDateTime(so.erpHandoff.handedOverAt)} · ${so.erpHandoff.handedOverBy ?? ''}`} />
+              <Meta label="Last Updated" value={formatDateTime(so.erpHandoff.updatedAt)} />
+              {so.erpHandoff.processedAt && (
+                <Meta label="ERP Response" value={`${formatDateTime(so.erpHandoff.processedAt)} · ${so.erpHandoff.processedBy ?? ''}`} />
               )}
               {so.erpHandoff.reference && <Meta label="ERP Reference" value={so.erpHandoff.reference} />}
+              {so.erpHandoff.failureReason && <Meta label="Failure Reason" value={so.erpHandoff.failureReason} />}
             </dl>
           </div>
         )}

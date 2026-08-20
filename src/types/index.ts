@@ -446,23 +446,28 @@ export interface VerificationField {
 }
 
 // ---------- ERP Handoff ----------
-// A Sales Order enters the ERP Handoff queue when created via the manual flow.
-// It starts Pending and becomes Handed Over once someone confirms it is ready
-// for manufacturing / ERP processing. No real ERP is called — this records the
-// operational handoff step only.
-export type ErpHandoffState = 'pending' | 'handed_over';
+// A final, approved Sales Order enters the ERP Handoff queue when it is
+// generated from Global Inbox, created via Create SO Manually, or when an
+// approved revision is sent. It moves Pending → Submitted → Accepted / Failed
+// as it is pushed to the ERP. No real ERP is called — this records the
+// operational handoff step only. A single record is kept per SO (revisions
+// update it in place, never duplicate it).
+export type ErpHandoffState = 'pending' | 'submitted' | 'accepted' | 'failed';
 
 // Which flow pushed the Sales Order into the ERP Handoff queue.
 export type ErpHandoffSource = 'po_verification' | 'manual';
 
 export interface ErpHandoff {
   state: ErpHandoffState;
-  source: ErpHandoffSource; // PO vs Quote Verification vs Create SO Manually
-  submittedAt: string; // ISO datetime the SO was submitted to the handoff queue
+  source: ErpHandoffSource; // Global Inbox generation vs Create SO Manually
+  submittedAt: string; // ISO datetime the SO entered the ERP Handoff queue
   submittedBy: string;
-  reference?: string; // ERP reference / handoff note captured on handover
-  handedOverBy?: string;
-  handedOverAt?: string; // ISO datetime
+  updatedAt: string; // ISO datetime of the latest change to this handoff record
+  revisionNumber?: number; // SO revision reflected here (mirrors SalesOrder.revisionNumber)
+  reference?: string; // ERP reference / handoff note
+  processedAt?: string; // ISO datetime the ERP responded (accepted / failed)
+  processedBy?: string;
+  failureReason?: string; // populated when state === 'failed'
 }
 
 // How the customer PO reached us — drives the required proof on Create SO.

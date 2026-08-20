@@ -1099,7 +1099,7 @@ function GenerateTab({
       status: 'so_sent',
       verifiedBy: so.verifiedBy ?? currentUser.fullName,
       verifiedAt: so.verifiedAt ?? now,
-      erpHandoff: { state: 'pending', source: 'po_verification', submittedAt: now, submittedBy: currentUser.fullName },
+      erpHandoff: { state: 'pending', source: 'po_verification', submittedAt: now, submittedBy: currentUser.fullName, updatedAt: now, revisionNumber: so.revisionNumber },
       activity: [
         ...so.activity,
         { id: `act-${so.id}-sogen-${Date.now()}`, date: now, actor: currentUser.fullName, action: 'Sales Order generated', detail: `${so.number} generated from verified PO & quotation — added to ERP Handoff (Pending)` },
@@ -1131,7 +1131,7 @@ function GenerateTab({
     if (so.erpHandoff) return;
     const now = `${TODAY_ISO}T12:30:00`;
     updateSalesOrder(so.id, {
-      erpHandoff: { state: 'pending', source: 'po_verification', submittedAt: now, submittedBy: currentUser.fullName },
+      erpHandoff: { state: 'pending', source: 'po_verification', submittedAt: now, submittedBy: currentUser.fullName, updatedAt: now, revisionNumber: so.revisionNumber },
       activity: [
         ...so.activity,
         { id: `act-${so.id}-handoffrepair-${Date.now()}`, date: now, actor: currentUser.fullName, action: 'ERP Handoff record created', detail: `Linked ERP Handoff (Pending) created for ${so.number}` },

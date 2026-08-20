@@ -456,7 +456,7 @@ export default function CreateSalesOrder() {
       inspection: form.inspection || undefined,
       additionalTerms: form.additionalTerms || undefined,
       sentAt: opts.withHandoff ? now : undefined,
-      erpHandoff: opts.withHandoff ? { state: 'pending', source: 'manual', submittedAt: now, submittedBy: currentUser.fullName } : undefined,
+      erpHandoff: opts.withHandoff ? { state: 'pending', source: 'manual', submittedAt: now, submittedBy: currentUser.fullName, updatedAt: now, revisionNumber: 0 } : undefined,
       revisionNumber: 0,
       versions: [
         {

@@ -1,5 +1,7 @@
 import type {
   ActivityEvent,
+  ErpHandoff,
+  ErpHandoffState,
   FieldResolution,
   LineItem,
   RevisionState,
@@ -251,6 +253,31 @@ function generate(): SalesOrder[] {
 
     const value = poValue;
 
+    // Generated SOs are, by definition, final approved orders — seed a matching
+    // ERP Handoff record so the queue mirrors the Sales Orders list. Rotate
+    // through the lifecycle so every status (and the Failed → Retry path) is
+    // demoable on a fresh load.
+    const soGenerated = flavor === 'verified' && (status === 'so_sent' || status === 'finalised');
+    let erpHandoff: ErpHandoff | undefined;
+    if (soGenerated) {
+      const cycle: ErpHandoffState[] = ['accepted', 'pending', 'failed', 'submitted', 'accepted'];
+      const st = cycle[i % cycle.length];
+      const submittedAt = sentAt ?? verifiedAt ?? `${createdDate}T12:30:00`;
+      const processedAt = st === 'accepted' || st === 'failed' ? `${addDays(createdDate, 2)}T10:00:00` : undefined;
+      erpHandoff = {
+        state: st,
+        source: 'po_verification',
+        submittedAt,
+        submittedBy: verifiedBy ?? q.owner,
+        updatedAt: processedAt ?? submittedAt,
+        revisionNumber: 0,
+        reference: st === 'accepted' ? `ERP-${pad(500 + i + 1, 4)}` : undefined,
+        processedAt,
+        processedBy: processedAt ? 'ERP Bridge' : undefined,
+        failureReason: st === 'failed' ? 'ERP rejected: customer master code not found. Sync customer master and retry.' : undefined,
+      };
+    }
+
     list.push({
       id: `so-${pad(i + 1, 3)}`,
       number: `SO/2026/${pad(500 + i + 1, 4)}`,
@@ -282,7 +309,8 @@ function generate(): SalesOrder[] {
       reviewDate,
       verifiedBy,
       verifiedAt,
-      soGenerated: flavor === 'verified' && (status === 'so_sent' || status === 'finalised'),
+      soGenerated,
+      erpHandoff,
       sentAt,
       versions,
       items,
@@ -385,6 +413,11 @@ function seedRevisionSubStates(list: SalesOrder[]) {
       { id: `act-${sent.id}-approve`, date: `${addDays(stamp, 3)}T10:00:00`, actor: 'Priya Nair', action: 'Revision approved', detail: 'Approved.' },
       { id: `act-${sent.id}-sent`, date: `${addDays(stamp, 3)}T12:00:00`, actor: sent.owner, action: 'Revised SO sent', detail: 'Rev 1 dispatched to customer.' },
     );
+    // Keep the single ERP Handoff record in step with the revision: bump its
+    // revision number and updated timestamp (no duplicate record).
+    if (sent.erpHandoff) {
+      sent.erpHandoff = { ...sent.erpHandoff, revisionNumber: 1, updatedAt: `${addDays(stamp, 3)}T12:00:00`, reference: 'Revised Sales Order (Rev 1) available for ERP update.' };
+    }
   }
 }
 

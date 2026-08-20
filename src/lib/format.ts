@@ -27,7 +27,9 @@ export function compactINR(value: number): string {
 
 export function formatDate(iso: string, opts?: { short?: boolean }): string {
   if (!iso) return '—';
-  const d = new Date(iso + 'T00:00:00');
+  // Accept both date-only ('2026-08-08') and full ISO datetimes — format the
+  // calendar day either way.
+  const d = new Date(iso.slice(0, 10) + 'T00:00:00');
   if (isNaN(d.getTime())) return iso;
   return d.toLocaleDateString('en-IN', {
     day: '2-digit',

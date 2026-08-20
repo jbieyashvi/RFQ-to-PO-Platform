@@ -546,13 +546,18 @@ export function InboxCenterPanel({
     // available. Existing handoff → annotate in place; none → create the single
     // handoff record. State stays as-is (manufacturing is not auto-confirmed).
     const handoffNote = `Revised Sales Order ${so.number} (Rev ${nextNum}) available for ERP update.`;
+    // Update the SINGLE ERP Handoff record in place — never create a duplicate.
+    // A revised SO re-enters the queue as Pending so operations re-push it to the
+    // ERP, carrying the new revision number and a fresh updated timestamp.
     const erpHandoff: ErpHandoff = so.erpHandoff
-      ? { ...so.erpHandoff, reference: handoffNote }
+      ? { ...so.erpHandoff, state: 'pending', revisionNumber: nextNum, updatedAt: SENT_TS, reference: handoffNote, processedAt: undefined, processedBy: undefined, failureReason: undefined }
       : {
           state: 'pending',
           source: 'po_verification',
           submittedAt: SENT_TS,
           submittedBy: currentUser.fullName,
+          updatedAt: SENT_TS,
+          revisionNumber: nextNum,
           reference: handoffNote,
         };
     updateSalesOrder(so.id, {
