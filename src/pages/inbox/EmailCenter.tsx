@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Building2,
   UserRound,
-  Sparkles,
   CheckCircle2,
   Pencil,
   Tags,
@@ -16,38 +15,81 @@ import { INBOX_CLASSIFICATION } from '@/lib/labels';
 import { officeName } from '@/data/offices';
 import { classNames, formatDateTime } from '@/lib/format';
 import { useApp } from '@/context/AppContext';
-import { unresolvedMandatory } from './helpers';
+import { affectedFields, extractionState, unresolvedMandatory } from './helpers';
 
-const fieldTone: Record<ExtractionField['confidence'], { ring: string; label: string; tone: string }> = {
-  high: { ring: 'border-surface-200', label: 'High', tone: 'text-emerald-600' },
-  medium: { ring: 'border-amber-300 bg-amber-50/50', label: 'Medium', tone: 'text-amber-600' },
-  low: { ring: 'border-rose-300 bg-rose-50/50', label: 'Low · review', tone: 'text-rose-600' },
-  missing: { ring: 'border-rose-300 bg-rose-50/50', label: 'Missing', tone: 'text-rose-600' },
+// A field needs attention when it is missing, a required field is empty, or the
+// AI was uncertain (low confidence). Everything else renders neutrally — we no
+// longer surface positive "High / Medium" confidence labels.
+type FieldProblem = 'missing' | 'uncertain' | null;
+function fieldProblem(f: ExtractionField): FieldProblem {
+  if (f.confidence === 'missing' || (f.required && !f.value.trim())) return 'missing';
+  if (f.confidence === 'low') return 'uncertain';
+  return null;
+}
+
+const PROBLEM_STYLE: Record<'missing' | 'uncertain', { ring: string; tag: string; label: string }> = {
+  missing: { ring: 'border-rose-300 bg-rose-50/60', tag: 'text-rose-600', label: 'Missing' },
+  uncertain: { ring: 'border-amber-300 bg-amber-50/60', tag: 'text-amber-600', label: 'Check' },
 };
 
-export function EmailCenter({ email, embedded }: { email: InboxEmail; embedded?: boolean }) {
+export function EmailCenter({
+  email,
+  embedded,
+  compact,
+}: {
+  email: InboxEmail;
+  embedded?: boolean;
+  // `compact` = the editable extracted fields live in the right-hand business
+  // workspace (quote / PO / SO), so the centre shows ONLY the status row and
+  // never duplicates the field cards.
+  compact?: boolean;
+}) {
   const { updateEmail, canInbox, addToast } = useApp();
   const cls = INBOX_CLASSIFICATION[email.classification];
-  const [editing, setEditing] = useState(false);
   const [reclassifyOpen, setReclassifyOpen] = useState(false);
+
+  // Extraction detail disclosure. `open` = the field list is expanded; `editing`
+  // = fields are editable inputs; `showAll` = reveal non-affected fields too.
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+
+  // Reset the disclosure whenever the selected email changes.
+  useEffect(() => {
+    setOpen(false);
+    setEditing(false);
+    setShowAll(false);
+  }, [email.id]);
 
   const canEditExtraction = canInbox('edit_extraction');
   const canClassify = canInbox('classify');
+
+  const state = extractionState(email);
+  const affected = affectedFields(email);
   const unresolved = unresolvedMandatory(email);
 
   const setField = (idx: number, value: string) => {
     const extraction = email.extraction.map((f, i) => (i === idx ? { ...f, value, edited: true } : f));
-    updateEmail(email.id, { extraction });
+    // Editing confirmed information sends the extraction back to "needs
+    // confirmation" — a human must re-confirm the corrected data.
+    const patch: Partial<InboxEmail> = { extraction };
+    if (email.extractionConfirmed) {
+      patch.extractionConfirmed = false;
+      patch.needsReview = true;
+    }
+    updateEmail(email.id, patch);
   };
 
   const confirmExtraction = () => {
-    const stillMissing = email.extraction.some((f) => f.required && f.confidence === 'missing' && !f.value.trim());
+    const stillMissing = email.extraction.some((f) => f.required && !f.value.trim());
     if (stillMissing) {
       addToast({ type: 'warning', title: 'Cannot confirm', message: 'Fill all required fields marked Missing first.' });
       return;
     }
     updateEmail(email.id, { extractionConfirmed: true, needsReview: false });
     setEditing(false);
+    setOpen(false);
+    setShowAll(false);
     addToast({ type: 'success', title: 'Extraction confirmed', message: 'AI-extracted fields marked as reviewed.' });
   };
 
@@ -56,6 +98,16 @@ export function EmailCenter({ email, embedded }: { email: InboxEmail; embedded?:
     setReclassifyOpen(false);
     addToast({ type: 'success', title: 'Email reclassified', message: `Classification set to ${INBOX_CLASSIFICATION[c].label}.` });
   };
+
+  // Which fields to show once expanded. In needs-review we surface only the
+  // affected fields by default (with a toggle for the rest); a confirmed
+  // "View details" shows everything.
+  const showingAffectedOnly = state === 'needs_review' && !showAll && affected.length > 0;
+  const visibleFields = showingAffectedOnly ? affected : email.extraction;
+  const hiddenCount = email.extraction.length - affected.length;
+  // Fields are editable when actively reviewing (needs-review) or the user chose
+  // to edit a confirmed extraction.
+  const fieldsEditable = canEditExtraction && (state === 'needs_review' || editing);
 
   return (
     // `embedded` renders the reader as flowing content (no own height / scroll)
@@ -151,62 +203,137 @@ export function EmailCenter({ email, embedded }: { email: InboxEmail; embedded?:
           </div>
         )}
 
-        {/* AI Extraction */}
-        <div className="mt-5 rounded-xl border border-surface-200">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-100 px-3 py-2.5">
-            <div className="flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-brand-50 text-brand-600"><Sparkles className="h-3.5 w-3.5" /></span>
-              <h3 className="text-[13px] font-semibold text-surface-800">AI Extraction</h3>
-              <span className="rounded-full bg-surface-100 px-2 py-0.5 text-[11px] font-medium text-surface-500">{email.aiConfidence}% confidence</span>
-              {email.extractionConfirmed && <StatusBadge tone="green" dot={false} label="Confirmed" className="!text-[11px]" />}
+        {/* AI Extraction — three states. State C (hidden) renders nothing. */}
+        {state !== 'hidden' && (
+          <div className="mt-5">
+            {/* Compact status row (~48px) — the default resting state for A & B. */}
+            <div
+              className={classNames(
+                'flex min-h-[48px] items-center gap-2.5 rounded-xl border px-3.5 py-2',
+                state === 'confirmed' ? 'border-emerald-200 bg-emerald-50/70' : 'border-amber-200 bg-amber-50/70'
+              )}
+            >
+              {state === 'confirmed' ? (
+                <CheckCircle2 className="h-4 w-4 flex-none text-emerald-600" />
+              ) : (
+                <AlertTriangle className="h-4 w-4 flex-none text-amber-600" />
+              )}
+              <div className="min-w-0 flex-1">
+                <p className={classNames('text-[13px] font-semibold', state === 'confirmed' ? 'text-emerald-800' : 'text-amber-800')}>
+                  {state === 'confirmed' ? 'Extraction confirmed' : 'Extraction needs review'}
+                </p>
+                <p className={classNames('text-[12px]', state === 'confirmed' ? 'text-emerald-700/80' : 'text-amber-700/90')}>
+                  {state === 'confirmed'
+                    ? 'All required business details verified.'
+                    : affected.length > 0
+                    ? `${affected.length} field${affected.length === 1 ? '' : 's'} need attention before you can continue.`
+                    : 'Review the extracted details and confirm to continue.'}
+                </p>
+              </div>
+
+              {/* Compact mode (workflow): status only — editing lives in the right
+                  workspace, so no expansion / duplicate cards here. */}
+              {!compact && (
+                state === 'confirmed' ? (
+                  <button
+                    onClick={() => setOpen((v) => !v)}
+                    className="inline-flex flex-none items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-medium text-emerald-700 transition-colors hover:bg-emerald-100/70"
+                  >
+                    {open ? 'Hide details' : 'View details'}
+                    <ChevronDown className={classNames('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} />
+                  </button>
+                ) : (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    className="flex-none"
+                    onClick={() => { setOpen(true); setEditing(true); }}
+                  >
+                    Review &amp; Confirm
+                  </Button>
+                )
+              )}
             </div>
-            {canEditExtraction && (
-              <div className="flex items-center gap-1.5">
-                <Button variant="secondary" size="sm" leftIcon={<Pencil className="h-3.5 w-3.5" />} onClick={() => setEditing((v) => !v)}>
-                  {editing ? 'Done' : 'Correct Details'}
-                </Button>
-                <Button variant="primary" size="sm" leftIcon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={confirmExtraction}>
-                  Confirm Extraction
-                </Button>
+
+            {/* Expanded field detail — only in non-compact centre panels. */}
+            {!compact && open && (
+              <div className="mt-2 rounded-xl border border-surface-200">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-100 px-3 py-2">
+                  <h3 className="text-[12px] font-semibold uppercase tracking-wide text-surface-500">
+                    {showingAffectedOnly ? 'Fields needing attention' : 'Extracted details'}
+                  </h3>
+                  {state === 'confirmed' && canEditExtraction && !editing && (
+                    <Button variant="secondary" size="sm" leftIcon={<Pencil className="h-3.5 w-3.5" />} onClick={() => setEditing(true)}>
+                      Edit extracted details
+                    </Button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-2">
+                  {visibleFields.map((f) => {
+                    const realIdx = email.extraction.indexOf(f);
+                    const problem = fieldProblem(f);
+                    const pstyle = problem ? PROBLEM_STYLE[problem] : null;
+                    return (
+                      <div key={f.key} className={classNames('rounded-lg border px-3 py-2', pstyle?.ring ?? 'border-surface-200')}>
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-medium uppercase tracking-wide text-surface-400">
+                            {f.label}{f.required && <span className="text-rose-500"> *</span>}
+                          </span>
+                          {pstyle && <span className={classNames('text-[11px] font-semibold', pstyle.tag)}>{pstyle.label}</span>}
+                        </div>
+                        {fieldsEditable ? (
+                          <input
+                            value={f.value}
+                            onChange={(e) => setField(realIdx, e.target.value)}
+                            placeholder={problem === 'missing' ? 'Enter value…' : ''}
+                            className="input py-1 text-[13px]"
+                          />
+                        ) : (
+                          <p className={classNames('text-[13px]', f.value ? 'text-surface-800' : 'italic text-rose-500')}>
+                            {f.value || 'Not provided'}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Toggle to reveal / hide the non-affected fields in needs-review. */}
+                {state === 'needs_review' && affected.length > 0 && hiddenCount > 0 && (
+                  <div className="px-3 pb-2">
+                    <button
+                      onClick={() => setShowAll((v) => !v)}
+                      className="text-[12px] font-medium text-brand-600 hover:underline"
+                    >
+                      {showAll ? 'Show only fields needing attention' : `Show all ${email.extraction.length} extracted fields`}
+                    </button>
+                  </div>
+                )}
+
+                {/* Confirm action — only while reviewing (never in State A). */}
+                {state === 'needs_review' && canEditExtraction && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-surface-100 bg-surface-50/60 px-3 py-2.5">
+                    <p className={classNames('text-[11px]', unresolved.length > 0 ? 'text-amber-700' : 'text-surface-500')}>
+                      {unresolved.length > 0
+                        ? `Resolve required field(s): ${unresolved.join(', ')}`
+                        : 'Confirm to unlock the related business action.'}
+                    </p>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      leftIcon={<CheckCircle2 className="h-3.5 w-3.5" />}
+                      onClick={confirmExtraction}
+                      disabled={unresolved.length > 0}
+                    >
+                      Confirm Extraction
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>
-
-          {unresolved.length > 0 && (
-            <div className="flex items-start gap-2 border-b border-rose-100 bg-rose-50 px-3 py-2 text-[12px] text-rose-700">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" />
-              <span>Mandatory review — resolve required field(s): <span className="font-semibold">{unresolved.join(', ')}</span>. Approval &amp; Send stays disabled until fixed.</span>
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-2">
-            {email.extraction.map((f, idx) => {
-              const meta = fieldTone[f.confidence];
-              return (
-                <div key={f.key} className={classNames('rounded-lg border px-3 py-2', meta.ring)}>
-                  <div className="mb-1 flex items-center justify-between">
-                    <span className="text-[11px] font-medium uppercase tracking-wide text-surface-400">
-                      {f.label}{f.required && <span className="text-rose-500"> *</span>}
-                    </span>
-                    <span className={classNames('text-[11px] font-semibold', meta.tone)}>{meta.label}</span>
-                  </div>
-                  {editing && canEditExtraction ? (
-                    <input
-                      value={f.value}
-                      onChange={(e) => setField(idx, e.target.value)}
-                      placeholder={f.confidence === 'missing' ? 'Enter value…' : ''}
-                      className="input py-1 text-[13px]"
-                    />
-                  ) : (
-                    <p className={classNames('text-[13px]', f.value ? 'text-surface-800' : 'italic text-rose-500')}>
-                      {f.value || 'Not provided'}
-                    </p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

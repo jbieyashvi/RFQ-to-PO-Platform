@@ -600,7 +600,10 @@ export function InboxCenterPanel({
     <div className="flex h-full flex-col">
       {/* Read + compose share one scroll area */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <EmailCenter email={email} embedded />
+        {/* Workflow modes keep the editable extracted fields in the right-hand
+            business workspace, so the centre shows only the compact status row
+            (no duplicate field cards). */}
+        <EmailCenter email={email} embedded compact={isWorkflow} />
 
         {/* Composer */}
         <div ref={composerRef} className="border-t border-surface-100 px-5 py-4">

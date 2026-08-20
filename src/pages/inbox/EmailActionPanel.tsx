@@ -12,6 +12,7 @@ import type { InboxEmail } from '@/types';
 import { Button, SelectField } from '@/components/ui';
 import { useApp } from '@/context/AppContext';
 import { officeName } from '@/data/offices';
+import { extractionState } from './helpers';
 
 /**
  * The RIGHT panel for NORMAL inbox emails (no quote-send mode). It carries the
@@ -34,6 +35,11 @@ export function EmailActionPanel({ email }: { email: InboxEmail }) {
 
   const actions = contextualActions(email, navigate);
 
+  // The related business action (prepare quotation, start PO verification, SO
+  // revision, …) stays locked until the AI-extracted mandatory fields are
+  // confirmed. Generic mail (State C → 'hidden') is never gated.
+  const extractionLocked = extractionState(email) === 'needs_review';
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex-none border-b border-surface-100 px-4 py-3">
@@ -49,10 +55,25 @@ export function EmailActionPanel({ email }: { email: InboxEmail }) {
         ) : (
           <div className="space-y-1.5">
             {actions.map((a) => (
-              <Button key={a.label} variant={a.primary ? 'primary' : 'secondary'} size="sm" className="w-full justify-start" leftIcon={a.icon} onClick={a.onClick}>
+              <Button
+                key={a.label}
+                variant={a.primary ? 'primary' : 'secondary'}
+                size="sm"
+                className="w-full justify-start"
+                leftIcon={a.icon}
+                onClick={a.onClick}
+                disabled={extractionLocked}
+                title={extractionLocked ? 'Confirm the extracted details before starting this action.' : undefined}
+              >
                 {a.label}
               </Button>
             ))}
+            {extractionLocked && actions.length > 0 && (
+              <p className="flex items-start gap-1.5 pt-1 text-[11px] text-amber-700">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" />
+                Confirm the AI-extracted details in the centre panel to unlock this action.
+              </p>
+            )}
           </div>
         )}
 

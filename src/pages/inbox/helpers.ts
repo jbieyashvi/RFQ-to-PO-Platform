@@ -1,4 +1,4 @@
-import type { InboxEmail, Quotation } from '@/types';
+import type { ExtractionField, InboxEmail, Quotation } from '@/types';
 
 export function isValidEmail(s: string): boolean {
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test((s ?? '').trim());
@@ -69,6 +69,41 @@ export function composerBlockers(s: ComposerState): string[] {
   return b;
 }
 
+/**
+ * Whether AI Extraction is relevant for this email at all. Generic mail
+ * (Finance / Other) and still-unclassified / spam messages do not initiate a
+ * business workflow, so the extraction section is hidden entirely (State C) and
+ * never blocks a normal reply.
+ */
+export function extractionRelevant(email: InboxEmail): boolean {
+  if (email.classification === 'finance_other' || email.classification === 'unclassified') return false;
+  return email.extraction.length > 0;
+}
+
+/**
+ * The extraction fields that need a human's attention — missing, low-confidence
+ * (uncertain) or a required field left empty. These are the only ones surfaced
+ * in the "needs review" state so the user sees the gaps, not the whole grid.
+ */
+export function affectedFields(email: InboxEmail): ExtractionField[] {
+  return email.extraction.filter(
+    (f) => f.confidence === 'missing' || f.confidence === 'low' || (!!f.required && !f.value.trim())
+  );
+}
+
+export type ExtractionState = 'confirmed' | 'needs_review' | 'hidden';
+
+/**
+ * The single source of truth for which of the three extraction states an email
+ * is in. `hidden` → State C (generic mail). `confirmed` → State A (all required
+ * fields resolved AND a human has confirmed). Everything else → State B.
+ */
+export function extractionState(email: InboxEmail): ExtractionState {
+  if (!extractionRelevant(email)) return 'hidden';
+  if (email.extractionConfirmed && unresolvedMandatory(email).length === 0) return 'confirmed';
+  return 'needs_review';
+}
+
 /** Required extraction fields that are still missing or low-confidence & unresolved. */
 export function unresolvedMandatory(email: InboxEmail): string[] {
   return email.extraction
@@ -96,10 +131,14 @@ export function sendBlockers(email: InboxEmail): string[] {
   if (!d.subject.trim()) b.push('Subject is empty');
   if (!d.body.trim()) b.push('Email body is empty');
   if (email.classification === 'unclassified') b.push('Email must be classified before sending');
-  const um = unresolvedMandatory(email);
-  if (um.length) b.push(`Missing / low-confidence required field(s): ${um.join(', ')}`);
-  if (email.extraction.length > 0 && !email.extractionConfirmed) b.push('Confirm the AI-extracted details before sending');
-  if (email.needsReview) b.push('Low-confidence fields still need review');
+  // Extraction gating only applies to emails that actually initiate a business
+  // workflow — generic Finance / Other mail (State C) replies freely.
+  if (extractionRelevant(email)) {
+    const um = unresolvedMandatory(email);
+    if (um.length) b.push(`Missing / low-confidence required field(s): ${um.join(', ')}`);
+    if (!email.extractionConfirmed) b.push('Confirm the AI-extracted details before sending');
+    else if (email.needsReview) b.push('Low-confidence fields still need review');
+  }
   if (email.validationFailed) b.push('PO / commercial validation is still pending');
   return b;
 }

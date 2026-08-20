@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   FileText,
-  Sparkles,
   Eye,
   Plus,
   Trash2,
@@ -251,7 +250,6 @@ export function RevisionQuotePanel({
         {/* AI Extraction — Changes Requested */}
         <section className="mb-4">
           <div className="mb-2 flex items-center gap-1.5">
-            <span className="flex h-5 w-5 items-center justify-center rounded bg-brand-50 text-brand-600"><Sparkles className="h-3 w-3" /></span>
             <h3 className="text-[12px] font-semibold uppercase tracking-wide text-surface-500">Requested Changes</h3>
           </div>
           <ul className="space-y-1.5">

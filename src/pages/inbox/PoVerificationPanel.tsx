@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   FileText,
-  Sparkles,
   Eye,
   CalendarClock,
   CheckCircle2,
@@ -546,7 +545,7 @@ function CompareTab({
   if (fields.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-surface-200 px-4 py-8 text-center">
-        <Sparkles className="mx-auto h-6 w-6 text-surface-300" />
+        <ClipboardCheck className="mx-auto h-6 w-6 text-surface-300" />
         <p className="mt-2 text-[12px] text-surface-500">
           The PO vs Quote comparison will be generated automatically once this Purchase Order email is processed.
         </p>
@@ -558,7 +557,6 @@ function CompareTab({
     <>
       {/* AI comparison banner + summary */}
       <div className="mb-3 flex items-center gap-1.5">
-        <span className="flex h-5 w-5 items-center justify-center rounded bg-brand-50 text-brand-600"><Sparkles className="h-3 w-3" /></span>
         <h3 className="text-[12px] font-semibold uppercase tracking-wide text-surface-500">Accepted Quotation vs Customer PO</h3>
       </div>
 
