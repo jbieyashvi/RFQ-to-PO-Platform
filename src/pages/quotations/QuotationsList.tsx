@@ -22,9 +22,18 @@ import type { Quotation, QuotationStage, QuotationStatus } from '@/types';
 import { downloadCSV, formatDate, formatDateTime, formatINR } from '@/lib/format';
 import { latestQuoteSubmittedAt, firstInquiryAt } from '@/lib/quotationDates';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
+import { poQuotationIds, isQuoteSent, isConvertedQuote, isAwaitingPOQuote } from '@/lib/metrics';
+
+// Dashboard funnel deep-link views (?view=). Each uses the same shared metrics
+// predicates as the funnel itself, so list counts always match the dashboard.
+const VIEW_LABELS: Record<string, string> = {
+  sent: 'Quotes Sent',
+  converted: 'Converted Opportunities',
+  awaiting_po: 'Finalised — Awaiting PO',
+};
 
 export default function QuotationsList() {
-  const { quotations, role, can, addToast } = useApp();
+  const { quotations, salesOrders, role, can, addToast } = useApp();
   const canEdit = can('quotations', 'edit');
   const inScope = useOfficeScope();
   const noOffice = useNoOfficeAssigned();
@@ -35,6 +44,7 @@ export default function QuotationsList() {
   const [custCode, setCustCode] = useState('');
   const [status, setStatus] = useState(params.get('status') ?? '');
   const [stage, setStage] = useState(params.get('stage') ?? '');
+  const [view, setView] = useState(params.get('view') ?? '');
   const [office, setOffice] = useState('');
 
   // Track the open drawer by id so it always reflects the live quotation after
@@ -57,15 +67,25 @@ export default function QuotationsList() {
     ([value, v]) => ({ value, label: v.label })
   );
 
-  // sync incoming query params once (dashboard deep-links pass ?status / ?stage / ?q=<QTN no>)
+  // sync incoming query params once (dashboard deep-links pass ?status / ?stage /
+  // ?view=<funnel level> / ?q=<QTN no>)
   useEffect(() => {
     if (params.get('status')) setStatus(params.get('status')!);
     if (params.get('stage')) setStage(params.get('stage')!);
+    if (params.get('view')) setView(params.get('view')!);
     if (params.get('q')) setQtnNumber(params.get('q')!);
     // clear params so they don't stick on manual changes
     if ([...params.keys()].length) setParams({}, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Quotation ids that already have a linked customer PO (sales order), built
+  // from the same role-scoped SO set the dashboard funnel uses so the two can
+  // never classify a quotation differently.
+  const poIds = useMemo(
+    () => poQuotationIds(salesOrders.filter((s) => inScope(s.officeId))),
+    [salesOrders, inScope]
+  );
 
   const filtered = useMemo(() => {
     const qn = qtnNumber.trim().toLowerCase();
@@ -73,6 +93,9 @@ export default function QuotationsList() {
     const cc = custCode.trim().toLowerCase();
     return quotations.filter((q) => {
       if (!inScope(q.officeId)) return false;
+      if (view === 'sent' && !isQuoteSent(q)) return false;
+      if (view === 'converted' && !isConvertedQuote(q, poIds)) return false;
+      if (view === 'awaiting_po' && !isAwaitingPOQuote(q, poIds)) return false;
       if (status && q.status !== status) return false;
       if (stage && q.stage !== stage) return false;
       if (office && q.officeId !== office) return false;
@@ -81,11 +104,12 @@ export default function QuotationsList() {
       if (cc && !q.customerCode.toLowerCase().includes(cc)) return false;
       return true;
     });
-  }, [quotations, inScope, qtnNumber, customerName, custCode, status, stage, office]);
+  }, [quotations, inScope, qtnNumber, customerName, custCode, status, stage, view, poIds, office]);
 
   const { page, pageSize, setPage, setPageSize, pageRows, total } = usePaginated(filtered, 10);
 
   const chips: FilterChip[] = [];
+  if (view) chips.push({ key: 'vw', label: `View: ${VIEW_LABELS[view] ?? view}`, onRemove: () => setView('') });
   if (qtnNumber) chips.push({ key: 'qn', label: `QTN No: "${qtnNumber}"`, onRemove: () => setQtnNumber('') });
   if (customerName) chips.push({ key: 'cn', label: `Customer: "${customerName}"`, onRemove: () => setCustomerName('') });
   if (custCode) chips.push({ key: 'cc', label: `Cust code: "${custCode}"`, onRemove: () => setCustCode('') });
@@ -95,7 +119,7 @@ export default function QuotationsList() {
 
   const clearAll = () => {
     setQtnNumber(''); setCustomerName(''); setCustCode('');
-    setStatus(''); setStage(''); setOffice('');
+    setStatus(''); setStage(''); setView(''); setOffice('');
   };
 
   const exportCSV = () => {

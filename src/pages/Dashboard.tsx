@@ -15,7 +15,7 @@ import { NoOfficeAssigned } from '@/components/NoOfficeAssigned';
 import { useApp, useOfficeScope, useNoOfficeAssigned } from '@/context/AppContext';
 import { OFFICES } from '@/data/offices';
 import {
-  pipelineFunnel,
+  conversionFunnel,
   actionRequired,
   overdueTasks,
   scopeRecords,
@@ -26,7 +26,8 @@ import {
   type ActionRow,
   type OverdueRow,
 } from '@/lib/metrics';
-import { classNames } from '@/lib/format';
+import { officeName } from '@/data/offices';
+import { classNames, formatDate } from '@/lib/format';
 
 // ---------------------------------------------------------------------------
 // Per-section independent Branch + From/To date filter.
@@ -49,6 +50,16 @@ function useSectionFilter() {
 }
 
 type SectionFilterState = ReturnType<typeof useSectionFilter>;
+
+/** Human-readable "Branch · Date Range" summary of a section filter. */
+function scopeLabel({ branch, from, to }: SectionFilter): string {
+  const branchLabel = branch === 'all' ? 'All Branches' : officeName(branch);
+  let rangeLabel = 'All dates';
+  if (from && to) rangeLabel = `${formatDate(from)} – ${formatDate(to)}`;
+  else if (from) rangeLabel = `From ${formatDate(from)}`;
+  else if (to) rangeLabel = `Until ${formatDate(to)}`;
+  return `${branchLabel} · ${rangeLabel}`;
+}
 
 // Compact date input — kept small so per-section filters never dominate a card.
 const DATE_INPUT =
@@ -115,12 +126,15 @@ function SectionFilters({
 
 function DashSection({
   title,
+  subtitle,
   icon,
   filters,
   className,
   children,
 }: {
   title: string;
+  /** current section scope (selected Branch + Date Range) shown under the title */
+  subtitle?: string;
   icon: ReactNode;
   filters: ReactNode;
   className?: string;
@@ -129,11 +143,16 @@ function DashSection({
   return (
     <section className={classNames('card flex flex-col overflow-hidden', className)}>
       <div className="flex flex-col gap-2 border-b border-surface-100 px-4 py-3 sm:px-5 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between">
-        <div className="flex flex-none items-center gap-2">
-          {icon}
-          <h2 className="whitespace-nowrap text-[16px] font-semibold leading-5 text-surface-800">
-            {title}
-          </h2>
+        <div className="flex-none">
+          <div className="flex items-center gap-2">
+            {icon}
+            <h2 className="whitespace-nowrap text-[16px] font-semibold leading-5 text-surface-800">
+              {title}
+            </h2>
+          </div>
+          {subtitle && (
+            <p className="mt-0.5 text-[12px] leading-4 text-surface-500">{subtitle}</p>
+          )}
         </div>
         {filters}
       </div>
@@ -143,18 +162,16 @@ function DashSection({
 }
 
 // ===========================================================================
-// 1 — PIPELINE FUNNEL
+// 1 — CONVERSION FUNNEL
 // ===========================================================================
-// First layer a dark slate (the raw intake), every stage after it a
-// progressively lighter Flowtech red — no rainbow, orange reserved for
+// Client-approved palette: the intake level a dark slate, every level after it
+// a progressively lighter Flowtech red — no rainbow, orange reserved for
 // warnings elsewhere. Widths taper by position (not by value) so even the
-// smallest layer stays readable.
+// smallest level stays readable.
 const FUNNEL_FILL: Record<string, string> = {
-  queries: 'bg-slate-700',
-  quotes_sent: 'bg-brand-800',
-  budgetary: 'bg-brand-700',
-  negotiation: 'bg-brand-600',
-  finalised: 'bg-brand-500',
+  inquiries: 'bg-slate-700',
+  quotes_sent: 'bg-brand-700',
+  converted: 'bg-brand-600',
   so_sent: 'bg-brand-400',
 };
 
@@ -171,41 +188,60 @@ function FunnelLayer({
 }) {
   // Linear positional taper: widest at the top, ~50% at the base. The taper is
   // applied only from `sm` up (via a CSS var) so narrow/mobile layers stay
-  // full-width and every label — including the smallest stage — stays readable.
+  // full-width and every label — including the smallest level — stays readable.
   const width = 100 - (index / Math.max(1, total - 1)) * 52;
   return (
     <div
       className="group relative mx-auto w-full sm:[max-width:var(--fw)]"
       style={{ '--fw': `${width}%` } as CSSProperties}
     >
-      <button
-        type="button"
-        onClick={() => onOpen(stage.to)}
-        aria-label={`${stage.label}: ${stage.count}. ${
-          stage.fromPrevPct !== null ? `${stage.fromPrevPct}% from previous stage, ` : ''
-        }${stage.overallPct}% of inquiries received. Open filtered list.`}
-        className={classNames(
-          'flex w-full items-center justify-between gap-3 rounded-[10px] px-4 py-3 text-left text-white shadow-sm transition',
-          'hover:-translate-y-0.5 hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-brand-500/60',
-          FUNNEL_FILL[stage.key]
-        )}
-      >
-        <span className="min-w-0">
-          <span className="block truncate text-[13px] font-semibold leading-4">{stage.label}</span>
-          <span className="mt-0.5 block text-[11px] font-medium leading-4 text-white/75">
-            {stage.fromPrevPct === null ? 'Pipeline entry' : `${stage.fromPrevPct}% from previous`}
+      {/* The level is a coloured shell; the main row and each sub-split are
+          separate sibling buttons (never nested) so all of them stay clickable. */}
+      <div className={classNames('rounded-[10px] text-white shadow-sm', FUNNEL_FILL[stage.key])}>
+        <button
+          type="button"
+          onClick={() => onOpen(stage.to)}
+          aria-label={`${stage.label}: ${stage.count}. ${
+            stage.fromPrevPct !== null ? `${stage.fromPrevPct}% from previous stage, ` : ''
+          }${stage.overallPct}% of total inquiries. Open filtered list.`}
+          className="flex w-full items-center justify-between gap-3 rounded-[10px] px-4 py-2.5 text-left transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/70"
+        >
+          <span className="min-w-0">
+            <span className="block truncate text-[13px] font-semibold leading-4">{stage.label}</span>
+            <span className="mt-0.5 block text-[11px] font-medium leading-4 text-white/75">
+              {stage.fromPrevPct === null ? 'Pipeline entry' : `${stage.fromPrevPct}% from previous`}
+            </span>
           </span>
-        </span>
-        <span className="flex flex-none items-center gap-2">
-          <span className="text-right">
-            <span className="block text-[22px] font-bold leading-6 tabular-nums">{stage.count}</span>
-            <span className="block text-[11px] leading-4 text-white/75">{stage.overallPct}% overall</span>
+          <span className="flex flex-none items-center gap-2">
+            <span className="text-right">
+              <span className="block text-[20px] font-bold leading-6 tabular-nums">{stage.count}</span>
+              <span className="block text-[11px] leading-4 text-white/75">{stage.overallPct}% overall</span>
+            </span>
+            <ArrowRight className="h-4 w-4 flex-none text-white/50 transition group-hover:translate-x-0.5 group-hover:text-white" />
           </span>
-          <ArrowRight className="h-4 w-4 flex-none text-white/50 transition group-hover:translate-x-0.5 group-hover:text-white" />
-        </span>
-      </button>
+        </button>
 
-      {/* Hover tooltip — stage count, step conversion, overall conversion. */}
+        {/* Mutually-exclusive sub-splits (e.g. PO Received / Finalised — Awaiting
+            PO); each deep-links to the exact operational list it counts. */}
+        {stage.parts && (
+          <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2.5">
+            {stage.parts.map((part) => (
+              <button
+                key={part.key}
+                type="button"
+                onClick={() => onOpen(part.to)}
+                aria-label={`${part.label}: ${part.count}. ${part.hint}. Open filtered list.`}
+                className="inline-flex items-center gap-1.5 rounded-full bg-white/15 py-1 pl-2.5 pr-1.5 text-[11px] font-semibold leading-4 transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+              >
+                {part.label}
+                <span className="rounded-full bg-white/25 px-1.5 tabular-nums">{part.count}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Hover tooltip — level count, step conversion, overall conversion. */}
       <div
         role="tooltip"
         className="pointer-events-none absolute left-1/2 top-full z-20 mt-1.5 w-56 -translate-x-1/2 rounded-lg border border-surface-200 bg-white p-2.5 text-[12px] text-surface-700 opacity-0 shadow-pop transition-opacity duration-150 group-hover:opacity-100"
@@ -213,7 +249,7 @@ function FunnelLayer({
         <p className="mb-1 text-[12px] font-semibold text-surface-800">{stage.label}</p>
         <dl className="space-y-0.5">
           <div className="flex justify-between gap-3">
-            <dt className="text-surface-500">Stage count</dt>
+            <dt className="text-surface-500">Level count</dt>
             <dd className="font-semibold tabular-nums text-surface-800">{stage.count}</dd>
           </div>
           <div className="flex justify-between gap-3">
@@ -226,15 +262,21 @@ function FunnelLayer({
             <dt className="text-surface-500">Overall conversion</dt>
             <dd className="font-semibold tabular-nums text-surface-800">{stage.overallPct}%</dd>
           </div>
+          {stage.parts?.map((part) => (
+            <div key={part.key} className="flex justify-between gap-3">
+              <dt className="text-surface-500">{part.label}</dt>
+              <dd className="font-semibold tabular-nums text-surface-800">{part.count}</dd>
+            </div>
+          ))}
         </dl>
       </div>
     </div>
   );
 }
 
-function PipelineFunnel({ stages, onOpen }: { stages: FunnelStage[]; onOpen: (to: string) => void }) {
+function ConversionFunnelChart({ stages, onOpen }: { stages: FunnelStage[]; onOpen: (to: string) => void }) {
   return (
-    <div className="space-y-2 pb-6">
+    <div className="space-y-1.5 pb-6">
       {stages.map((stage, i) => (
         <FunnelLayer key={stage.key} stage={stage} index={i} total={stages.length} onOpen={onOpen} />
       ))}
@@ -393,11 +435,15 @@ export default function Dashboard() {
 
   const qBy = (q: (typeof baseQuotations)[number]) => ({ officeId: q.officeId, date: q.createdDate });
   const soBy = (s: (typeof baseSalesOrders)[number]) => ({ officeId: s.officeId, date: s.createdDate });
+  // The funnel date-scopes SOs by receivedDate (when the customer PO arrived) —
+  // the same event date MIS Reports uses (SALES_ORDER_DATE in lib/mis.ts) — so
+  // Dashboard and MIS report identical PO/SO counts for any Branch + range.
+  const soFunnelBy = (s: (typeof baseSalesOrders)[number]) => ({ officeId: s.officeId, date: s.receivedDate });
 
   const funnel = useMemo(() => {
     const q = scopeRecords(baseQuotations, pipelineF.filter, qBy);
-    const so = scopeRecords(baseSalesOrders, pipelineF.filter, soBy);
-    return pipelineFunnel(q, so);
+    const so = scopeRecords(baseSalesOrders, pipelineF.filter, soFunnelBy);
+    return conversionFunnel(q, so);
   }, [baseQuotations, baseSalesOrders, pipelineF.filter]);
 
   const actions = useMemo(() => {
@@ -422,17 +468,17 @@ export default function Dashboard() {
       {noOffice ? (
         <NoOfficeAssigned />
       ) : (
-      /* 12-column responsive grid: Funnel (8) + Action Required (4) on the top
-          row, Overdue Tasks full-width below. Everything stacks under 1180px. */
-      <div className="grid grid-cols-1 gap-4 min-[1180px]:grid-cols-12 min-[1180px]:gap-5">
-        {/* 1 — PIPELINE FUNNEL */}
+      /* Desktop grid: Conversion Funnel (65%) + Action Required (35%) on the
+          top row, Overdue Tasks full-width below. Everything stacks under 1180px. */
+      <div className="grid grid-cols-1 gap-4 min-[1180px]:grid-cols-[65fr_35fr] min-[1180px]:gap-5">
+        {/* 1 — CONVERSION FUNNEL */}
         <DashSection
-          title="Pipeline Funnel"
+          title="Conversion Funnel"
+          subtitle={scopeLabel(pipelineF.filter)}
           icon={<Filter className="h-4 w-4 text-brand-500" />}
           filters={<SectionFilters state={pipelineF} branchOptions={branchOptions} />}
-          className="min-[1180px]:col-span-8"
         >
-          <PipelineFunnel stages={funnel} onOpen={onOpen} />
+          <ConversionFunnelChart stages={funnel} onOpen={onOpen} />
         </DashSection>
 
         {/* 2 — ACTION REQUIRED */}
@@ -440,7 +486,6 @@ export default function Dashboard() {
           title="Action Required"
           icon={<ListChecks className="h-4 w-4 text-amber-500" />}
           filters={<SectionFilters state={actionF} branchOptions={branchOptions} />}
-          className="min-[1180px]:col-span-4"
         >
           <ActionList rows={actions} onOpen={onOpen} />
         </DashSection>
@@ -450,7 +495,7 @@ export default function Dashboard() {
           title="Overdue Tasks"
           icon={<CalendarClock className="h-4 w-4 text-rose-500" />}
           filters={<SectionFilters state={overdueF} branchOptions={branchOptions} />}
-          className="min-[1180px]:col-span-12"
+          className="min-[1180px]:col-span-2"
         >
           {/* Combined summary headline. */}
           <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">

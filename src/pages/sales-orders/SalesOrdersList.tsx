@@ -19,6 +19,7 @@ import { OFFICES, officeName } from '@/data/offices';
 import type { SalesOrder } from '@/types';
 import { downloadCSV, downloadText, formatDateTime, formatINR } from '@/lib/format';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
+import { isSOSent } from '@/lib/metrics';
 
 const iconBtn =
   'inline-flex h-7 w-7 items-center justify-center rounded-lg text-surface-500 transition-colors hover:bg-surface-100 hover:text-surface-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent';
@@ -33,11 +34,14 @@ export default function SalesOrdersList() {
   const [office, setOffice] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  // Dashboard funnel deep-link (?status=so_sent) — same isSOSent predicate as
+  // the funnel's "Total SO Sent" level, so list count always matches.
+  const [sentOnly, setSentOnly] = useState(params.get('status') === 'so_sent');
 
   const [active, setActive] = useState<SalesOrder | null>(null);
   const loading = useSimulatedLoading([]);
 
-  // Clear any legacy status deep-link param (the status filter was removed).
+  // Clear incoming deep-link params so they don't stick on manual changes.
   useEffect(() => {
     if ([...params.keys()].length) setParams({}, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -50,6 +54,7 @@ export default function SalesOrdersList() {
     const s = search.trim().toLowerCase();
     return salesOrders.filter((so) => {
       if (!inScope(so.officeId)) return false;
+      if (sentOnly && !isSOSent(so)) return false;
       if (office && so.officeId !== office) return false;
       if (dateFrom && so.createdDate < dateFrom) return false;
       if (dateTo && so.createdDate > dateTo) return false;
@@ -57,16 +62,17 @@ export default function SalesOrdersList() {
       if (s && !`${so.number} ${so.customerName} ${ownerOf(so)}`.toLowerCase().includes(s)) return false;
       return true;
     });
-  }, [salesOrders, inScope, search, office, dateFrom, dateTo]);
+  }, [salesOrders, inScope, search, office, dateFrom, dateTo, sentOnly]);
 
   const { page, pageSize, setPage, setPageSize, pageRows, total } = usePaginated(filtered, 10);
 
   const chips: FilterChip[] = [];
+  if (sentOnly) chips.push({ key: 'v', label: 'View: SO Sent', onRemove: () => setSentOnly(false) });
   if (office) chips.push({ key: 'o', label: `Office: ${officeName(office)}`, onRemove: () => setOffice('') });
   if (dateFrom || dateTo) chips.push({ key: 'd', label: `Created: ${dateFrom || '…'} → ${dateTo || '…'}`, onRemove: () => { setDateFrom(''); setDateTo(''); } });
   if (search) chips.push({ key: 'q', label: `Search: "${search}"`, onRemove: () => setSearch('') });
 
-  const clearAll = () => { setSearch(''); setOffice(''); setDateFrom(''); setDateTo(''); };
+  const clearAll = () => { setSearch(''); setOffice(''); setDateFrom(''); setDateTo(''); setSentOnly(false); };
 
   const exportCSV = () => {
     const header = ['SO No', 'Customer', 'Sales Office', 'Owner', 'Value (INR)', 'SO Sent Date'];

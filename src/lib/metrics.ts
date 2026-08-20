@@ -201,7 +201,15 @@ export interface OverdueGroups {
   total: number;
 }
 
-// -- 1) Pipeline funnel ------------------------------------------------------
+// -- 1) Conversion funnel ----------------------------------------------------
+export interface FunnelStagePart {
+  key: string;
+  label: string;
+  count: number;
+  to: string;
+  hint: string;
+}
+
 export interface FunnelStage {
   key: string;
   label: string;
@@ -210,53 +218,108 @@ export interface FunnelStage {
   hint: string;
   /** conversion from the immediately previous stage, 0–100 (null for the first) */
   fromPrevPct: number | null;
-  /** overall conversion from Inquiries Received, 0–100 */
+  /** overall conversion from Total Inquiries, 0–100 */
   overallPct: number;
+  /** mutually-exclusive sub-splits of this stage (Converted Opportunities) */
+  parts?: FunnelStagePart[];
 }
 
+/** Quotation ids that already have a customer PO (a linked Sales Order). */
+export function poQuotationIds(salesOrders: SalesOrder[]): Set<string> {
+  const ids = new Set<string>();
+  for (const s of salesOrders) if (s.quotationId) ids.add(s.quotationId);
+  return ids;
+}
+
+/** Converted opportunity: the customer PO arrived OR the quote is finalised. */
+export const isConvertedQuote = (q: Quotation, poIds: Set<string>) =>
+  poIds.has(q.id) || q.stage === 'finalised';
+/** Finalised quotation whose customer PO has NOT arrived yet. */
+export const isAwaitingPOQuote = (q: Quotation, poIds: Set<string>) =>
+  q.stage === 'finalised' && !poIds.has(q.id);
+
 /**
- * Six-stage conversion funnel, in strict pipeline order:
- *   Inquiries → Quotes Sent → Budgetary → Negotiation → Finalised → SO Sent.
+ * Client-approved four-level conversion funnel:
+ *   Total Inquiries → Quotes Sent → Converted Opportunities → Total SO Sent.
  *
- * "No Follow-up" is intentionally NOT a funnel stage — it is an exception /
- * action state, surfaced under Action Required instead of the funnel.
+ * Converted Opportunities is the union of two mutually-exclusive buckets, so a
+ * quotation is never double-counted:
+ *   - PO Received          : every Sales Order record carries a received
+ *                            customer PO (matches the Sales Orders list 1:1).
+ *   - Finalised Awaiting PO: quotations at stage Finalised whose PO has not
+ *                            arrived yet (no linked Sales Order).
+ * A finalised quotation whose PO already arrived counts ONLY under PO Received.
  *
- * Funnel semantics (distinct from the exact-stage buckets the stage filters
- * use): each pipeline stage counts quotations that were SENT to the customer
- * and have progressed to AT LEAST that stage, so the layers form strictly
- * nested sets and the funnel is always monotonically non-increasing — a later
- * layer can never exceed the one above it. SO Sent (a different entity) is
- * clamped to the Finalised layer to preserve that guarantee even if prototype
- * data drifts. Clicking a layer drills into that stage's current list.
+ * "No Follow-up" remains an exception state under Action Required, not a
+ * funnel level. Every level (and each Converted sub-bucket) deep-links to the
+ * operational list built from the SAME predicate, so counts always match.
  */
-export function pipelineFunnel(quotations: Quotation[], salesOrders: SalesOrder[]): FunnelStage[] {
+export function conversionFunnel(quotations: Quotation[], salesOrders: SalesOrder[]): FunnelStage[] {
   const sent = quotations.filter(isQuoteSent);
-  const reached = (stages: QuotationStage[]) => sent.filter((q) => stages.includes(q.stage)).length;
+  const poIds = poQuotationIds(salesOrders);
+  const awaitingPO = quotations.filter((q) => isAwaitingPOQuote(q, poIds)).length;
+  const poReceived = salesOrders.length;
+  // Parent level counts QUOTATIONS with the exact predicate its click target
+  // (/quotations?view=converted) filters by, so count == list rows even when a
+  // Sales Order has no linked quotation (manually created) or shares one.
+  const converted = quotations.filter((q) => isConvertedQuote(q, poIds)).length;
 
   const raw = [
-    { key: 'queries', label: 'Inquiries Received', count: quotations.length, to: '/quotations', hint: 'Every customer RFQ / inquiry received' },
-    { key: 'quotes_sent', label: 'Quotes Sent', count: sent.length, to: '/quotations', hint: 'Quotations dispatched to customers' },
-    { key: 'budgetary', label: 'Budgetary', count: reached(['budgetary', 'negotiation', 'finalised']), to: '/quotations?stage=budgetary', hint: 'Sent quotes at the budgetary stage or beyond' },
-    { key: 'negotiation', label: 'Negotiation', count: reached(['negotiation', 'finalised']), to: '/quotations?stage=negotiation', hint: 'Sent quotes in negotiation or beyond' },
-    { key: 'finalised', label: 'Finalised', count: reached(['finalised']), to: '/quotations?stage=finalised', hint: 'Sent quotes finalised' },
-    { key: 'so_sent', label: 'SO Sent', count: salesOrders.filter(isSOSent).length, to: '/sales-orders?status=so_sent', hint: 'Sales orders dispatched (exact SO Sent)' },
+    {
+      key: 'inquiries',
+      label: 'Total Inquiries',
+      count: quotations.length,
+      to: '/quotations',
+      hint: 'Every customer RFQ / inquiry received',
+    },
+    {
+      key: 'quotes_sent',
+      label: 'Quotes Sent',
+      count: sent.length,
+      to: '/quotations?view=sent',
+      hint: 'Quotations dispatched to customers',
+    },
+    {
+      key: 'converted',
+      label: 'Converted Opportunities',
+      count: converted,
+      to: '/quotations?view=converted',
+      hint: 'PO received or finalised awaiting PO — no quotation counted twice',
+      parts: [
+        {
+          key: 'po_received',
+          label: 'PO Received',
+          count: poReceived,
+          to: '/sales-orders',
+          hint: 'Customer POs received (one per Sales Order)',
+        },
+        {
+          key: 'finalised_awaiting_po',
+          label: 'Finalised — Awaiting PO',
+          count: awaitingPO,
+          to: '/quotations?view=awaiting_po',
+          hint: 'Finalised quotations whose customer PO has not arrived yet',
+        },
+      ],
+    },
+    {
+      key: 'so_sent',
+      label: 'Total SO Sent',
+      count: salesOrders.filter(isSOSent).length,
+      to: '/sales-orders?status=so_sent',
+      hint: 'Sales orders dispatched (exact SO Sent)',
+    },
   ];
 
-  // Monotonic clamp + conversion percentages derived from the clamped counts.
-  const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0);
+  // Quotations and SOs date-scope independently, so a later level can exceed an
+  // earlier one under a date filter; cap at 100 so the funnel never shows >100%.
+  const pct = (a: number, b: number) => (b > 0 ? Math.min(100, Math.round((a / b) * 100)) : 0);
   const first = raw[0].count;
-  let prev = Infinity;
-  return raw.map((r, i) => {
-    const count = Math.min(r.count, prev);
-    const stage: FunnelStage = {
-      ...r,
-      count,
-      fromPrevPct: i === 0 ? null : pct(count, prev),
-      overallPct: pct(count, first),
-    };
-    prev = count;
-    return stage;
-  });
+  return raw.map((r, i) => ({
+    ...r,
+    fromPrevPct: i === 0 ? null : pct(r.count, raw[i - 1].count),
+    overallPct: pct(r.count, first),
+  }));
 }
 
 // -- 2) Action required ------------------------------------------------------
