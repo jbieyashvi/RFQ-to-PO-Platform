@@ -23,6 +23,7 @@ import SalesOrdersList from '@/pages/sales-orders/SalesOrdersList';
 import SalesOrderRevisions from '@/pages/sales-orders/SalesOrderRevisions';
 import CreateSalesOrder from '@/pages/sales-orders/CreateSalesOrder';
 import ErpHandoff from '@/pages/erp-handoff/ErpHandoff';
+import MisReports from '@/pages/management/MisReports';
 import NotFound from '@/pages/NotFound';
 
 export default function App() {
@@ -171,6 +172,16 @@ export default function App() {
           element={
             <RequirePermission module="erp_handoff">
               <ErpHandoff />
+            </RequirePermission>
+          }
+        />
+
+        {/* Management */}
+        <Route
+          path="/management/mis"
+          element={
+            <RequirePermission module="mis_reports">
+              <MisReports />
             </RequirePermission>
           }
         />

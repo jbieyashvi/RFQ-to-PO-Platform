@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   Inbox,
   ArrowLeftRight,
+  BarChart3,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -88,6 +89,13 @@ export const NAV: NavItem[] = [
     to: '/erp-handoff',
     module: 'erp_handoff',
   },
+  {
+    key: 'management',
+    label: 'Management',
+    icon: BarChart3,
+    module: 'mis_reports',
+    children: [{ label: 'MIS Reports', to: '/management/mis' }],
+  },
 ];
 
 // Map every nav child route -> the fine-grained featurePermissions SECTION that
@@ -109,6 +117,7 @@ export const CHILD_SECTION: Record<string, string> = {
   '/sales-orders': 'so_list',
   '/sales-orders/revisions': 'so_revision',
   '/sales-orders/create': 'so_create',
+  '/management/mis': 'mis_reports',
 };
 
 export const ICONS = {
