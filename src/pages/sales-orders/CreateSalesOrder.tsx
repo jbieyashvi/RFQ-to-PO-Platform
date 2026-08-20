@@ -27,7 +27,8 @@ import {
   Toggle,
 } from '@/components/ui';
 import { COMPANY_NAME } from '@/lib/brand';
-import { useApp } from '@/context/AppContext';
+import { useApp, useNoOfficeAssigned } from '@/context/AppContext';
+import { NoOfficeAssigned } from '@/components/NoOfficeAssigned';
 import { SalesOrderDocument } from '@/components/sales-order/SalesOrderDocument';
 import { resolveSalesOrder } from '@/lib/salesOrder';
 import { OFFICES, officeName } from '@/data/offices';
@@ -140,6 +141,7 @@ const initialForm = (officeId: string, ct: CommercialTerms): FormState => ({
 
 export default function CreateSalesOrder() {
   const { parties, items, quotations, commercialTerms, role, currentUser, salesOrders, addSalesOrder, addToast } = useApp();
+  const noOffice = useNoOfficeAssigned();
   const navigate = useNavigate();
 
   const defaultOffice = role === 'super_admin' ? OFFICES[0].id : currentUser.officeId;
@@ -540,6 +542,19 @@ export default function CreateSalesOrder() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [preview, form, lines]
   );
+
+  if (noOffice) {
+    return (
+      <>
+        <PageHeader
+          title="Create Sales Order Manually"
+          description="Build a sales order from a customer PO, optionally linked to an accepted quotation, then submit it to ERP Handoff."
+          crumbs={[{ label: 'Sales Orders' }, { label: 'Create SO Manually' }]}
+        />
+        <NoOfficeAssigned />
+      </>
+    );
+  }
 
   return (
     <>

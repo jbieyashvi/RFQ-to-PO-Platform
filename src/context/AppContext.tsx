@@ -43,8 +43,13 @@ export interface Toast {
 
 interface AppState {
   // identity / permissions
-  role: Role;
+  role: Role; // derived from the acting user's role
   setRole: (r: Role) => void;
+  // The employee whose identity the app is currently acting as. A Super Admin
+  // can "Preview as" any employee to demonstrate office-scoped visibility; the
+  // signed-in profile itself never changes.
+  actingUserId: string;
+  setActingUserId: (id: string) => void;
   currentUser: User;
   selectedOfficeId: string; // 'all' or office id (super admin only for 'all')
   setSelectedOfficeId: (id: string) => void;
@@ -100,12 +105,15 @@ const ROLE_TO_USER: Record<Role, string> = {
   super_admin: 'usr-001',
   office_admin: 'usr-002',
   sales_user: 'usr-003',
+  management_viewer: 'usr-012',
 };
 
 let toastSeq = 0;
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [role, setRoleState] = useState<Role>('super_admin');
+  // Identity is driven by which employee we are acting as (default: the Super
+  // Admin). role is derived from that user — never stored independently.
+  const [actingUserId, setActingUserIdState] = useState<string>('usr-001');
   const [selectedOfficeId, setSelectedOfficeId] = useState<string>('all');
 
   const [offices, setOffices] = useState<SalesOffice[]>(OFFICES);
@@ -128,19 +136,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const currentUser = useMemo(() => {
-    const base = users.find((u) => u.id === ROLE_TO_USER[role]) ?? users[0];
-    return base;
-  }, [role, users]);
+    return users.find((u) => u.id === actingUserId) ?? users[0];
+  }, [actingUserId, users]);
 
+  const role = currentUser.role;
+
+  // Switch the acting employee ("Preview as"). Office-scoped roles are pinned to
+  // their own office; a Super Admin defaults back to viewing all offices.
+  const setActingUserId = _useCallback(
+    (id: string) => {
+      setActingUserIdState(id);
+      const u = USERS.find((x) => x.id === id) ?? users.find((x) => x.id === id);
+      if (u && u.role === 'super_admin') setSelectedOfficeId('all');
+      else if (u) setSelectedOfficeId(u.officeId || 'all');
+    },
+    [users]
+  );
+
+  // Backwards-compatible: pick a representative employee for the requested role.
   const setRole = _useCallback(
     (r: Role) => {
-      setRoleState(r);
-      const u = USERS.find((x) => x.id === ROLE_TO_USER[r]);
-      // office roles are pinned to their own office; super admin defaults to "all"
-      if (r === 'super_admin') setSelectedOfficeId('all');
-      else if (u) setSelectedOfficeId(u.officeId);
+      setActingUserId(ROLE_TO_USER[r] ?? 'usr-001');
     },
-    []
+    [setActingUserId]
   );
 
   const can = _useCallback(
@@ -255,6 +273,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const value: AppState = {
     role,
     setRole,
+    actingUserId,
+    setActingUserId,
     currentUser,
     selectedOfficeId,
     setSelectedOfficeId,
@@ -311,8 +331,18 @@ export function useOfficeScope() {
       if (role === 'super_admin') {
         return selectedOfficeId === 'all' || officeId === selectedOfficeId;
       }
+      // An employee with no office assigned sees no office's business data.
+      if (!currentUser.officeId) return false;
       return officeId === currentUser.officeId;
     },
     [role, selectedOfficeId, currentUser]
   );
+}
+
+// Whether the current (non–super-admin) user has no office assigned, so
+// office-scoped screens should show the "no office assigned" empty state
+// instead of silently showing nothing.
+export function useNoOfficeAssigned() {
+  const { role, currentUser } = useApp();
+  return role !== 'super_admin' && !currentUser.officeId;
 }

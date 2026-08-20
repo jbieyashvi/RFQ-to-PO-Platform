@@ -16,7 +16,8 @@ import {
   type FilterChip,
 } from '@/components/ui';
 import { SalesOrderDetailsDrawer } from '@/components/SalesOrderDetails';
-import { useApp, useOfficeScope } from '@/context/AppContext';
+import { NoOfficeAssigned } from '@/components/NoOfficeAssigned';
+import { useApp, useOfficeScope, useNoOfficeAssigned } from '@/context/AppContext';
 import { OFFICES, officeName } from '@/data/offices';
 import type { SalesOrder } from '@/types';
 import { ERP_HANDOFF_STATE, ERP_HANDOFF_SOURCE } from '@/lib/labels';
@@ -34,6 +35,7 @@ const HANDOFF_STATES = [
 export default function ErpHandoff() {
   const { salesOrders, role, currentUser, can, updateSalesOrder, addToast } = useApp();
   const inScope = useOfficeScope();
+  const noOffice = useNoOfficeAssigned();
   const location = useLocation();
 
   const [search, setSearch] = useState('');
@@ -159,6 +161,19 @@ export default function ErpHandoff() {
       ),
     },
   ];
+
+  if (noOffice) {
+    return (
+      <>
+        <PageHeader
+          title="ERP Handoff"
+          description="Sales Orders ready for manufacturing and ERP processing."
+          crumbs={[{ label: 'ERP Handoff' }]}
+        />
+        <NoOfficeAssigned />
+      </>
+    );
+  }
 
   return (
     <>

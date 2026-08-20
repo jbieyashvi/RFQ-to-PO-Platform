@@ -14,7 +14,8 @@ import {
 import { QuotationDetailsDrawer } from '@/components/QuotationDetails';
 import { WorkflowInlineSelect } from '@/components/WorkflowInlineSelect';
 import { WorkflowUpdateModal, type WorkflowRequest } from '@/components/WorkflowUpdateModal';
-import { useApp, useOfficeScope } from '@/context/AppContext';
+import { NoOfficeAssigned } from '@/components/NoOfficeAssigned';
+import { useApp, useOfficeScope, useNoOfficeAssigned } from '@/context/AppContext';
 import { OFFICES, officeName } from '@/data/offices';
 import { QUOTATION_STAGE, QUOTATION_STATUS } from '@/lib/labels';
 import type { Quotation, QuotationStage, QuotationStatus } from '@/types';
@@ -26,6 +27,7 @@ export default function QuotationsList() {
   const { quotations, role, can, addToast } = useApp();
   const canEdit = can('quotations', 'edit');
   const inScope = useOfficeScope();
+  const noOffice = useNoOfficeAssigned();
   const [params, setParams] = useSearchParams();
 
   const [qtnNumber, setQtnNumber] = useState(params.get('q') ?? '');
@@ -182,6 +184,19 @@ export default function QuotationsList() {
       ),
     },
   ];
+
+  if (noOffice) {
+    return (
+      <>
+        <PageHeader
+          title="List of Quotations"
+          description="Master view of all quotations. Every quotation is tagged to a sales office."
+          crumbs={[{ label: 'Sales Quotations' }, { label: 'List of Quotations' }]}
+        />
+        <NoOfficeAssigned />
+      </>
+    );
+  }
 
   return (
     <>

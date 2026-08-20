@@ -11,6 +11,7 @@ import Dashboard from '@/pages/Dashboard';
 import GlobalInbox from '@/pages/inbox/GlobalInbox';
 import ItemMaster from '@/pages/master/ItemMaster';
 import PartyMaster from '@/pages/master/PartyMaster';
+import EmployeeMaster from '@/pages/master/EmployeeMaster';
 import OfficeMaster from '@/pages/master/OfficeMaster';
 import HsnMaster from '@/pages/master/HsnMaster';
 import TermsMaster from '@/pages/master/TermsMaster';
@@ -68,6 +69,14 @@ export default function App() {
           element={
             <RequirePermission module="party_master">
               <PartyMaster />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="/master/employees"
+          element={
+            <RequirePermission module="employee_master">
+              <EmployeeMaster />
             </RequirePermission>
           }
         />

@@ -5,7 +5,8 @@ import { Inbox, ArrowLeft, MailOpen, FileText, RefreshCw, ClipboardCheck, FilePe
 import { PageHeader } from '@/layout/PageHeader';
 import { SearchInput, FilterSelect, FilterBar, EmptyState, type FilterChip } from '@/components/ui';
 import { Tabs } from '@/components/ui/misc';
-import { useApp, useOfficeScope } from '@/context/AppContext';
+import { useApp, useOfficeScope, useNoOfficeAssigned } from '@/context/AppContext';
+import { NoOfficeAssigned } from '@/components/NoOfficeAssigned';
 import { OWNERS } from '@/data/users';
 import { INBOX_CLASSIFICATION } from '@/lib/labels';
 import type { EmailClassification, InboxEmail } from '@/types';
@@ -25,6 +26,7 @@ export default function GlobalInbox() {
   // Office scope still applies in the background (a user only sees emails for
   // offices they may access) — but there is no office FILTER on this screen.
   const inScope = useOfficeScope();
+  const noOffice = useNoOfficeAssigned();
   const [params, setParams] = useSearchParams();
 
   const [tab, setTab] = useState<Tab>('all');
@@ -222,6 +224,19 @@ export default function GlobalInbox() {
   if (owner) chips.push({ key: 'o', label: `Owner: ${owner}`, onRemove: () => setOwner('') });
   if (dateFrom || dateTo)
     chips.push({ key: 'd', label: `Date: ${dateFrom || '…'} → ${dateTo || '…'}`, onRemove: () => { setDateFrom(''); setDateTo(''); } });
+
+  if (noOffice) {
+    return (
+      <>
+        <PageHeader
+          title="Global Inbox"
+          description="AI classifies, extracts and drafts. Every outgoing email is human-reviewed and approved before sending."
+          crumbs={[{ label: 'Global Inbox' }]}
+        />
+        <NoOfficeAssigned />
+      </>
+    );
+  }
 
   return (
     <>

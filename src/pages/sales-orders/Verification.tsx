@@ -13,7 +13,8 @@ import {
   type Column,
   type FilterChip,
 } from '@/components/ui';
-import { useApp, useOfficeScope } from '@/context/AppContext';
+import { NoOfficeAssigned } from '@/components/NoOfficeAssigned';
+import { useApp, useOfficeScope, useNoOfficeAssigned } from '@/context/AppContext';
 import { OFFICES, officeName } from '@/data/offices';
 import { VERIFICATION_STATUS } from '@/lib/labels';
 import type { SalesOrder, VerificationStatus } from '@/types';
@@ -22,6 +23,7 @@ import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 export default function Verification() {
   const { salesOrders, emails, role, addToast } = useApp();
   const inScope = useOfficeScope();
+  const noOffice = useNoOfficeAssigned();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [office, setOffice] = useState('');
@@ -78,6 +80,19 @@ export default function Verification() {
       ),
     },
   ];
+
+  if (noOffice) {
+    return (
+      <>
+        <PageHeader
+          title="PO vs Quote Verification"
+          description="Open each customer PO in the Global Inbox to compare it against its accepted quotation before a sales order is generated."
+          crumbs={[{ label: 'Sales Orders' }, { label: 'PO vs Quote Verification' }]}
+        />
+        <NoOfficeAssigned />
+      </>
+    );
+  }
 
   return (
     <>

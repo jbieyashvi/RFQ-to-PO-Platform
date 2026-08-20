@@ -10,7 +10,8 @@ import {
   Pagination,
   type Column,
 } from '@/components/ui';
-import { useApp, useOfficeScope } from '@/context/AppContext';
+import { NoOfficeAssigned } from '@/components/NoOfficeAssigned';
+import { useApp, useOfficeScope, useNoOfficeAssigned } from '@/context/AppContext';
 import { officeName, officeCode } from '@/data/offices';
 import { APP_NAME, emailSignature } from '@/lib/brand';
 import type { InboxEmail, Quotation } from '@/types';
@@ -134,6 +135,7 @@ function officeEmail(officeId: string) {
 export default function QuotesPending() {
   const { quotations, parties, emails, can, addEmail } = useApp();
   const inScope = useOfficeScope();
+  const noOffice = useNoOfficeAssigned();
   const navigate = useNavigate();
   const loading = useSimulatedLoading([]);
 
@@ -393,6 +395,19 @@ export default function QuotesPending() {
         ),
       }
     : { title: 'Nothing pending', message: 'Every quotation has been sent. 🎉' };
+
+  if (noOffice) {
+    return (
+      <>
+        <PageHeader
+          title="Quotes Pending to be Sent"
+          description="Open each inquiry in the Global Inbox to review and send its quotation to the customer."
+          crumbs={[{ label: 'Sales Quotations' }, { label: 'Quotes Pending to be Sent' }]}
+        />
+        <NoOfficeAssigned />
+      </>
+    );
+  }
 
   return (
     <>

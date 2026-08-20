@@ -2,19 +2,40 @@ import type { FeaturePermissions, InboxPermissions, PermissionMatrix, Role } fro
 import { makeMatrix } from './permissions';
 
 // ---------------------------------------------------------------------------
-// Granular permission model for Sales Office Master.
+// Granular permission model — the single source of truth edited in the
+// EMPLOYEE MASTER permission matrix.
 //
-// Groups → sub-sections → only the ACTIONS that are meaningful for each
-// sub-section. This is the single source of truth edited in the user modal;
-// the legacy coarse PermissionMatrix / InboxPermissions are derived from it
-// (see deriveLegacyPermissions / deriveInbox) so existing sidebar, route and
-// action-button gating continues to work without touching every page.
+// Groups → sections (rows) → only the ACTIONS (columns) that are meaningful for
+// each section. The seven generic actions mirror the client's matrix spec:
+//   View · Add/Create · Edit · Delete · Download · Approve · Send/Submit
+//
+// The legacy coarse PermissionMatrix / InboxPermissions the rest of the app
+// gates on (sidebar, routes, action buttons) are DERIVED from this model (see
+// deriveLegacyPermissions / deriveInbox) so no page has to change.
+//
+// Office assignment (Sales Office Master) is a SEPARATE data-scope concern and
+// never touches these permissions.
 // ---------------------------------------------------------------------------
+
+export type FpAction = 'view' | 'create' | 'edit' | 'delete' | 'download' | 'approve' | 'send';
+
+// Fixed column order for the matrix.
+export const FP_ACTIONS: FpAction[] = ['view', 'create', 'edit', 'delete', 'download', 'approve', 'send'];
+
+export const FP_ACTION_LABELS: Record<string, string> = {
+  view: 'View',
+  create: 'Add / Create',
+  edit: 'Edit',
+  delete: 'Delete',
+  download: 'Download',
+  approve: 'Approve',
+  send: 'Send / Submit',
+};
 
 export interface SectionConfig {
   key: string;
   label: string;
-  actions: string[];
+  actions: FpAction[];
 }
 export interface GroupConfig {
   key: string;
@@ -22,54 +43,13 @@ export interface GroupConfig {
   sections: SectionConfig[];
 }
 
-export const FP_ACTION_LABELS: Record<string, string> = {
-  view: 'View',
-  create: 'Create',
-  edit: 'Edit',
-  delete: 'Delete',
-  download: 'Download',
-  // Sales Office Master
-  create_office: 'Create Office',
-  edit_office: 'Edit Office',
-  toggle_active: 'Activate/Deactivate Office',
-  manage_users: 'Manage Users',
-  manage_permissions: 'Manage Permissions',
-  // Quotations
-  review: 'Review',
-  send: 'Send',
-  upload_revision: 'Revise Quote',
-  change_status: 'Change Status',
-  change_review_date: 'Change Review Date',
-  // PO vs Quote Verification
-  compare: 'Compare',
-  request_corrected_po: 'Request Corrected PO',
-  open_latest_quote: 'Open Latest Quote',
-  send_email: 'Send Email',
-  continue_to_so: 'Continue to SO Generation',
-  // Sales Order Revision
-  approve_revision: 'Approve Revision',
-  return_to_draft: 'Return to Draft',
-  // Create SO Manually
-  submit_erp: 'Submit to ERP Handoff',
-  // Global Inbox
-  classify: 'Classify',
-  edit_extraction: 'Edit Extraction',
-  draft_reply: 'Draft Reply',
-  approve: 'Approve',
-  reassign: 'Reassign',
-  // ERP Handoff
-  handover: 'Handover to ERP',
-};
-
 export const PERMISSION_GROUPS: GroupConfig[] = [
   {
-    key: 'dashboard',
-    label: 'Dashboard',
+    key: 'general',
+    label: 'General',
     sections: [
-      { key: 'dash_pipeline', label: 'Pipeline Funnel', actions: ['view'] },
-      { key: 'dash_conversion', label: 'Conversion Funnel', actions: ['view'] },
-      { key: 'dash_action_required', label: 'Action Required', actions: ['view'] },
-      { key: 'dash_overdue', label: 'Overdue Tasks', actions: ['view'] },
+      { key: 'dashboard', label: 'Dashboard', actions: ['view'] },
+      { key: 'global_inbox', label: 'Global Inbox', actions: ['view', 'edit', 'approve', 'send'] },
     ],
   },
   {
@@ -78,11 +58,8 @@ export const PERMISSION_GROUPS: GroupConfig[] = [
     sections: [
       { key: 'item_master', label: 'Item Master', actions: ['view', 'create', 'edit', 'delete', 'download'] },
       { key: 'party_master', label: 'Party Master', actions: ['view', 'create', 'edit', 'delete', 'download'] },
-      {
-        key: 'office_master',
-        label: 'Sales Office Master',
-        actions: ['view', 'create_office', 'edit_office', 'toggle_active', 'manage_users', 'manage_permissions'],
-      },
+      { key: 'employee_master', label: 'Employee Master', actions: ['view', 'create', 'edit', 'delete'] },
+      { key: 'office_master', label: 'Sales Office Master', actions: ['view', 'create', 'edit', 'delete'] },
       { key: 'hsn_master', label: 'HSN Master', actions: ['view', 'create', 'edit', 'delete', 'download'] },
       { key: 'tc_master', label: 'T&C Master', actions: ['view', 'create', 'edit', 'delete', 'download'] },
     ],
@@ -91,95 +68,40 @@ export const PERMISSION_GROUPS: GroupConfig[] = [
     key: 'quotations',
     label: 'Sales Quotations',
     sections: [
-      { key: 'quotes_pending', label: 'Quotes Pending to be Sent', actions: ['view', 'edit', 'review', 'send', 'download'] },
-      {
-        key: 'quotes_revision',
-        label: 'Quotes Needing Revision',
-        actions: ['view', 'edit', 'upload_revision', 'review', 'send', 'download'],
-      },
-      {
-        key: 'quotes_list',
-        label: 'List of Quotations',
-        actions: ['view', 'edit', 'change_status', 'change_review_date', 'download'],
-      },
+      { key: 'quotes_pending', label: 'Quotes Pending to be Sent', actions: ['view', 'edit', 'download', 'send'] },
+      { key: 'quotes_revision', label: 'Quotes Needing Revision', actions: ['view', 'edit', 'download', 'send'] },
+      { key: 'quotes_list', label: 'List of Quotations', actions: ['view', 'edit', 'download'] },
     ],
   },
   {
     key: 'sales_orders',
     label: 'Sales Orders',
     sections: [
-      {
-        key: 'po_verification',
-        label: 'PO vs Quote Verification',
-        actions: ['view', 'compare', 'request_corrected_po', 'open_latest_quote', 'send_email', 'continue_to_so'],
-      },
+      { key: 'po_verification', label: 'PO vs Quote Verification', actions: ['view', 'edit', 'send'] },
       { key: 'so_list', label: 'List of Sales Orders', actions: ['view', 'download'] },
-      {
-        key: 'so_revision',
-        label: 'Sales Order Revision',
-        actions: ['view', 'edit', 'approve_revision', 'return_to_draft', 'download'],
-      },
-      { key: 'so_create', label: 'Create SO Manually', actions: ['view', 'create', 'submit_erp', 'download'] },
+      { key: 'so_revision', label: 'Sales Order Revision', actions: ['view', 'edit', 'approve', 'send'] },
+      { key: 'so_create', label: 'Create SO Manually', actions: ['view', 'create', 'send'] },
     ],
   },
   {
-    key: 'global_inbox',
-    label: 'Global Inbox',
-    sections: [
-      {
-        key: 'global_inbox',
-        label: 'Global Inbox',
-        actions: ['view', 'classify', 'edit_extraction', 'draft_reply', 'approve', 'send', 'reassign'],
-      },
-    ],
+    key: 'operations',
+    label: 'Operations',
+    sections: [{ key: 'erp_handoff', label: 'ERP Handoff', actions: ['view', 'edit', 'download'] }],
   },
   {
-    key: 'erp_handoff',
-    label: 'ERP Handoff',
-    sections: [{ key: 'erp_handoff', label: 'ERP Handoff', actions: ['view', 'download', 'handover'] }],
+    key: 'management',
+    label: 'Management',
+    sections: [{ key: 'mis_reports', label: 'MIS Reports', actions: ['view', 'download'] }],
   },
 ];
 
 export const ALL_SECTIONS: SectionConfig[] = PERMISSION_GROUPS.flatMap((g) => g.sections);
 const SECTION_BY_KEY: Record<string, SectionConfig> = Object.fromEntries(ALL_SECTIONS.map((s) => [s.key, s]));
 
-// ---------- Dependency rules ----------
-interface Dependency {
-  section: string;
-  action: string;
-  requires: { section: string; action: string }[];
-  reason: string;
+// Whether a given action column applies to a section (renders a checkbox).
+export function sectionHasAction(sectionKey: string, action: string): boolean {
+  return !!SECTION_BY_KEY[sectionKey]?.actions.includes(action as FpAction);
 }
-
-const DEPENDENCIES: Dependency[] = [
-  {
-    section: 'po_verification',
-    action: 'continue_to_so',
-    requires: [
-      { section: 'po_verification', action: 'view' },
-      { section: 'po_verification', action: 'compare' },
-    ],
-    reason: 'Requires View and Compare',
-  },
-  {
-    section: 'office_master',
-    action: 'manage_permissions',
-    requires: [
-      { section: 'office_master', action: 'view' },
-      { section: 'office_master', action: 'manage_users' },
-    ],
-    reason: 'Requires View and Manage Users',
-  },
-  {
-    section: 'global_inbox',
-    action: 'send',
-    requires: [
-      { section: 'global_inbox', action: 'view' },
-      { section: 'global_inbox', action: 'approve' },
-    ],
-    reason: 'Requires Approve',
-  },
-];
 
 // ---------- Construction helpers ----------
 export function emptyFeaturePermissions(): FeaturePermissions {
@@ -197,41 +119,30 @@ export function cloneFeature(src: FeaturePermissions): FeaturePermissions {
   return fp;
 }
 
-function fill(fp: FeaturePermissions, sectionKey: string, actions: string[] | 'all') {
+function fill(fp: FeaturePermissions, sectionKey: string, actions: FpAction[] | 'all') {
   const sec = SECTION_BY_KEY[sectionKey];
   for (const a of sec.actions) fp[sectionKey][a] = actions === 'all' ? true : actions.includes(a);
 }
 
-// Enforce all dependency + view-gating rules. Idempotent — safe to run after
-// every change.
+// Enforce view-gating: a section with View off cannot hold any other action.
+// Idempotent — safe to run after every change.
 export function applyDependencies(src: FeaturePermissions): FeaturePermissions {
   const fp = cloneFeature(src);
-  // 1. If a sub-section's View is off, every other action in it is off.
   for (const s of ALL_SECTIONS) {
     if (!fp[s.key].view) {
       for (const a of s.actions) if (a !== 'view') fp[s.key][a] = false;
     }
   }
-  // 2. Explicit cross-action dependencies.
-  for (const d of DEPENDENCIES) {
-    const ok = d.requires.every((r) => fp[r.section]?.[r.action]);
-    if (!ok) fp[d.section][d.action] = false;
-  }
   return fp;
 }
 
-// Is a control locked (and why)? Drives the disabled state + inline reason.
+// Is a control locked (and why)? Non-view actions require View first.
 export function actionLock(
   fp: FeaturePermissions,
   sectionKey: string,
   action: string
 ): { disabled: boolean; reason?: string } {
-  if (action !== 'view' && !fp[sectionKey].view) return { disabled: true, reason: 'Enable View first' };
-  const dep = DEPENDENCIES.find((d) => d.section === sectionKey && d.action === action);
-  if (dep) {
-    const ok = dep.requires.every((r) => fp[r.section]?.[r.action]);
-    if (!ok) return { disabled: true, reason: dep.reason };
-  }
+  if (action !== 'view' && !fp[sectionKey]?.view) return { disabled: true, reason: 'Enable View first' };
   return { disabled: false };
 }
 
@@ -244,36 +155,61 @@ export function makeFeaturePermissions(role: Role): FeaturePermissions {
     return applyDependencies(fp);
   }
 
-  // Both Office Admin and Sales User can view all four Dashboard sections.
-  ['dash_pipeline', 'dash_conversion', 'dash_action_required', 'dash_overdue'].forEach((k) => fill(fp, k, ['view']));
-
   if (role === 'office_admin') {
-    ['item_master', 'party_master', 'hsn_master', 'tc_master'].forEach((k) => fill(fp, k, ['view', 'create', 'edit']));
-    fill(fp, 'office_master', ['view', 'edit_office', 'manage_users']);
-    ['quotes_pending', 'quotes_revision', 'quotes_list'].forEach((k) => fill(fp, k, 'all'));
-    ['po_verification', 'so_list', 'so_revision', 'so_create'].forEach((k) => fill(fp, k, 'all'));
-    fill(fp, 'global_inbox', 'all');
-    fill(fp, 'erp_handoff', 'all');
+    fill(fp, 'dashboard', ['view']);
+    fill(fp, 'global_inbox', ['view', 'edit', 'approve', 'send']);
+    // Read-only on masters; can assign employees to their office (office edit).
+    ['item_master', 'party_master', 'hsn_master', 'tc_master'].forEach((k) => fill(fp, k, ['view']));
+    fill(fp, 'employee_master', ['view']); // cannot manage employee permissions by default
+    fill(fp, 'office_master', ['view', 'edit']);
+    // Transactions for the assigned office.
+    fill(fp, 'quotes_pending', ['view', 'edit', 'download', 'send']);
+    fill(fp, 'quotes_revision', ['view', 'edit', 'download', 'send']);
+    fill(fp, 'quotes_list', ['view', 'edit', 'download']);
+    fill(fp, 'po_verification', ['view', 'edit', 'send']);
+    fill(fp, 'so_list', ['view', 'download']);
+    fill(fp, 'so_revision', ['view', 'edit', 'approve', 'send']);
+    fill(fp, 'so_create', ['view', 'create', 'send']);
+    fill(fp, 'erp_handoff', ['view', 'edit', 'download']);
+    fill(fp, 'mis_reports', ['view', 'download']);
+    return applyDependencies(fp);
+  }
+
+  if (role === 'management_viewer') {
+    // View Dashboard + MIS, download reports, read-only lists. Nothing else.
+    fill(fp, 'dashboard', ['view']);
+    ['item_master', 'party_master', 'employee_master', 'office_master', 'hsn_master', 'tc_master'].forEach((k) =>
+      fill(fp, k, ['view'])
+    );
+    fill(fp, 'quotes_pending', ['view']);
+    fill(fp, 'quotes_revision', ['view']);
+    fill(fp, 'quotes_list', ['view', 'download']);
+    fill(fp, 'po_verification', ['view']);
+    fill(fp, 'so_list', ['view', 'download']);
+    fill(fp, 'so_revision', ['view']);
+    fill(fp, 'erp_handoff', ['view', 'download']);
+    fill(fp, 'mis_reports', ['view', 'download']);
     return applyDependencies(fp);
   }
 
   // sales_user
+  fill(fp, 'dashboard', ['view']);
+  fill(fp, 'global_inbox', ['view', 'edit']); // triage/classify/extract/draft — no approve/send
   ['item_master', 'party_master', 'hsn_master', 'tc_master'].forEach((k) => fill(fp, k, ['view']));
-  // Sales Office Master: no access (all false)
-  fill(fp, 'quotes_pending', ['view', 'edit', 'review', 'download']);
-  fill(fp, 'quotes_revision', ['view', 'edit', 'upload_revision', 'review', 'download']);
-  fill(fp, 'quotes_list', ['view', 'edit', 'change_status', 'change_review_date', 'download']);
-  fill(fp, 'po_verification', ['view', 'compare', 'request_corrected_po', 'open_latest_quote', 'send_email']);
+  // No access to Employee Master or Sales Office Master.
+  fill(fp, 'quotes_pending', ['view', 'edit', 'download', 'send']);
+  fill(fp, 'quotes_revision', ['view', 'edit', 'download', 'send']);
+  fill(fp, 'quotes_list', ['view', 'edit', 'download']);
+  fill(fp, 'po_verification', ['view', 'edit']);
   fill(fp, 'so_list', ['view', 'download']);
-  fill(fp, 'so_revision', ['view', 'edit', 'download']);
+  fill(fp, 'so_revision', ['view', 'edit']);
   fill(fp, 'so_create', ['view', 'create']);
-  fill(fp, 'global_inbox', ['view', 'classify', 'edit_extraction', 'draft_reply']);
   fill(fp, 'erp_handoff', ['view']);
   return applyDependencies(fp);
 }
 
-// Deep equality vs a role's defaults — used to warn before a role change
-// discards custom overrides.
+// Deep equality vs a role's defaults — used to warn before a role change or save
+// discards / diverges from the preset.
 export function equalsFeature(a: FeaturePermissions, b: FeaturePermissions): boolean {
   for (const s of ALL_SECTIONS) {
     for (const act of s.actions) {
@@ -306,8 +242,9 @@ export function deriveLegacyPermissions(fp: FeaturePermissions): PermissionMatri
   const anyView = (keys: string[]) => keys.some((k) => fp[k]?.view);
   const any = (keys: string[], action: string) => keys.some((k) => fp[k]?.[action]);
 
-  m.dashboard.view = anyView(['dash_pipeline', 'dash_conversion', 'dash_action_required', 'dash_overdue']);
+  m.dashboard.view = !!fp.dashboard?.view;
 
+  // Masters with full CRUD + download.
   for (const k of ['item_master', 'party_master', 'hsn_master', 'tc_master'] as const) {
     m[k].view = !!fp[k].view;
     m[k].create = !!fp[k].create;
@@ -316,11 +253,14 @@ export function deriveLegacyPermissions(fp: FeaturePermissions): PermissionMatri
     m[k].download = !!fp[k].download;
   }
 
-  m.office_master.view = !!fp.office_master.view;
-  m.office_master.create = !!fp.office_master.create_office;
-  m.office_master.edit = !!(fp.office_master.edit_office || fp.office_master.manage_users);
-  m.office_master.delete = false;
-  m.office_master.download = false;
+  // Employee Master + Sales Office Master (no download action in the model).
+  for (const k of ['employee_master', 'office_master'] as const) {
+    m[k].view = !!fp[k].view;
+    m[k].create = !!fp[k].create;
+    m[k].edit = !!fp[k].edit;
+    m[k].delete = !!fp[k].delete;
+    m[k].download = false;
+  }
 
   const qsec = ['quotes_pending', 'quotes_revision', 'quotes_list'];
   m.quotations.view = anyView(qsec);
@@ -331,31 +271,38 @@ export function deriveLegacyPermissions(fp: FeaturePermissions): PermissionMatri
 
   const ssec = ['po_verification', 'so_list', 'so_revision', 'so_create'];
   m.sales_orders.view = anyView(ssec);
-  m.sales_orders.edit = !!(fp.so_revision.edit || fp.po_verification.continue_to_so || fp.so_create.submit_erp);
-  m.sales_orders.create = !!fp.so_create.create;
+  m.sales_orders.edit = any(['po_verification', 'so_revision'], 'edit') || !!fp.so_create?.send;
+  m.sales_orders.create = !!fp.so_create?.create;
   m.sales_orders.download = any(ssec, 'download');
   m.sales_orders.delete = false;
 
-  // ERP Handoff — its own top-level module. "Handover to ERP" maps to the coarse
-  // `edit` action so can('erp_handoff','edit') gates the handover control.
+  // ERP Handoff — Edit maps to "Handover to ERP".
   m.erp_handoff.view = !!fp.erp_handoff?.view;
   m.erp_handoff.download = !!fp.erp_handoff?.download;
-  m.erp_handoff.edit = !!fp.erp_handoff?.handover;
+  m.erp_handoff.edit = !!fp.erp_handoff?.edit;
   m.erp_handoff.create = false;
   m.erp_handoff.delete = false;
+
+  // MIS Reports — placeholder module (view + download only).
+  m.mis_reports.view = !!fp.mis_reports?.view;
+  m.mis_reports.download = !!fp.mis_reports?.download;
+  m.mis_reports.create = false;
+  m.mis_reports.edit = false;
+  m.mis_reports.delete = false;
 
   return m;
 }
 
 export function deriveInbox(fp: FeaturePermissions): InboxPermissions {
-  const g = fp.global_inbox;
+  const g = fp.global_inbox ?? {};
   return {
     view: !!g.view,
-    classify: !!g.classify,
-    edit_extraction: !!g.edit_extraction,
-    draft_reply: !!g.draft_reply,
+    // "Edit" covers the working actions on an email.
+    classify: !!g.edit,
+    edit_extraction: !!g.edit,
+    draft_reply: !!g.edit,
     approve: !!g.approve,
     send: !!g.send,
-    reassign: !!g.reassign,
+    reassign: !!g.approve,
   };
 }

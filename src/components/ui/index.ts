@@ -18,5 +18,6 @@ export type { FilterChip } from './FilterBar';
 export { ActivityTimeline } from './ActivityTimeline';
 export { PermissionMatrix } from './PermissionMatrix';
 export { PermissionGroups } from './PermissionGroups';
+export { PermissionMatrixEditor } from './PermissionMatrixEditor';
 export { ItemLineEditor } from './ItemLineEditor';
 export { SectionCard, DescList, Tabs, InfoRow } from './misc';

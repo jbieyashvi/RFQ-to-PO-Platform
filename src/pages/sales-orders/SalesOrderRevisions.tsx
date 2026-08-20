@@ -12,7 +12,8 @@ import {
   type Column,
   type FilterChip,
 } from '@/components/ui';
-import { useApp, useOfficeScope } from '@/context/AppContext';
+import { NoOfficeAssigned } from '@/components/NoOfficeAssigned';
+import { useApp, useOfficeScope, useNoOfficeAssigned } from '@/context/AppContext';
 import { OFFICES, officeName } from '@/data/offices';
 import type { SalesOrder } from '@/types';
 import { formatDate } from '@/lib/format';
@@ -21,6 +22,7 @@ import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 export default function SalesOrderRevisions() {
   const { salesOrders, role, emails } = useApp();
   const inScope = useOfficeScope();
+  const noOffice = useNoOfficeAssigned();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [office, setOffice] = useState('');
@@ -76,6 +78,19 @@ export default function SalesOrderRevisions() {
       ),
     },
   ];
+
+  if (noOffice) {
+    return (
+      <>
+        <PageHeader
+          title="Sales Order Revision"
+          description="Sales orders under revision. Open a record to handle the client's revision request in the Global Inbox and issue a revised Sales Order."
+          crumbs={[{ label: 'Sales Orders' }, { label: 'Sales Order Revision' }]}
+        />
+        <NoOfficeAssigned />
+      </>
+    );
+  }
 
   return (
     <>

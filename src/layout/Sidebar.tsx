@@ -3,7 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
 import type { ModuleKey } from '@/types';
 import { useApp, useOfficeScope } from '@/context/AppContext';
-import { NAV, MASTER_CHILD_MODULE } from './nav';
+import { NAV, CHILD_SECTION } from './nav';
 import { classNames } from '@/lib/format';
 import { FlowtechLogo, FlowtechMonogram } from '@/components/Brand';
 import { APP_SUBTITLE } from '@/lib/brand';
@@ -22,7 +22,7 @@ export function Sidebar({
   mobileOpen: boolean;
   onCloseMobile: () => void;
 }) {
-  const { can, canInbox, emails, setSidebarCollapsed } = useApp();
+  const { can, canInbox, emails, setSidebarCollapsed, currentUser } = useApp();
   const inScope = useOfficeScope();
   const location = useLocation();
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
@@ -160,11 +160,15 @@ export function Sidebar({
             );
           }
 
-          // group with children — filter children by per-child module for masters
+          // group with children — hide any sub-route the acting user has no View
+          // on. Uses the fine-grained featurePermissions section so sub-routes
+          // sharing one coarse module (e.g. every Sales Orders screen) are still
+          // gated individually — a Management Viewer sees the group but not
+          // "Create SO Manually".
           const children = item.children.filter((c) => {
-            const mod = MASTER_CHILD_MODULE[c.to];
-            if (!mod) return true;
-            return can(mod, 'view');
+            const section = CHILD_SECTION[c.to];
+            if (!section) return true;
+            return !!currentUser.featurePermissions?.[section]?.view;
           });
           if (children.length === 0) return null;
 

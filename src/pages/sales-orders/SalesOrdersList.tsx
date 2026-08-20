@@ -13,7 +13,8 @@ import {
   type FilterChip,
 } from '@/components/ui';
 import { SalesOrderDetailsDrawer } from '@/components/SalesOrderDetails';
-import { useApp, useOfficeScope } from '@/context/AppContext';
+import { NoOfficeAssigned } from '@/components/NoOfficeAssigned';
+import { useApp, useOfficeScope, useNoOfficeAssigned } from '@/context/AppContext';
 import { OFFICES, officeName } from '@/data/offices';
 import type { SalesOrder } from '@/types';
 import { downloadCSV, downloadText, formatDateTime, formatINR } from '@/lib/format';
@@ -25,6 +26,7 @@ const iconBtn =
 export default function SalesOrdersList() {
   const { salesOrders, role, can, addToast } = useApp();
   const inScope = useOfficeScope();
+  const noOffice = useNoOfficeAssigned();
   const [params, setParams] = useSearchParams();
 
   const [search, setSearch] = useState('');
@@ -136,12 +138,15 @@ export default function SalesOrdersList() {
         crumbs={[{ label: 'Sales Orders' }, { label: 'List of Sales Orders' }]}
         actions={
           <>
-            {can('sales_orders', 'download') && <Button variant="secondary" leftIcon={<Download className="h-4 w-4" />} onClick={exportCSV}>Download CSV ({filtered.length})</Button>}
-            {can('sales_orders', 'create') && <Link to="/sales-orders/create"><Button variant="primary" leftIcon={<Plus className="h-4 w-4" />}>Create SO</Button></Link>}
+            {!noOffice && can('sales_orders', 'download') && <Button variant="secondary" leftIcon={<Download className="h-4 w-4" />} onClick={exportCSV}>Download CSV ({filtered.length})</Button>}
+            {!noOffice && can('sales_orders', 'create') && <Link to="/sales-orders/create"><Button variant="primary" leftIcon={<Plus className="h-4 w-4" />}>Create SO</Button></Link>}
           </>
         }
       />
 
+      {noOffice ? (
+        <NoOfficeAssigned />
+      ) : (
       <div className="card">
         <div className="border-b border-surface-100 p-4">
           <FilterBar chips={chips} onClearAll={clearAll}>
@@ -157,6 +162,7 @@ export default function SalesOrdersList() {
         <DataTable columns={columns} rows={pageRows} rowKey={(r) => r.id} loading={loading} onRowClick={(r) => setActive(r)} emptyTitle="No sales orders found" emptyMessage="Adjust filters or create a sales order." />
         {!loading && total > 0 && <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={setPageSize} />}
       </div>
+      )}
 
       <SalesOrderDetailsDrawer order={active} onClose={() => setActive(null)} />
     </>

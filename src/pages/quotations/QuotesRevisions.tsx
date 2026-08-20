@@ -10,7 +10,8 @@ import {
   Pagination,
   type Column,
 } from '@/components/ui';
-import { useApp, useOfficeScope } from '@/context/AppContext';
+import { NoOfficeAssigned } from '@/components/NoOfficeAssigned';
+import { useApp, useOfficeScope, useNoOfficeAssigned } from '@/context/AppContext';
 import { officeName, officeCode } from '@/data/offices';
 import type { InboxEmail, Quotation } from '@/types';
 import { classNames, compactINR } from '@/lib/format';
@@ -77,6 +78,7 @@ function officeEmail(officeId: string) {
 export default function QuotesRevisions() {
   const { quotations, parties, emails, can, addEmail } = useApp();
   const inScope = useOfficeScope();
+  const noOffice = useNoOfficeAssigned();
   const navigate = useNavigate();
   const loading = useSimulatedLoading([]);
 
@@ -326,6 +328,19 @@ export default function QuotesRevisions() {
         ),
       }
     : { title: 'No revisions pending', message: 'Every customer-requested change has been resolved. 🎉' };
+
+  if (noOffice) {
+    return (
+      <>
+        <PageHeader
+          title="Quotes Needing Revision"
+          description="Customer-requested quotation changes awaiting review and resubmission."
+          crumbs={[{ label: 'Sales Quotations' }, { label: 'Quotes Needing Revision' }]}
+        />
+        <NoOfficeAssigned />
+      </>
+    );
+  }
 
   return (
     <>

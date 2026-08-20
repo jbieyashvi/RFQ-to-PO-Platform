@@ -48,10 +48,11 @@ export const NAV: NavItem[] = [
     key: 'master',
     label: 'Master',
     icon: Landmark,
-    module: ['item_master', 'party_master', 'office_master', 'hsn_master', 'tc_master'],
+    module: ['item_master', 'party_master', 'employee_master', 'office_master', 'hsn_master', 'tc_master'],
     children: [
       { label: 'Item Master', to: '/master/items' },
       { label: 'Party Master', to: '/master/parties' },
+      { label: 'Employee Master', to: '/master/employees' },
       { label: 'Sales Office Master', to: '/master/offices' },
       { label: 'HSN Master', to: '/master/hsn' },
       { label: 'T&C Master', to: '/master/terms' },
@@ -89,13 +90,25 @@ export const NAV: NavItem[] = [
   },
 ];
 
-// map child module -> which master module each master route requires (for per-child gating)
-export const MASTER_CHILD_MODULE: Record<string, ModuleKey> = {
+// Map every nav child route -> the fine-grained featurePermissions SECTION that
+// gates its visibility. Unlike the coarse module matrix (one key per group), this
+// lets the sidebar hide individual sub-routes the acting user has no View on
+// (e.g. a Management Viewer sees the Sales Orders group but not "Create SO
+// Manually"). Sections are the keys from PERMISSION_GROUPS in featurePermissions.
+export const CHILD_SECTION: Record<string, string> = {
   '/master/items': 'item_master',
   '/master/parties': 'party_master',
+  '/master/employees': 'employee_master',
   '/master/offices': 'office_master',
   '/master/hsn': 'hsn_master',
   '/master/terms': 'tc_master',
+  '/quotations/pending': 'quotes_pending',
+  '/quotations/revisions': 'quotes_revision',
+  '/quotations': 'quotes_list',
+  '/sales-orders/verification': 'po_verification',
+  '/sales-orders': 'so_list',
+  '/sales-orders/revisions': 'so_revision',
+  '/sales-orders/create': 'so_create',
 };
 
 export const ICONS = {

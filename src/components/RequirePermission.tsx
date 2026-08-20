@@ -28,7 +28,7 @@ export function RequirePermission({
           {currentUser && <span className="font-medium text-surface-700">{ROLE_LABELS[currentUser.role]}</span>}{' '}
           does not have permission to view{' '}
           <span className="font-medium text-surface-700">{MODULE_LABELS[module]}</span>. Ask an
-          administrator to grant access in Sales Office Master.
+          administrator to grant access in Employee Master.
         </p>
         <div className="mt-5">
           <Link to="/dashboard">
@@ -56,7 +56,7 @@ export function RequireInbox({ children }: { children: ReactNode }) {
           {currentUser && <span className="font-medium text-surface-700">{ROLE_LABELS[currentUser.role]}</span>}{' '}
           does not have permission to view the{' '}
           <span className="font-medium text-surface-700">Global Inbox</span>. Ask an administrator to
-          grant access in Sales Office Master.
+          grant access in Employee Master.
         </p>
         <div className="mt-5">
           <Link to="/dashboard">

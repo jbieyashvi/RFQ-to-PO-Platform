@@ -1,25 +1,28 @@
 // ---------- Roles & Permissions ----------
-export type Role = 'super_admin' | 'office_admin' | 'sales_user';
+export type Role = 'super_admin' | 'office_admin' | 'sales_user' | 'management_viewer';
 
 export type ModuleKey =
   | 'dashboard'
   | 'item_master'
   | 'party_master'
+  | 'employee_master'
   | 'office_master'
   | 'hsn_master'
   | 'tc_master'
   | 'quotations'
   | 'sales_orders'
-  | 'erp_handoff';
+  | 'erp_handoff'
+  | 'mis_reports';
 
 export type ActionKey = 'view' | 'create' | 'edit' | 'delete' | 'download';
 
 export type PermissionMatrix = Record<ModuleKey, Record<ActionKey, boolean>>;
 
-// Granular, sub-section-level permissions edited in Sales Office Master.
-// Keyed by section key -> action key -> enabled. The coarse PermissionMatrix
-// and InboxPermissions above are DERIVED from this on save so existing
-// sidebar / route / action gating keeps working unchanged.
+// Granular, section-level permissions edited in Employee Master (the single
+// source of truth for what an employee can do). Keyed by section key -> action
+// key -> enabled. The coarse PermissionMatrix and InboxPermissions are DERIVED
+// from this on save so existing sidebar / route / action gating keeps working
+// unchanged. Sales Office Master never edits these — it only assigns offices.
 export type FeaturePermissions = Record<string, Record<string, boolean>>;
 
 // ---------- Sales Office ----------
@@ -27,20 +30,42 @@ export interface SalesOffice {
   id: string;
   name: string;
   code: string;
+  zone: string; // zone / region, e.g. "West Zone"
   address: string;
   city: string;
   state: string;
+  phone: string; // office contact number
+  email: string; // office contact email
   active: boolean;
 }
 
-// ---------- Users ----------
+// ---------- Users / Employees ----------
+// A record of an office transfer, preserved so the employee's movement history
+// is auditable in the prototype.
+export interface TransferRecord {
+  id: string;
+  fromOfficeId: string;
+  toOfficeId: string;
+  date: string; // ISO date the transfer happened
+  by: string; // who performed the transfer
+}
+
 export interface User {
   id: string;
+  employeeCode: string; // unique Employee Code / User ID
   fullName: string;
-  email: string;
+  email: string; // work email (unique)
   phone: string;
+  department?: string;
+  designation?: string;
+  reportingManager?: string; // reporting manager's user id (optional)
   role: Role;
-  officeId: string;
+  // Login identity — prototype only, safe dummy credentials in local state.
+  username: string;
+  forcePasswordChange?: boolean; // force change on first login
+  officeId: string; // '' when the employee has no office assigned
+  assignmentDate?: string; // ISO date the current office was assigned
+  transferHistory?: TransferRecord[];
   active: boolean;
   permissions: PermissionMatrix;
   inboxPermissions: InboxPermissions;

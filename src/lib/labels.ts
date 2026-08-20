@@ -29,18 +29,21 @@ export const ROLE_LABELS: Record<Role, string> = {
   super_admin: 'Super Admin',
   office_admin: 'Office Admin',
   sales_user: 'Sales User',
+  management_viewer: 'Management Viewer',
 };
 
 export const MODULE_LABELS: Record<ModuleKey, string> = {
   dashboard: 'Dashboard',
   item_master: 'Item Master',
   party_master: 'Party Master',
+  employee_master: 'Employee Master',
   office_master: 'Sales Office Master',
   hsn_master: 'HSN Master',
   tc_master: 'T&C Master',
   quotations: 'Sales Quotations',
   sales_orders: 'Sales Orders',
   erp_handoff: 'ERP Handoff',
+  mis_reports: 'MIS Reports',
 };
 
 export const ACTION_LABELS: Record<ActionKey, string> = {
@@ -55,12 +58,14 @@ export const MODULE_ORDER: ModuleKey[] = [
   'dashboard',
   'item_master',
   'party_master',
+  'employee_master',
   'office_master',
   'hsn_master',
   'tc_master',
   'quotations',
   'sales_orders',
   'erp_handoff',
+  'mis_reports',
 ];
 
 export const ACTION_ORDER: ActionKey[] = ['view', 'create', 'edit', 'delete', 'download'];

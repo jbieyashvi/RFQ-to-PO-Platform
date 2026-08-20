@@ -11,7 +11,8 @@ import {
 } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import { FilterSelect } from '@/components/ui';
-import { useApp, useOfficeScope } from '@/context/AppContext';
+import { NoOfficeAssigned } from '@/components/NoOfficeAssigned';
+import { useApp, useOfficeScope, useNoOfficeAssigned } from '@/context/AppContext';
 import { OFFICES } from '@/data/offices';
 import {
   pipelineFunnel,
@@ -360,6 +361,7 @@ function OverdueColumn({
 export default function Dashboard() {
   const { quotations, salesOrders, role, visibleOffices } = useApp();
   const inScope = useOfficeScope();
+  const noOffice = useNoOfficeAssigned();
   const navigate = useNavigate();
   const onOpen = (to: string) => navigate(to);
 
@@ -417,8 +419,11 @@ export default function Dashboard() {
         description="Pipeline health and tasks requiring attention across your sales offices."
       />
 
-      {/* 12-column responsive grid: Funnel (8) + Action Required (4) on the top
-          row, Overdue Tasks full-width below. Everything stacks under 1180px. */}
+      {noOffice ? (
+        <NoOfficeAssigned />
+      ) : (
+      /* 12-column responsive grid: Funnel (8) + Action Required (4) on the top
+          row, Overdue Tasks full-width below. Everything stacks under 1180px. */
       <div className="grid grid-cols-1 gap-4 min-[1180px]:grid-cols-12 min-[1180px]:gap-5">
         {/* 1 — PIPELINE FUNNEL */}
         <DashSection
@@ -482,6 +487,7 @@ export default function Dashboard() {
           </div>
         </DashSection>
       </div>
+      )}
     </>
   );
 }
