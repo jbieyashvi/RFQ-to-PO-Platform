@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   User2,
@@ -139,7 +139,7 @@ const initialForm = (officeId: string, ct: CommercialTerms): FormState => ({
 });
 
 export default function CreateSalesOrder() {
-  const { parties, items, quotations, commercialTerms, role, currentUser, addSalesOrder, addToast } = useApp();
+  const { parties, items, quotations, commercialTerms, role, currentUser, salesOrders, addSalesOrder, addToast } = useApp();
   const navigate = useNavigate();
 
   const defaultOffice = role === 'super_admin' ? OFFICES[0].id : currentUser.officeId;
@@ -149,16 +149,32 @@ export default function CreateSalesOrder() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState(false);
   const [confirmCreate, setConfirmCreate] = useState(false);
+  // Synchronous guard so a same-tick double-click can't create two records
+  // (React state updates are async and would not block the second click).
+  const submittedRef = useRef(false);
   const [pendingQuotationId, setPendingQuotationId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
 
+  const clearError = (key: string) => {
+    setErrors((e) => {
+      if (!e[key]) return e;
+      const next = { ...e };
+      delete next[key];
+      return next;
+    });
+  };
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => {
     setForm((f) => ({ ...f, [k]: v }));
     setDirty(true);
+    // Clear the matching validation error as soon as the user provides a value,
+    // so "… is required" disappears immediately on a valid entry.
+    if (v) clearError(k as string);
+    if (k === 'poProofNotes' && v) clearError('poProof');
   };
   const setLinesTracked = (next: LineItem[]) => {
     setLines(next);
     setDirty(true);
+    if (next.length > 0) clearError('lines');
   };
 
   // Warn before leaving the page (tab close / reload) with unsaved edits.
@@ -326,7 +342,23 @@ export default function CreateSalesOrder() {
     return Object.keys(e).length === 0;
   };
 
-  const buildSO = (opts: { withHandoff: boolean }): SalesOrder => {
+  // Generate a Sales Order number that does not collide with any existing one.
+  const nextSoNumber = () => {
+    const used = new Set(salesOrders.map((s) => s.number));
+    const existingSeq = salesOrders
+      .map((s) => /^SO\/2026\/(\d+)$/.exec(s.number)?.[1])
+      .filter(Boolean)
+      .map((n) => parseInt(n as string, 10));
+    let seq = (existingSeq.length ? Math.max(...existingSeq) : 600) + 1;
+    let candidate = `SO/2026/${String(seq).padStart(4, '0')}`;
+    while (used.has(candidate)) {
+      seq += 1;
+      candidate = `SO/2026/${String(seq).padStart(4, '0')}`;
+    }
+    return candidate;
+  };
+
+  const buildSO = (opts: { withHandoff: boolean; soNumber?: string }): SalesOrder => {
     const q = quotations.find((x) => x.id === form.quotationId);
     const paymentTermsText =
       formatPaymentTerms(form.payment) + (form.creditDays > 0 ? `, ${form.creditDays} Credit Days` : '');
@@ -337,7 +369,7 @@ export default function CreateSalesOrder() {
     const salespersonUser = USERS.find((u) => u.fullName === form.owner);
     return {
       id: `so-${Date.now()}`,
-      number: `SO/2026/${String(600 + Math.floor(Math.random() * 399)).padStart(4, '0')}`,
+      number: opts.soNumber ?? nextSoNumber(),
       poNumber: form.poNumber,
       poDate: form.poDate,
       quotationId: form.quotationId || undefined,
@@ -353,7 +385,7 @@ export default function CreateSalesOrder() {
       status: opts.withHandoff ? 'so_sent' : 'draft',
       verificationStatus: form.quotationId ? 'verified' : 'pending',
       receivedDate: form.poDate,
-      createdDate: '2026-08-13',
+      createdDate: now.slice(0, 10),
       deliveryDate: form.expectedDelivery,
       billingAddress: form.billingAddress,
       shippingAddress: consigneeAddress,
@@ -429,7 +461,7 @@ export default function CreateSalesOrder() {
           id: `ver-${Date.now()}-0`,
           label: 'Original',
           version: 0,
-          createdAt: '2026-08-13T09:00:00',
+          createdAt: now,
           by: form.owner,
           reason: 'Initial sales order',
           snapshot: {
@@ -472,10 +504,18 @@ export default function CreateSalesOrder() {
   };
 
   const doCreateAndSubmit = () => {
+    // Guard against a double-click on the confirm button creating two records.
+    if (submittedRef.current) return;
+    submittedRef.current = true;
     const so = buildSO({ withHandoff: true });
     setDirty(false);
+    setConfirmCreate(false);
     addSalesOrder(so);
-    addToast({ type: 'success', title: 'Sales Order created', message: 'Sales Order created and submitted to ERP Handoff.' });
+    addToast({
+      type: 'success',
+      title: `Sales Order ${so.number} created`,
+      message: `${so.number} added to the Sales Order list and to ERP Handoff (Pending).`,
+    });
     navigate('/erp-handoff', { state: { highlightId: so.id } });
   };
 

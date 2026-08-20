@@ -78,10 +78,14 @@ export function inquiryNumber(officeId: string, seq: number): string {
 // Requested changes — derived deterministically from a quotation's real line
 // items and cycled commercial asks, so every record shows valid old → new data.
 // ---------------------------------------------------------------------------
+// Commercial asks are phrased so they map cleanly onto the structured revised-SO
+// form: delivery uses a real Delivery Terms Master option name, payment uses the
+// four payment-bucket labels, and warranty is a plain year count. This keeps
+// "Requested changes" and what "Apply to revised SO" actually sets consistent.
 const COMMERCIAL_CHANGES: Omit<RequestedChange, 'id'>[] = [
-  { type: 'delivery', label: 'Delivery', oldValue: '6 weeks ex-works', newValue: '4 weeks ex-works' },
-  { type: 'payment', label: 'Payment', oldValue: '100% advance', newValue: '50% advance, 50% on dispatch' },
-  { type: 'warranty', label: 'Warranty', oldValue: '1 year', newValue: '2 years' },
+  { type: 'delivery', label: 'Delivery Terms', oldValue: 'Ex Works — Vadodara', newValue: 'FOR Destination' },
+  { type: 'payment', label: 'Payment Terms', oldValue: '100% Advance', newValue: '50% Advance, 50% Before Dispatch' },
+  { type: 'warranty', label: 'Warranty', oldValue: '1 Year', newValue: '2 Years' },
 ];
 
 function money(v: number): string {

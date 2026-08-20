@@ -73,6 +73,26 @@ const ATTACH_TS = '2026-08-13T12:42:00';
 
 const clone = (it: LineItem): LineItem => ({ ...it });
 
+// Parse a free-text payment phrase (e.g. "50% Advance, 50% Before Dispatch")
+// into the four structured payment buckets. Returns null if nothing matched so
+// the caller can leave the existing terms untouched.
+function parsePaymentPhrase(text: string): PaymentTerms | null {
+  const buckets: PaymentTerms = { advance: 0, beforeDispatch: 0, creditDays: 0, afterInstall: 0 };
+  let matched = false;
+  text.split(/,|;|\band\b/i).forEach((part) => {
+    const pct = part.match(/(\d+(?:\.\d+)?)\s*%/);
+    if (!pct) return;
+    const val = Number(pct[1]);
+    if (/install/i.test(part)) buckets.afterInstall += val;
+    else if (/credit/i.test(part)) buckets.creditDays += val;
+    else if (/dispatch|delivery|before/i.test(part)) buckets.beforeDispatch += val;
+    else if (/advance/i.test(part)) buckets.advance += val;
+    else return;
+    matched = true;
+  });
+  return matched ? buckets : null;
+}
+
 // Clearer, spec-aligned labels for the four payment buckets.
 const SO_PAYMENT_LABEL: Record<keyof PaymentTerms, string> = {
   advance: 'Advance %',
@@ -245,6 +265,7 @@ export function SoRevisionPanel({
     delivery: initialForm.deliveryTerms !== form.deliveryTerms,
     deliveryDate: initialForm.expectedDelivery !== form.expectedDelivery,
     payment: paymentTextOf(initialForm) !== paymentTextOf(form),
+    warranty: initialForm.warrantyYears !== form.warrantyYears,
     billing: initialForm.billingAddress !== form.billingAddress,
     shipping: initialShipping !== effectiveShipping,
   }), [initialForm, form, effectiveShipping, initialShipping]);
@@ -324,23 +345,55 @@ export function SoRevisionPanel({
     return true;
   };
 
-  // Apply the customer's requested changes to the working revised order. Line
-  // proposals map directly; commercial asks map where a structured field exists.
+  // Apply the customer's requested changes to the working revised order. Every
+  // requested change maps to a structured field: line qty/price directly, and
+  // the commercial asks (delivery terms, payment terms, warranty) onto their
+  // respective form fields — so nothing the customer asked for is silently
+  // dropped.
   const applyRequested = () => {
     const changes = email.requestedChanges ?? [];
     if (changes.length === 0) return;
     setLines((prev) => applyProposed(prev, changes));
+
     const delivery = changes.find((c) => c.type === 'delivery');
+    const payment = changes.find((c) => c.type === 'payment');
     const warranty = changes.find((c) => c.type === 'warranty');
+    const applied: string[] = [];
+
     if (delivery) {
-      const match = deliveryChoices.find((d) => d.name.toLowerCase() === delivery.newValue.toLowerCase());
-      if (match) set('deliveryTerms', match.name);
+      const nv = delivery.newValue.trim();
+      const match =
+        deliveryChoices.find((d) => d.name.toLowerCase() === nv.toLowerCase()) ??
+        deliveryChoices.find(
+          (d) => d.name.toLowerCase().includes(nv.toLowerCase()) || nv.toLowerCase().includes(d.name.toLowerCase())
+        );
+      set('deliveryTerms', match ? match.name : nv);
+      applied.push('delivery terms');
+    }
+    if (payment) {
+      const parsed = parsePaymentPhrase(payment.newValue);
+      if (parsed) {
+        set('payment', parsed);
+        applied.push('payment terms');
+      }
     }
     if (warranty) {
       const yrs = parseInt(warranty.newValue, 10);
-      if (!Number.isNaN(yrs)) set('warrantyYears', yrs);
+      if (!Number.isNaN(yrs)) {
+        set('warrantyYears', yrs);
+        applied.push('warranty');
+      }
     }
-    addToast({ type: 'info', title: 'Requested changes applied', message: 'Review the highlighted fields, then save the revision.' });
+    const lineCount = changes.filter((c) => c.field).length;
+    if (lineCount) applied.unshift(`${lineCount} item change${lineCount > 1 ? 's' : ''}`);
+
+    addToast({
+      type: 'info',
+      title: 'Requested changes applied',
+      message: applied.length
+        ? `Applied ${applied.join(', ')}. Review the highlighted fields, then save the revision.`
+        : 'Review the highlighted fields, then save the revision.',
+    });
   };
 
   // Generate the revised Sales Order Acknowledgement PDF, attach it to the
@@ -404,6 +457,7 @@ export function SoRevisionPanel({
     if (changedFields.delivery) bullets.push(`  • Delivery terms → ${form.deliveryTerms}`);
     if (changedFields.deliveryDate) bullets.push(`  • Expected delivery → ${formatDate(form.expectedDelivery, { short: true })}`);
     if (changedFields.payment) bullets.push(`  • Payment terms → ${revisedPaymentText}`);
+    if (changedFields.warranty) bullets.push(`  • Warranty → ${formatWarranty(form.warrantyYears)}`);
     if (changedFields.billing) bullets.push('  • Billing address updated');
     if (changedFields.shipping) bullets.push('  • Shipping address updated');
     return bullets.length ? bullets.join('\n') : '  • Commercial terms reviewed and reconfirmed';
@@ -559,7 +613,7 @@ export function SoRevisionPanel({
           <FormSection icon={<Receipt className="h-3.5 w-3.5" />} n={4} label="Commercial Terms">
             <div className="grid grid-cols-2 gap-2">
               <TextField label="Packing (%)" type="number" min={0} max={100} value={form.packingPct} onChange={(e) => set('packingPct', Math.max(0, Math.min(100, Number(e.target.value))))} className="py-1.5 text-[13px]" hint={`≈ ${formatINR(packingAmount)}`} />
-              <TextField label="Warranty (Years)" type="number" min={1} value={form.warrantyYears} onChange={(e) => set('warrantyYears', Math.max(1, Number(e.target.value)))} className="py-1.5 text-[13px]" />
+              <TextField label="Warranty (Years)" type="number" min={1} value={form.warrantyYears} onChange={(e) => set('warrantyYears', Math.max(1, Number(e.target.value)))} className={classNames('py-1.5 text-[13px]', changedFields.warranty && 'ring-1 ring-amber-300')} />
               <SelectField label="Delivery Terms" value={form.deliveryTerms} onChange={(e) => set('deliveryTerms', e.target.value)} options={deliveryChoices.map((o) => ({ value: o.name, label: o.name }))} placeholder="Select delivery option" className={classNames('py-1.5 text-[13px]', changedFields.delivery && 'ring-1 ring-amber-300')} wrapClassName="col-span-2" />
               <TextField label="Expected Delivery Date" required type="date" value={form.expectedDelivery} onChange={(e) => set('expectedDelivery', e.target.value)} className={classNames('py-1.5 text-[13px]', changedFields.deliveryDate && 'ring-1 ring-amber-300')} wrapClassName="col-span-2" />
             </div>
@@ -649,6 +703,14 @@ export function SoRevisionPanel({
           officeId: isOrig ? so.officeId : form.officeId,
           poNumber: isOrig ? so.poNumber : form.poNumber,
           packingCharges: packingAmount,
+          // Revised preview must reflect the revised commercial terms and the
+          // revision it is preparing — the resolver reads commercials/warranty/
+          // revisionNumber, so override them (not just the flat paymentTerms).
+          warranty: isOrig ? so.warranty : formatWarranty(form.warrantyYears),
+          revisionNumber: isOrig ? 0 : nextRevNum,
+          commercials: isOrig
+            ? so.commercials
+            : { packingPct: form.packingPct, payment: { ...form.payment }, creditDays: form.creditDays },
           kindAttention: form.kindAttentionName ? { name: form.kindAttentionName } : so.kindAttention,
         };
         const resolved = resolveSalesOrder(soForDoc, { parties, catalog: ITEMS });

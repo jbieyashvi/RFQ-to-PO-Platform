@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { AlertTriangle, Sparkles } from 'lucide-react';
 import type { InboxEmail } from '@/types';
 import { StatusBadge, EmptyState } from '@/components/ui';
@@ -20,6 +21,15 @@ export function EmailList({
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
+  // Scroll the selected email into view (e.g. when arriving via a deep link from
+  // the SO Revisions list), so the highlighted row is always visible.
+  const selectedRef = useRef<HTMLLIElement | null>(null);
+  useEffect(() => {
+    if (selectedId && selectedRef.current) {
+      selectedRef.current.scrollIntoView({ block: 'nearest' });
+    }
+  }, [selectedId]);
+
   if (emails.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -35,7 +45,7 @@ export function EmailList({
         const bucket = confidenceBucket(e.aiConfidence);
         const active = e.id === selectedId;
         return (
-          <li key={e.id}>
+          <li key={e.id} ref={active ? selectedRef : undefined}>
             <button
               onClick={() => onSelect(e.id)}
               className={classNames(
