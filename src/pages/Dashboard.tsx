@@ -183,7 +183,7 @@ function FunnelLayer({
         onClick={() => onOpen(stage.to)}
         aria-label={`${stage.label}: ${stage.count}. ${
           stage.fromPrevPct !== null ? `${stage.fromPrevPct}% from previous stage, ` : ''
-        }${stage.overallPct}% of queries received. Open filtered list.`}
+        }${stage.overallPct}% of inquiries received. Open filtered list.`}
         className={classNames(
           'flex w-full items-center justify-between gap-3 rounded-[10px] px-4 py-3 text-left text-white shadow-sm transition',
           'hover:-translate-y-0.5 hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-brand-500/60',

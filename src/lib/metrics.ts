@@ -81,8 +81,8 @@ export function salesOrderMetrics(salesOrders: SalesOrder[]): SalesOrderMetrics 
 // hardcoded — everything is derived from the live prototype datasets.
 //
 // Metric definitions (single source of truth — keep in sync with modules):
-//  - Query Received : each Quotation record == one received customer RFQ/query.
-//                     (Prototype convention: there is no separate Query dataset,
+//  - Inquiry Received : each Quotation record == one received customer RFQ/inquiry.
+//                     (Prototype convention: there is no separate inquiry dataset,
 //                     so this is the ONLY place that definition lives.)
 //  - Quote Sent     : quotation dispatched to the customer -> workState 'sent'.
 //  - No Follow-up / : quotation pipeline stage -> quotation.stage.
@@ -210,13 +210,13 @@ export interface FunnelStage {
   hint: string;
   /** conversion from the immediately previous stage, 0–100 (null for the first) */
   fromPrevPct: number | null;
-  /** overall conversion from Queries Received, 0–100 */
+  /** overall conversion from Inquiries Received, 0–100 */
   overallPct: number;
 }
 
 /**
  * Six-stage conversion funnel, in strict pipeline order:
- *   Queries → Quotes Sent → Budgetary → Negotiation → Finalised → SO Sent.
+ *   Inquiries → Quotes Sent → Budgetary → Negotiation → Finalised → SO Sent.
  *
  * "No Follow-up" is intentionally NOT a funnel stage — it is an exception /
  * action state, surfaced under Action Required instead of the funnel.
@@ -234,7 +234,7 @@ export function pipelineFunnel(quotations: Quotation[], salesOrders: SalesOrder[
   const reached = (stages: QuotationStage[]) => sent.filter((q) => stages.includes(q.stage)).length;
 
   const raw = [
-    { key: 'queries', label: 'Queries Received', count: quotations.length, to: '/quotations', hint: 'Every customer RFQ / query received' },
+    { key: 'queries', label: 'Inquiries Received', count: quotations.length, to: '/quotations', hint: 'Every customer RFQ / inquiry received' },
     { key: 'quotes_sent', label: 'Quotes Sent', count: sent.length, to: '/quotations', hint: 'Quotations dispatched to customers' },
     { key: 'budgetary', label: 'Budgetary', count: reached(['budgetary', 'negotiation', 'finalised']), to: '/quotations?stage=budgetary', hint: 'Sent quotes at the budgetary stage or beyond' },
     { key: 'negotiation', label: 'Negotiation', count: reached(['negotiation', 'finalised']), to: '/quotations?stage=negotiation', hint: 'Sent quotes in negotiation or beyond' },
@@ -314,7 +314,7 @@ export function actionRequired(quotations: Quotation[], salesOrders: SalesOrder[
       count: quotations.filter(isQuotePending).length,
       tone: 'slate',
       to: '/quotations/pending',
-      description: 'Queries received but quotations not yet sent.',
+      description: 'Inquiries received but quotations not yet sent.',
     },
   ];
 }

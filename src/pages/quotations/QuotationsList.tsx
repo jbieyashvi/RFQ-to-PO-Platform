@@ -19,8 +19,8 @@ import { useApp, useOfficeScope, useNoOfficeAssigned } from '@/context/AppContex
 import { OFFICES, officeName } from '@/data/offices';
 import { QUOTATION_STAGE, QUOTATION_STATUS } from '@/lib/labels';
 import type { Quotation, QuotationStage, QuotationStatus } from '@/types';
-import { downloadCSV, formatDateTime, formatINR } from '@/lib/format';
-import { latestQuoteSubmittedAt, queryReceivedAt } from '@/lib/quotationDates';
+import { downloadCSV, formatDate, formatDateTime, formatINR } from '@/lib/format';
+import { latestQuoteSubmittedAt, firstInquiryAt } from '@/lib/quotationDates';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 
 export default function QuotationsList() {
@@ -46,6 +46,9 @@ export default function QuotationsList() {
   // value opens the shared "Update Quotation Workflow" prompt (review date).
   const [pending, setPending] = useState<WorkflowRequest | null>(null);
   const loading = useSimulatedLoading([]);
+
+  // "Current Date" column — dynamically generated (today, date-only).
+  const currentDate = formatDate(new Date().toISOString().slice(0, 10));
 
   const statusOptions = (Object.entries(QUOTATION_STATUS) as [QuotationStatus, { label: string }][]).map(
     ([value, v]) => ({ value, label: v.label })
@@ -96,13 +99,13 @@ export default function QuotationsList() {
   };
 
   const exportCSV = () => {
-    const header = ['Quotation No', 'Customer', 'Customer Code', 'Sales Office', 'Owner', 'Status', 'Stage', 'Value (INR)', 'Query Received', 'Latest Quote Submitted'];
+    const header = ['Quotation No', 'Customer', 'Customer Code', 'Sales Office', 'Owner', 'Status', 'Stage', 'Value (INR)', 'Current Date', 'First Inquiry Date', 'Latest Quote Sent'];
     const rows = filtered.map((q) => {
-      const submitted = latestQuoteSubmittedAt(q);
+      const sent = latestQuoteSubmittedAt(q);
       return [
         q.number, q.customerName, q.customerCode, officeName(q.officeId), q.owner,
         QUOTATION_STATUS[q.status].label, QUOTATION_STAGE[q.stage].label, q.value,
-        formatDateTime(queryReceivedAt(q)), submitted ? formatDateTime(submitted) : 'Not submitted',
+        currentDate, formatDateTime(firstInquiryAt(q)), sent ? formatDateTime(sent) : '—',
       ];
     });
     downloadCSV('quotations-filtered.csv', [header, ...rows]);
@@ -123,7 +126,7 @@ export default function QuotationsList() {
       ),
     },
     { key: 'office', header: 'Sales Office', truncate: true, title: (r) => officeName(r.officeId), sortValue: (r) => officeName(r.officeId), render: (r) => <span className="text-surface-600">{officeName(r.officeId)}</span> },
-    { key: 'owner', header: 'Owner', width: '112px', truncate: true, title: (r) => r.owner, render: (r) => <span className="text-surface-600">{r.owner}</span> },
+    { key: 'owner', header: 'Owner', width: '100px', truncate: true, title: (r) => r.owner, render: (r) => <span className="text-surface-600">{r.owner}</span> },
     {
       key: 'status',
       header: 'Status',
@@ -142,7 +145,7 @@ export default function QuotationsList() {
     {
       key: 'stage',
       header: 'Stage',
-      width: '140px',
+      width: '128px',
       render: (r) => (
         <WorkflowInlineSelect
           value={r.stage}
@@ -154,20 +157,26 @@ export default function QuotationsList() {
         />
       ),
     },
-    { key: 'value', header: 'Value', width: '96px', align: 'right', sortValue: (r) => r.value, render: (r) => <span className="font-medium text-surface-800">{formatINR(r.value)}</span> },
+    { key: 'value', header: 'Value', width: '92px', align: 'right', sortValue: (r) => r.value, render: (r) => <span className="font-medium text-surface-800">{formatINR(r.value)}</span> },
     {
-      key: 'queryReceived',
-      header: 'Query Received',
-      width: '124px',
-      sortValue: (r) => queryReceivedAt(r),
-      render: (r) => <DateTimeCell iso={queryReceivedAt(r)} />,
+      key: 'currentDate',
+      header: 'Current Date',
+      width: '92px',
+      render: () => <span className="text-surface-600">{currentDate}</span>,
     },
     {
-      key: 'latestSubmitted',
-      header: 'Latest Quote Submitted',
-      width: '132px',
+      key: 'firstInquiry',
+      header: 'First Inquiry Date',
+      width: '104px',
+      sortValue: (r) => firstInquiryAt(r),
+      render: (r) => <DateCell iso={firstInquiryAt(r)} />,
+    },
+    {
+      key: 'latestSent',
+      header: 'Latest Quote Sent',
+      width: '104px',
       sortValue: (r) => latestQuoteSubmittedAt(r) ?? '',
-      render: (r) => <DateTimeCell iso={latestQuoteSubmittedAt(r)} />,
+      render: (r) => <DateCell iso={latestQuoteSubmittedAt(r)} />,
     },
     {
       key: 'actions',
@@ -303,16 +312,10 @@ function Labeled({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-// Two-line date + time so the datetime columns stay narrow enough to fit the
-// desktop table at 1280/1440 without horizontal scroll. "Not submitted" when
-// the quotation has never been sent to the customer.
-function DateTimeCell({ iso }: { iso: string | null }) {
-  if (!iso) return <span className="text-surface-400">Not submitted</span>;
-  const [datePart, timePart] = formatDateTime(iso).split(', ');
-  return (
-    <div className="leading-tight">
-      <p className="text-surface-600">{datePart}</p>
-      {timePart && <p className="text-[11px] text-surface-400">{timePart}</p>}
-    </div>
-  );
+// Compact single-line date so the three date columns fit the desktop table at
+// 1280/1440 without horizontal scroll. Renders "—" when the quotation has
+// never been sent to the customer (Latest Quote Sent).
+function DateCell({ iso }: { iso: string | null }) {
+  if (!iso) return <span className="text-surface-400">—</span>;
+  return <span className="text-surface-600">{formatDate(iso.slice(0, 10))}</span>;
 }

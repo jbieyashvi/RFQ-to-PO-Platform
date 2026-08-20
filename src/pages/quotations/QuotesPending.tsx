@@ -19,7 +19,7 @@ import { classNames } from '@/lib/format';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 
 // ---------------------------------------------------------------------------
-// Deterministic prototype clock. Due Date = Query Created + exactly 24h, and
+// Deterministic prototype clock. Due Date = Inquiry Received + exactly 24h, and
 // overdue / due-soon / upcoming states are computed against this fixed "now"
 // (Asia/Kolkata wall-clock) so the demo always shows a representative mix.
 // ---------------------------------------------------------------------------
@@ -351,7 +351,7 @@ export default function QuotesPending() {
     },
     {
       key: 'created',
-      header: 'Query Created',
+      header: 'Inquiry Received',
       width: '112px',
       sortValue: (r) => r.queryCreatedAt,
       render: (r) => (
@@ -541,7 +541,7 @@ function MobileCard({ row, onOpen, canOpen }: { row: PendingRow; onOpen: () => v
         <Field label="Owner">
           {row.owner || <span className="italic text-surface-400">Unassigned</span>}
         </Field>
-        <Field label="Query Created">{fmtDateTime(row.queryCreatedAt)}</Field>
+        <Field label="Inquiry Received">{fmtDateTime(row.queryCreatedAt)}</Field>
         <Field label="Due Date">
           <span
             className={classNames(

@@ -24,7 +24,7 @@ import {
   lineTotal,
   downloadText,
 } from '@/lib/format';
-import { latestQuoteSubmittedAt, queryReceivedAt } from '@/lib/quotationDates';
+import { latestQuoteSubmittedAt, firstInquiryAt } from '@/lib/quotationDates';
 import { TODAY_ISO, buildWorkflowPatch, reviewDateError } from '@/lib/quotationWorkflow';
 
 export function QuotationDetailsDrawer({
@@ -190,8 +190,8 @@ export function QuotationDetailsDrawer({
                 { label: 'Customer Code', value: q.customerCode },
                 { label: 'Sales Office', value: officeName(q.officeId) },
                 { label: 'Owner', value: q.owner },
-                { label: 'Query Received', value: formatDateTime(queryReceivedAt(q)) },
-                { label: 'Latest Quote Submitted', value: submitted ? formatDateTime(submitted) : 'Not submitted' },
+                { label: 'First Inquiry Date', value: formatDateTime(firstInquiryAt(q)) },
+                { label: 'Latest Quote Sent', value: submitted ? formatDateTime(submitted) : '—' },
                 { label: 'Last Updated', value: formatDate(q.lastUpdated) },
               ]}
             />
