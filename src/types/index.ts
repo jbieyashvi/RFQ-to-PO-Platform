@@ -497,6 +497,16 @@ export interface SalesOrder {
   revisionState?: RevisionState;
   revisionNumber: number; // latest applied revision number (0 = original)
   revisionOwner?: string;
+  // How a Sales Order revision REQUEST was dispositioned when the owner did not
+  // issue a minor revised SO. 'no_revision' closes the request leaving the SO
+  // unchanged; 'quote_revision' escalates to a quotation revision + updated-PO
+  // cycle. Recorded for audit and to render a resolved state in the workspace.
+  revisionResolution?: {
+    kind: 'no_revision' | 'quote_revision';
+    note?: string;
+    by: string;
+    at: string; // ISO datetime
+  };
   // PO vs Quote verification — the review date manually set when an updated PO
   // or updated quote email is sent, and who/when the SO was finally verified.
   reviewDate?: string;

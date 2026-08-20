@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   FileText,
   FileSpreadsheet,
@@ -16,7 +17,12 @@ import {
   ChevronDown,
   ChevronRight,
   ArrowRight,
+  ArrowLeft,
   Ban,
+  CheckCircle2,
+  CircleSlash,
+  FileWarning,
+  BadgeCheck,
 } from 'lucide-react';
 import type {
   CommercialTerms,
@@ -24,10 +30,12 @@ import type {
   LineItem,
   Party,
   PaymentTerms,
+  Quotation,
   SalesOrder,
   SalesOrderAttachment,
   SORevisionSnapshot,
   TechnicalSpecs,
+  VerificationField,
 } from '@/types';
 import {
   Button,
@@ -187,16 +195,33 @@ export function SoRevisionPanel({
     items: catalog,
     commercialTerms,
     role,
+    quotations,
+    emails,
     updateSalesOrder,
+    updateQuotation,
     updateEmail,
+    addEmail,
     addToast,
     currentUser,
     can,
   } = useApp();
+  const navigate = useNavigate();
 
   const so = salesOrder;
   const canRevise = can('sales_orders', 'edit');
   const party = parties.find((p) => p.id === so.partyId);
+
+  // Which of the three revision dispositions the owner is working in. Default to
+  // the editor when a minor revision is already in flight (a draft exists),
+  // otherwise show the three-action chooser so the disposition is picked first.
+  const [action, setAction] = useState<'choose' | 'revise'>(() =>
+    so.revisionState === 'draft_in_progress' || so.revisionDraft ? 'revise' : 'choose'
+  );
+  // "No Revision Required" — optional resolution note captured in a small modal.
+  const [noRevOpen, setNoRevOpen] = useState(false);
+  const [noRevNote, setNoRevNote] = useState('');
+  // "Quote Revision Required" — confirm escalation to a quotation revision.
+  const [escalateOpen, setEscalateOpen] = useState(false);
 
   // Immutable Original snapshot (versions[0]) is the comparison baseline. The
   // revised working point starts from the saved draft when one exists.
@@ -463,8 +488,159 @@ export function SoRevisionPanel({
     return bullets.length ? bullets.join('\n') : '  • Commercial terms reviewed and reconfirmed';
   };
 
+  // ---- Action 1: No Revision Required ---------------------------------------
+  // Close the revision request WITHOUT touching the SO. The SO record and its
+  // versions are left exactly as-is; only the revision request is resolved and
+  // dropped from the active queue (clearing revisionState removes it from
+  // /sales-orders/revisions). An optional resolution note is recorded for audit.
+  const resolveNoRevision = () => {
+    const note = noRevNote.trim();
+    const at = `${TODAY_ISO}T13:05:00`;
+    updateSalesOrder(so.id, {
+      revisionState: undefined,
+      revisionDraft: undefined,
+      revisionNotes: undefined,
+      revisionResolution: { kind: 'no_revision', note: note || undefined, by: currentUser.fullName, at },
+      // The SO was already acknowledged before the query; leave it settled.
+      status: so.status === 'revision_required' ? 'so_sent' : so.status,
+      activity: [
+        ...so.activity,
+        {
+          id: `act-${so.id}-norev-${Date.now()}`,
+          date: at,
+          actor: currentUser.fullName,
+          action: 'Revision request resolved — No Revision Required',
+          detail: note || 'No changes needed; original Sales Order stands.',
+        },
+      ],
+    });
+    updateEmail(email.id, { needsReview: false, queueLabel: 'Revision resolved' });
+    setNoRevOpen(false);
+    setNoRevNote('');
+    addToast({
+      type: 'success',
+      title: 'Marked as No Revision Required',
+      message: `${so.number} left unchanged and removed from the revision queue.`,
+    });
+    onPrepared?.();
+  };
+
+  // ---- Action 3: Quote Revision Required (major / price change) --------------
+  // Escalate to a quotation revision. The linked quote is flagged for revision,
+  // its Global Inbox thread is opened, the PO is marked stale (awaiting an
+  // updated PO) and SO generation is re-gated behind a fresh PO-vs-Quote match.
+  const linkedQuote = quotations.find((q) => q.id === so.quotationId) ?? null;
+  const buildQuoteRevisionEmail = (q: Quotation, id: string): InboxEmail => {
+    const to = party?.email ?? so.customerEmail ?? 'procurement@customer.com';
+    const city = officeName(q.officeId).split(' ')[0].toLowerCase();
+    const from = `sales.${city}@flowtech-instruments.com`;
+    const changes = email.requestedChanges ?? [];
+    const changeLines = changes.length
+      ? changes.map((c) => `• ${c.label}: ${c.oldValue} → ${c.newValue}`).join('\n')
+      : `• ${so.revisionReason ?? 'Commercial change requested against the confirmed order.'}`;
+    const contact = party?.contactPerson ?? so.customerName.split(' ')[0] ?? 'Procurement';
+    return {
+      id,
+      senderName: contact,
+      senderEmail: to,
+      recipient: from,
+      cc: [],
+      subject: `RE: Quotation ${q.number} — revision required (SO ${so.number})`,
+      receivedAt: `${TODAY_ISO}T13:00:00`,
+      body:
+        `Dear ${q.owner.split(' ')[0]},\n\n` +
+        `Following our confirmed order ${so.number} (PO ${so.poNumber}), the following change to quotation ${q.number} is required before we can proceed:\n\n` +
+        `${changeLines}\n\n` +
+        `Please share a revised quotation reflecting the above; we will issue an updated PO against it.\n\nRegards,\n${contact}\n${so.customerName}`,
+      thread: [
+        { id: `th-${q.id}-so-${so.id}`, from: q.owner, date: `${q.quoteDate}T16:45:00`, snippet: `Original quotation ${q.number} shared for review…` },
+      ],
+      classification: 'quotation_revision',
+      aiConfidence: 90,
+      read: true,
+      needsReview: true,
+      officeId: q.officeId,
+      owner: q.owner,
+      partyId: q.partyId,
+      customerName: q.customerName,
+      customerCode: q.customerCode,
+      linkedQuotation: q.number,
+      revisionSendId: q.id,
+      queueLabel: 'Quote Needs Revision',
+      requestedChanges: email.requestedChanges,
+      reviewDate: q.reviewDate,
+      extraction: [
+        { key: 'customer', label: 'Customer', value: q.customerName, confidence: 'high', required: true },
+        { key: 'quotation', label: 'Quotation Number', value: q.number, confidence: 'high', required: true },
+        { key: 'linkedSo', label: 'Raised from SO', value: so.number, confidence: 'high', required: true },
+      ],
+      extractionConfirmed: true,
+      draftSaved: false,
+      sent: false,
+    };
+  };
+
+  const escalateToQuoteRevision = () => {
+    if (!linkedQuote) {
+      addToast({ type: 'error', title: 'No linked quotation', message: 'This Sales Order has no linked quotation to revise.' });
+      setEscalateOpen(false);
+      return;
+    }
+    const q = linkedQuote;
+    const at = `${TODAY_ISO}T13:05:00`;
+
+    // 1. Flag the quotation for revision (drives /quotations/revisions).
+    updateQuotation(q.id, { workState: 'needs_revision' });
+
+    // 2. Re-gate SO generation: the confirmed PO is now stale and must be
+    //    re-issued against the revised quote. Reset every verification field to
+    //    "updated PO awaited" so allResolved() is false and the derived status is
+    //    'corrected_awaited' until a fresh PO-vs-Quote match is achieved.
+    const resetFields: VerificationField[] = (so.verificationFields ?? []).map((f) => ({
+      ...f,
+      resolution: 'awaiting_po' as const,
+    }));
+    updateSalesOrder(so.id, {
+      revisionState: undefined,
+      revisionDraft: undefined,
+      revisionResolution: { kind: 'quote_revision', note: so.revisionReason, by: currentUser.fullName, at },
+      soGenerated: false,
+      verificationStatus: 'corrected_awaited',
+      verificationFields: resetFields.length ? resetFields : so.verificationFields,
+      status: so.status === 'revision_required' ? so.status : 'revision_required',
+      activity: [
+        ...so.activity,
+        {
+          id: `act-${so.id}-esc-${Date.now()}`,
+          date: at,
+          actor: currentUser.fullName,
+          action: 'Escalated to Quote Revision',
+          detail: `Quotation ${q.number} flagged for revision; updated PO awaited before SO generation.`,
+        },
+      ],
+    });
+
+    // 3. Resolve the SO-revision request email (it has been escalated).
+    updateEmail(email.id, { needsReview: false, queueLabel: 'Escalated to quote revision' });
+
+    // 4. Open the linked quotation's revision thread in the Global Inbox.
+    const existing = emails.find((e) => e.revisionSendId === q.id && !e.sent);
+    const targetId = existing?.id ?? `em-rev-${q.id}`;
+    if (!existing && !emails.some((e) => e.id === targetId)) {
+      addEmail(buildQuoteRevisionEmail(q, targetId));
+    }
+    setEscalateOpen(false);
+    addToast({
+      type: 'info',
+      title: 'Quote revision required',
+      message: `Opened quotation ${q.number}. Send the revised quote, then await the updated PO.`,
+    });
+    navigate(`/inbox?mode=quote-revision&qtn=${q.id}&email=${targetId}`);
+  };
+
   const attachedRev = email.attachedSalesOrder?.soNumber === so.number && email.composeIntent === 'so-revise';
   const stateMeta = so.revisionState ? REVISION_STATE[so.revisionState] : null;
+  const resolution = so.revisionResolution;
 
   return (
     <div className="flex h-full flex-col">
@@ -472,7 +648,13 @@ export function SoRevisionPanel({
       <div className="flex flex-none items-center gap-1.5 border-b border-brand-100 bg-brand-50/70 px-4 py-2 text-[12px] text-brand-700">
         <FilePenLine className="h-3.5 w-3.5 flex-none" />
         <span className="truncate">
-          Revising <span className="font-semibold">{so.number}</span> — prepare the revised SO, then add it to the email.
+          {resolution?.kind === 'no_revision' ? (
+            <>Revision request on <span className="font-semibold">{so.number}</span> — resolved, no revision required.</>
+          ) : action === 'revise' ? (
+            <>Revising <span className="font-semibold">{so.number}</span> — prepare the revised SO, then add it to the email.</>
+          ) : (
+            <>Revision request on <span className="font-semibold">{so.number}</span> — choose how to resolve it.</>
+          )}
         </span>
       </div>
 
@@ -505,9 +687,11 @@ export function SoRevisionPanel({
             <span className="flex items-center gap-1.5 text-[11.5px] font-semibold text-amber-700">
               <History className="h-3.5 w-3.5" /> Requested changes
             </span>
-            <Button variant="secondary" size="sm" leftIcon={<Wand2 className="h-3.5 w-3.5" />} onClick={applyRequested} disabled={!canRevise || tab !== 'revised'}>
-              Apply to revised SO
-            </Button>
+            {action === 'revise' && !resolution && (
+              <Button variant="secondary" size="sm" leftIcon={<Wand2 className="h-3.5 w-3.5" />} onClick={applyRequested} disabled={!canRevise || tab !== 'revised'}>
+                Apply to revised SO
+              </Button>
+            )}
           </div>
           <ul className="space-y-1">
             {email.requestedChanges!.map((c) => (
@@ -521,6 +705,78 @@ export function SoRevisionPanel({
           </ul>
         </div>
       )}
+
+      {/* Resolved — No Revision Required */}
+      {resolution?.kind === 'no_revision' && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-3.5 py-3">
+          <div className="flex items-center gap-2 text-[13px] font-semibold text-emerald-700">
+            <CheckCircle2 className="h-4 w-4" /> No revision required — request resolved
+          </div>
+          <p className="mt-1.5 text-[12px] text-surface-600">
+            The original Sales Order stands unchanged. This request has been removed from the active revision queue.
+          </p>
+          {resolution.note && (
+            <p className="mt-2 rounded-lg bg-white/70 px-2.5 py-2 text-[12px] text-surface-700">
+              <span className="font-medium text-surface-500">Resolution note:</span> {resolution.note}
+            </p>
+          )}
+          <p className="mt-2 text-[11px] text-surface-400">
+            Resolved by {resolution.by} · {formatDate(resolution.at, { short: true })}
+          </p>
+        </div>
+      )}
+
+      {/* Action chooser — the three clear ways to resolve an SO revision request */}
+      {action === 'choose' && !resolution && (
+        <div className="space-y-2.5">
+          <p className="text-[11.5px] font-semibold uppercase tracking-[0.03em] text-surface-400">
+            How do you want to resolve this request?
+          </p>
+          <ActionCard
+            icon={<FilePenLine className="h-4 w-4" />}
+            tone="brand"
+            title="Revise Sales Order"
+            tag="Minor revision"
+            desc="Edit the existing SO, apply the requested item, delivery and commercial changes, preview and send a revised SO with a next review date."
+            cta="Revise Sales Order"
+            onClick={() => { setAction('revise'); setTab('revised'); }}
+            disabled={!canRevise}
+          />
+          <ActionCard
+            icon={<CircleSlash className="h-4 w-4" />}
+            tone="emerald"
+            title="No Revision Required"
+            tag="Close request"
+            desc="Close the request without changing the SO. The original order stays exactly as acknowledged and drops out of the revision queue."
+            cta="Mark as No Revision Required"
+            onClick={() => setNoRevOpen(true)}
+            disabled={!canRevise}
+          />
+          <ActionCard
+            icon={<FileWarning className="h-4 w-4" />}
+            tone="amber"
+            title="Quote Revision Required"
+            tag="Major / price change"
+            desc={linkedQuote
+              ? `Escalate to a revision of quotation ${linkedQuote.number}. The current PO is marked stale; SO generation re-opens only after the updated PO re-matches the revised quote.`
+              : 'No linked quotation is available to revise for this Sales Order.'}
+            cta="Quote Revision Required"
+            onClick={() => setEscalateOpen(true)}
+            disabled={!canRevise || !linkedQuote}
+          />
+        </div>
+      )}
+
+      {action === 'revise' && !resolution && (
+      <>
+      {/* Back to the action chooser */}
+      <button
+        type="button"
+        onClick={() => setAction('choose')}
+        className="flex items-center gap-1 text-[11.5px] font-medium text-surface-500 hover:text-surface-700"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" /> Back to actions
+      </button>
 
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-surface-200">
@@ -663,9 +919,13 @@ export function SoRevisionPanel({
 
         </div>
       )}
+      </>
+      )}
       </div>
 
-      {/* Sticky action footer — primary revised-SO actions stay visible */}
+      {/* Sticky action footer — primary revised-SO actions stay visible while
+          the owner is preparing a minor revision. */}
+      {action === 'revise' && !resolution && (
       <div className="flex-none space-y-2 border-t border-surface-100 bg-surface-50/60 px-4 py-3">
         {attachedRev && (
           <p className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-700">
@@ -689,6 +949,65 @@ export function SoRevisionPanel({
         </Button>
         {!canRevise && <p className="text-center text-[11px] font-medium text-rose-600">Sales Order edit permission required.</p>}
       </div>
+      )}
+
+      {/* No Revision Required — optional resolution note */}
+      <Modal
+        open={noRevOpen}
+        onClose={() => setNoRevOpen(false)}
+        size="sm"
+        title="Mark as No Revision Required"
+        subtitle={`${so.number} · ${so.customerName}`}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setNoRevOpen(false)}>Cancel</Button>
+            <Button variant="primary" leftIcon={<CheckCircle2 className="h-4 w-4" />} onClick={resolveNoRevision}>
+              Mark as Resolved
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-[12.5px] text-surface-600">
+            The original Sales Order will be kept <span className="font-medium text-surface-800">unchanged</span> and this
+            request will be removed from the active revision queue. No revised SO is sent.
+          </p>
+          <TextAreaField
+            label="Resolution note (optional)"
+            rows={3}
+            value={noRevNote}
+            onChange={(e) => setNoRevNote(e.target.value)}
+            placeholder="e.g. Customer confirmed on call that the confirmed order is correct as-is."
+            className="text-[13px]"
+          />
+        </div>
+      </Modal>
+
+      {/* Quote Revision Required — confirm escalation */}
+      <Modal
+        open={escalateOpen}
+        onClose={() => setEscalateOpen(false)}
+        size="sm"
+        title="Quote Revision Required"
+        subtitle={linkedQuote ? `Quotation ${linkedQuote.number} · ${so.customerName}` : so.customerName}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setEscalateOpen(false)}>Cancel</Button>
+            <Button variant="primary" leftIcon={<FileWarning className="h-4 w-4" />} onClick={escalateToQuoteRevision} disabled={!linkedQuote}>
+              Open Quote Revision
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-2.5 text-[12.5px] text-surface-600">
+          <p>This is a major change (e.g. price). It will:</p>
+          <ul className="space-y-1.5">
+            <li className="flex items-start gap-2"><BadgeCheck className="mt-0.5 h-3.5 w-3.5 flex-none text-brand-500" /> Flag quotation <span className="font-medium text-surface-800">{linkedQuote?.number ?? '—'}</span> for revision and open its Global Inbox thread.</li>
+            <li className="flex items-start gap-2"><BadgeCheck className="mt-0.5 h-3.5 w-3.5 flex-none text-brand-500" /> Mark the current PO as requiring an updated PO.</li>
+            <li className="flex items-start gap-2"><BadgeCheck className="mt-0.5 h-3.5 w-3.5 flex-none text-brand-500" /> Re-gate SO generation until PO-vs-Quote verification fully matches again.</li>
+          </ul>
+        </div>
+      </Modal>
 
       {preview !== null && (() => {
         const isOrig = preview === 'original';
@@ -997,6 +1316,48 @@ function FormSection({
       </div>
       {open && <div className="space-y-2.5 p-3">{children}</div>}
     </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// One of the three revision-disposition cards shown in the action chooser.
+// ---------------------------------------------------------------------------
+function ActionCard({
+  icon,
+  tone,
+  title,
+  tag,
+  desc,
+  cta,
+  onClick,
+  disabled,
+}: {
+  icon: React.ReactNode;
+  tone: 'brand' | 'emerald' | 'amber';
+  title: string;
+  tag: string;
+  desc: string;
+  cta: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  const toneMap = {
+    brand: { chip: 'bg-brand-50 text-brand-600', tag: 'bg-brand-50 text-brand-600 ring-brand-200' },
+    emerald: { chip: 'bg-emerald-50 text-emerald-600', tag: 'bg-emerald-50 text-emerald-600 ring-emerald-200' },
+    amber: { chip: 'bg-amber-50 text-amber-600', tag: 'bg-amber-50 text-amber-600 ring-amber-200' },
+  }[tone];
+  return (
+    <div className="rounded-xl border border-surface-200 px-3.5 py-3">
+      <div className="mb-1 flex items-center gap-2">
+        <span className={classNames('flex h-6 w-6 flex-none items-center justify-center rounded-lg', toneMap.chip)}>{icon}</span>
+        <span className="text-[13px] font-semibold text-surface-800">{title}</span>
+        <span className={classNames('ml-auto rounded-full px-2 py-0.5 text-[10.5px] font-semibold ring-1 ring-inset', toneMap.tag)}>{tag}</span>
+      </div>
+      <p className="mb-2.5 text-[12px] leading-relaxed text-surface-500">{desc}</p>
+      <Button variant="secondary" size="sm" className="w-full" onClick={onClick} disabled={disabled} leftIcon={icon}>
+        {cta}
+      </Button>
+    </div>
   );
 }
 

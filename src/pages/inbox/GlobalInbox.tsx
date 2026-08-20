@@ -128,6 +128,22 @@ export default function GlobalInbox() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Re-select when the ?email deep-link changes on an ALREADY-mounted inbox —
+  // e.g. escalating a Sales Order revision to a Quote revision replaces the
+  // search params in place (no remount), so the mount effect above never
+  // re-fires. This keeps the selected conversation in sync with the URL.
+  useEffect(() => {
+    const id = params.get('email');
+    if (id && id !== selectedId && emails.some((e) => e.id === id)) {
+      setTab('all');
+      setSelectedId(id);
+      setMobileView('detail');
+      const e = emails.find((x) => x.id === id);
+      if (e && !e.read) updateEmail(id, { read: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
+
   // Keep a valid selection
   useEffect(() => {
     if (selectedId && filtered.some((e) => e.id === selectedId)) return;
