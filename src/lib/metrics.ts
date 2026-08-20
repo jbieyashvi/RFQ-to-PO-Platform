@@ -175,11 +175,14 @@ export interface ActionRow {
   key: string;
   label: string;
   count: number;
-  severity: 'high' | 'medium' | 'low';
+  /**
+   * Semantic tone (drives the left-border + count colour):
+   *  red = urgent/escalation · orange = overdue/warning ·
+   *  purple = PO/Quote mismatch · slate = remaining work.
+   */
+  tone: 'red' | 'orange' | 'purple' | 'slate';
   to: string;
   description: string;
-  /** optional secondary metric shown under the count */
-  sub?: { label: string; count: number };
 }
 
 export interface OverdueRow {
@@ -199,109 +202,119 @@ export interface OverdueGroups {
 }
 
 // -- 1) Pipeline funnel ------------------------------------------------------
-/** 7-stage pipeline. Pass section-scoped quotation & sales-order lists. */
-export function pipelineFunnel(quotations: Quotation[], salesOrders: SalesOrder[]): MetricRow[] {
-  return [
-    {
-      key: 'queries',
-      label: 'Total Queries Received',
-      count: quotations.length,
-      to: '/quotations',
-      hint: 'Every customer RFQ / query received',
-    },
-    {
-      key: 'quotes_sent',
-      label: 'Total Quotes Sent',
-      count: quotations.filter(isQuoteSent).length,
-      to: '/quotations',
-      hint: 'Quotations dispatched to customers',
-    },
-    {
-      key: 'no_followup',
-      label: 'No Follow-ups',
-      count: stageCount(quotations, 'no_followup'),
-      to: '/quotations?stage=no_followup',
-      hint: 'Pipeline stage: No Follow-up',
-    },
-    {
-      key: 'budgetary',
-      label: 'Budgetary',
-      count: stageCount(quotations, 'budgetary'),
-      to: '/quotations?stage=budgetary',
-      hint: 'Pipeline stage: Budgetary',
-    },
-    {
-      key: 'negotiation',
-      label: 'Negotiation',
-      count: stageCount(quotations, 'negotiation'),
-      to: '/quotations?stage=negotiation',
-      hint: 'Pipeline stage: Negotiations',
-    },
-    {
-      key: 'finalise',
-      label: 'Finalise',
-      count: stageCount(quotations, 'finalised'),
-      to: '/quotations?stage=finalised',
-      hint: 'Pipeline stage: Finalised',
-    },
-    {
-      key: 'so_sent',
-      label: 'SO Sent',
-      count: salesOrders.filter(isSOSent).length,
-      to: '/sales-orders?status=so_sent',
-      hint: 'Sales orders dispatched (exact SO Sent)',
-    },
+export interface FunnelStage {
+  key: string;
+  label: string;
+  count: number;
+  to: string;
+  hint: string;
+  /** conversion from the immediately previous stage, 0–100 (null for the first) */
+  fromPrevPct: number | null;
+  /** overall conversion from Queries Received, 0–100 */
+  overallPct: number;
+}
+
+/**
+ * Six-stage conversion funnel, in strict pipeline order:
+ *   Queries → Quotes Sent → Budgetary → Negotiation → Finalised → SO Sent.
+ *
+ * "No Follow-up" is intentionally NOT a funnel stage — it is an exception /
+ * action state, surfaced under Action Required instead of the funnel.
+ *
+ * Funnel semantics (distinct from the exact-stage buckets the stage filters
+ * use): each pipeline stage counts quotations that were SENT to the customer
+ * and have progressed to AT LEAST that stage, so the layers form strictly
+ * nested sets and the funnel is always monotonically non-increasing — a later
+ * layer can never exceed the one above it. SO Sent (a different entity) is
+ * clamped to the Finalised layer to preserve that guarantee even if prototype
+ * data drifts. Clicking a layer drills into that stage's current list.
+ */
+export function pipelineFunnel(quotations: Quotation[], salesOrders: SalesOrder[]): FunnelStage[] {
+  const sent = quotations.filter(isQuoteSent);
+  const reached = (stages: QuotationStage[]) => sent.filter((q) => stages.includes(q.stage)).length;
+
+  const raw = [
+    { key: 'queries', label: 'Queries Received', count: quotations.length, to: '/quotations', hint: 'Every customer RFQ / query received' },
+    { key: 'quotes_sent', label: 'Quotes Sent', count: sent.length, to: '/quotations', hint: 'Quotations dispatched to customers' },
+    { key: 'budgetary', label: 'Budgetary', count: reached(['budgetary', 'negotiation', 'finalised']), to: '/quotations?stage=budgetary', hint: 'Sent quotes at the budgetary stage or beyond' },
+    { key: 'negotiation', label: 'Negotiation', count: reached(['negotiation', 'finalised']), to: '/quotations?stage=negotiation', hint: 'Sent quotes in negotiation or beyond' },
+    { key: 'finalised', label: 'Finalised', count: reached(['finalised']), to: '/quotations?stage=finalised', hint: 'Sent quotes finalised' },
+    { key: 'so_sent', label: 'SO Sent', count: salesOrders.filter(isSOSent).length, to: '/sales-orders?status=so_sent', hint: 'Sales orders dispatched (exact SO Sent)' },
   ];
+
+  // Monotonic clamp + conversion percentages derived from the clamped counts.
+  const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0);
+  const first = raw[0].count;
+  let prev = Infinity;
+  return raw.map((r, i) => {
+    const count = Math.min(r.count, prev);
+    const stage: FunnelStage = {
+      ...r,
+      count,
+      fromPrevPct: i === 0 ? null : pct(count, prev),
+      overallPct: pct(count, first),
+    };
+    prev = count;
+    return stage;
+  });
 }
 
 // -- 2) Action required ------------------------------------------------------
-/** Five action cards; each count equals its destination's in-scope list. */
+/**
+ * Compact operational action list, pre-sorted critical → routine by semantic
+ * tone (red urgent · orange overdue · purple mismatch · slate remaining).
+ * Each count equals its destination's in-scope list. "No Follow-ups in 24h"
+ * lives here (not in the funnel) because it is an exception, not a stage.
+ */
 export function actionRequired(quotations: Quotation[], salesOrders: SalesOrder[]): ActionRow[] {
-  const pending = quotations.filter(isQuotePending);
   return [
     {
       key: 'client_so_escalation',
       label: 'Client SO Escalation',
       count: salesOrders.filter(isActiveRevision).length,
-      severity: 'high',
+      tone: 'red',
       to: '/sales-orders/revisions',
-      description: 'Client raised a concern on a sent SO — revision in progress within SLA.',
+      description: 'Client raised a concern on a sent SO — revision in progress.',
+    },
+    {
+      key: 'needs_revision',
+      label: 'Quote Needs Revision',
+      count: quotations.filter(isQuoteNeedsRevision).length,
+      tone: 'red',
+      to: '/quotations/revisions',
+      description: 'Client requested changes — quotation must be revised and re-sent.',
     },
     {
       key: 'so_pending',
       label: 'SO Pending — Not Sent in 24h',
       count: salesOrders.filter((so) => isSODraft(so) && agedOver24h(so.createdDate)).length,
-      severity: 'high',
+      tone: 'orange',
       to: '/sales-orders?status=draft',
       description: 'PO verified but the Sales Order is still to be prepared and sent.',
+    },
+    {
+      key: 'no_followup_24h',
+      label: 'No Follow-ups in 24h',
+      count: quotations.filter((q) => q.stage === 'no_followup' && agedOver24h(q.createdDate)).length,
+      tone: 'orange',
+      to: '/quotations?stage=no_followup',
+      description: 'Sent quotes with no follow-up conversation in over 24h.',
     },
     {
       key: 'po_mismatch',
       label: 'PO vs Quote Mismatch — Updated PO Pending',
       count: salesOrders.filter(isSOMismatch).length,
-      severity: 'medium',
+      tone: 'purple',
       to: '/sales-orders/verification',
       description: 'Mismatch found on verification — corrected PO / response still pending.',
     },
     {
-      key: 'needs_revision',
-      label: 'Quote Not Approved / Needs Revision',
-      count: quotations.filter(isQuoteNeedsRevision).length,
-      severity: 'medium',
-      to: '/quotations/revisions',
-      description: 'Client requested changes to the quotation.',
-    },
-    {
       key: 'quotes_remaining',
       label: 'Quotes Remaining to Send',
-      count: pending.length,
-      severity: 'low',
+      count: quotations.filter(isQuotePending).length,
+      tone: 'slate',
       to: '/quotations/pending',
       description: 'Queries received but quotations not yet sent.',
-      sub: {
-        label: 'No conversation in 24h',
-        count: pending.filter((q) => agedOver24h(q.createdDate)).length,
-      },
     },
   ];
 }
@@ -387,5 +400,13 @@ export function overdueTasks(quotations: Quotation[], salesOrders: SalesOrder[])
 
   const internalTotal = internalOps.reduce((s, r) => s + r.count, 0);
   const salesTotal = salesTeam.reduce((s, r) => s + r.count, 0);
-  return { internalOps, salesTeam, internalTotal, salesTotal, total: internalTotal + salesTotal };
+  // Present each group highest overdue count → lowest.
+  const byCountDesc = (a: OverdueRow, b: OverdueRow) => b.count - a.count;
+  return {
+    internalOps: [...internalOps].sort(byCountDesc),
+    salesTeam: [...salesTeam].sort(byCountDesc),
+    internalTotal,
+    salesTotal,
+    total: internalTotal + salesTotal,
+  };
 }
