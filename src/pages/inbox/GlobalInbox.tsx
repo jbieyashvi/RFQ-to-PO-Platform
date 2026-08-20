@@ -1,15 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
-import { Inbox, ArrowLeft, MailOpen, FileText, RefreshCw, ClipboardCheck, FilePenLine } from 'lucide-react';
+import { Inbox, ArrowLeft, MailOpen, FileText, RefreshCw, ClipboardCheck, FilePenLine, SlidersHorizontal } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
-import { SearchInput, FilterSelect, EmptyState } from '@/components/ui';
+import { SearchInput, FilterSelect, FilterBar, EmptyState, type FilterChip } from '@/components/ui';
 import { Tabs } from '@/components/ui/misc';
 import { useApp, useOfficeScope } from '@/context/AppContext';
 import { OWNERS } from '@/data/users';
 import { INBOX_CLASSIFICATION } from '@/lib/labels';
 import type { EmailClassification, InboxEmail } from '@/types';
 import { classNames } from '@/lib/format';
-import { confidenceBucket } from './helpers';
 import { EmailList } from './EmailList';
 import { EmailActionPanel } from './EmailActionPanel';
 import { InboxCenterPanel } from './InboxCenterPanel';
@@ -32,7 +32,6 @@ export default function GlobalInbox() {
   const [classification, setClassification] = useState('');
   const [owner, setOwner] = useState('');
   const [readState, setReadState] = useState('');
-  const [confidence, setConfidence] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   // Initialise the selection from the deep-link (?email=<id>) so opening an
@@ -95,7 +94,6 @@ export default function GlobalInbox() {
         if (owner && e.owner !== owner) return false;
         if (readState === 'unread' && (e.read || e.sent)) return false;
         if (readState === 'read' && !e.read && !e.sent) return false;
-        if (confidence && confidenceBucket(e.aiConfidence) !== confidence) return false;
         const d = (e.sent && e.sentAt ? e.sentAt : e.receivedAt).slice(0, 10);
         if (dateFrom && d < dateFrom) return false;
         if (dateTo && d > dateTo) return false;
@@ -109,7 +107,7 @@ export default function GlobalInbox() {
         return true;
       })
       .sort((a, b) => ((a.sent && a.sentAt ? a.sentAt : a.receivedAt) < (b.sent && b.sentAt ? b.sentAt : b.receivedAt) ? 1 : -1));
-  }, [scoped, tab, search, classification, owner, readState, confidence, dateFrom, dateTo]);
+  }, [scoped, tab, search, classification, owner, readState, dateFrom, dateTo]);
 
   // Deep-link: ?email=<id> (+ optional ?mode=quote-send|quote-revision|
   // po-verification & qtn/po params) — used by "Review & Send Email" from Quotes
@@ -207,10 +205,23 @@ export default function GlobalInbox() {
     }
   };
 
-  const hasFilters = search || classification || owner || readState || confidence || dateFrom || dateTo;
   const clearFilters = () => {
-    setSearch(''); setClassification(''); setOwner(''); setReadState(''); setConfidence(''); setDateFrom(''); setDateTo('');
+    setSearch(''); setClassification(''); setOwner(''); setReadState(''); setDateFrom(''); setDateTo('');
   };
+
+  // Read/Unread, Owner and the date range live inside the "More Filters" popover;
+  // the count keeps the button honest about how many are active behind it.
+  const moreCount = (readState ? 1 : 0) + (owner ? 1 : 0) + (dateFrom || dateTo ? 1 : 0);
+
+  // Active filters render as small removable chips beneath the toolbar.
+  const chips: FilterChip[] = [];
+  if (search) chips.push({ key: 'q', label: `Search: “${search}”`, onRemove: () => setSearch('') });
+  if (classification)
+    chips.push({ key: 'c', label: `Type: ${INBOX_CLASSIFICATION[classification as EmailClassification].label}`, onRemove: () => setClassification('') });
+  if (readState) chips.push({ key: 'r', label: readState === 'unread' ? 'Unread' : 'Read', onRemove: () => setReadState('') });
+  if (owner) chips.push({ key: 'o', label: `Owner: ${owner}`, onRemove: () => setOwner('') });
+  if (dateFrom || dateTo)
+    chips.push({ key: 'd', label: `Date: ${dateFrom || '…'} → ${dateTo || '…'}`, onRemove: () => { setDateFrom(''); setDateTo(''); } });
 
   return (
     <>
@@ -233,34 +244,48 @@ export default function GlobalInbox() {
             ]}
           />
         </div>
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-2 border-t border-surface-100 p-3">
-          <SearchInput value={search} onChange={setSearch} placeholder="Search sender, subject, customer, QTN / PO no…" className="w-full sm:w-80" />
-          <FilterSelect value={classification} onChange={setClassification} placeholder="All classifications" options={(Object.keys(INBOX_CLASSIFICATION) as EmailClassification[]).map((c) => ({ value: c, label: INBOX_CLASSIFICATION[c].label }))} />
-          <FilterSelect value={confidence} onChange={setConfidence} placeholder="Any AI confidence" options={[{ value: 'high', label: 'High confidence' }, { value: 'medium', label: 'Medium confidence' }, { value: 'low', label: 'Low confidence' }]} />
-          <FilterSelect value={readState} onChange={setReadState} placeholder="Read & Unread" options={[{ value: 'unread', label: 'Unread' }, { value: 'read', label: 'Read' }]} />
-          <FilterSelect value={owner} onChange={setOwner} placeholder="All owners" options={OWNERS.map((o) => ({ value: o, label: o }))} />
-          <input type="date" aria-label="From date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="input h-9 w-auto py-1.5 text-sm" title="From date" />
-          <input type="date" aria-label="To date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="input h-9 w-auto py-1.5 text-sm" title="To date" />
-          {hasFilters && (
-            <button onClick={clearFilters} className="text-xs font-semibold text-surface-500 hover:text-brand-600 hover:underline">Clear filters</button>
-          )}
-          <span className="ml-auto text-xs text-surface-500"><span className="font-semibold text-surface-800">{filtered.length}</span> email{filtered.length === 1 ? '' : 's'}</span>
+        {/* Filters — default toolbar is Search · Classification · More Filters.
+            Read/Unread, Owner and the date range live in the popover to keep the
+            bar short; active filters surface as removable chips below. */}
+        <div className="border-t border-surface-100 px-3 py-2.5">
+          <FilterBar
+            chips={chips}
+            onClearAll={chips.length ? clearFilters : undefined}
+            right={
+              <span className="text-[12px] text-surface-500">
+                <span className="font-semibold text-surface-800">{filtered.length}</span> email{filtered.length === 1 ? '' : 's'}
+              </span>
+            }
+          >
+            <SearchInput value={search} onChange={setSearch} placeholder="Search sender, subject, customer, QTN / PO no…" className="w-full sm:w-72" />
+            <FilterSelect value={classification} onChange={setClassification} placeholder="All classifications" options={(Object.keys(INBOX_CLASSIFICATION) as EmailClassification[]).map((c) => ({ value: c, label: INBOX_CLASSIFICATION[c].label }))} />
+            <MoreFiltersPopover
+              count={moreCount}
+              readState={readState}
+              onReadState={setReadState}
+              owner={owner}
+              onOwner={setOwner}
+              dateFrom={dateFrom}
+              onDateFrom={setDateFrom}
+              dateTo={dateTo}
+              onDateTo={setDateTo}
+            />
+          </FilterBar>
         </div>
       </div>
 
       {/* Connected three-panel workspace — one surface, vertical dividers, no
-          gaps. The fr ratios (0.55 / 1 / 0.95 ≈ 22% / 40% / 38%) put the
-          reading + writing centre panel widest, matching the PM layout: narrow
-          list · widest read+compose · quote/action tools. Enabled at ≥1180px;
+          gaps. The fr ratios (0.55 / 0.95 / 1 ≈ 22% / 38% / 40%) make the right
+          business-workspace panel — the primary task area — widest: narrow
+          list · read+compose · widest quote/action tools. Enabled at ≥1180px;
           below that we fall back to progressive list → detail navigation so the
           panels never squeeze or scroll sideways. */}
       <div
         className={classNames(
           'grid grid-cols-1 gap-4',
-          'min-[1180px]:h-[calc(100vh-268px)] min-[1180px]:min-h-[520px] min-[1180px]:gap-0',
+          'min-[1180px]:h-[calc(100vh-250px)] min-[1180px]:min-h-[520px] min-[1180px]:gap-0',
           'min-[1180px]:overflow-hidden min-[1180px]:rounded-xl min-[1180px]:border min-[1180px]:border-surface-200 min-[1180px]:bg-white min-[1180px]:shadow-card',
-          'min-[1180px]:grid-cols-[minmax(220px,0.55fr)_minmax(330px,1fr)_minmax(310px,0.95fr)]'
+          'min-[1180px]:grid-cols-[minmax(220px,0.55fr)_minmax(320px,0.95fr)_minmax(340px,1fr)]'
         )}
       >
         {/* Left: email list — narrowest, compact, subtly muted, divider on right */}
@@ -363,6 +388,129 @@ export default function GlobalInbox() {
           <Inbox className="h-6 w-6" />
         </div>
       )}
+    </>
+  );
+}
+
+/**
+ * "More Filters" — a compact popover that keeps the secondary inbox filters
+ * (Read/Unread, Owner, date range) out of the default toolbar. Rendered in a
+ * portal so it never gets clipped by the card, with click-outside + Escape to
+ * close, mirroring the RowActionMenu pattern used elsewhere.
+ */
+function MoreFiltersPopover({
+  count,
+  readState,
+  onReadState,
+  owner,
+  onOwner,
+  dateFrom,
+  onDateFrom,
+  dateTo,
+  onDateTo,
+}: {
+  count: number;
+  readState: string;
+  onReadState: (v: string) => void;
+  owner: string;
+  onOwner: (v: string) => void;
+  dateFrom: string;
+  onDateFrom: (v: string) => void;
+  dateTo: string;
+  onDateTo: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  const place = () => {
+    const b = btnRef.current?.getBoundingClientRect();
+    if (!b) return;
+    const menuW = 288;
+    const left = Math.max(8, Math.min(b.left, window.innerWidth - menuW - 8));
+    setPos({ top: b.bottom + 6, left });
+  };
+
+  useLayoutEffect(() => {
+    if (open) place();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node) && !btnRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    const onScroll = () => setOpen(false);
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onScroll);
+    window.addEventListener('scroll', onScroll, true);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', onScroll);
+      window.removeEventListener('scroll', onScroll, true);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        className={classNames(
+          'inline-flex h-8 items-center gap-1.5 rounded-lg border bg-white px-2.5 text-[12px] font-medium shadow-sm transition-colors hover:bg-surface-50 focus:outline-none focus:ring-2 focus:ring-brand-500/20',
+          count > 0 ? 'border-brand-300 text-brand-700' : 'border-surface-200 text-surface-600'
+        )}
+      >
+        <SlidersHorizontal className="h-3.5 w-3.5" />
+        More Filters
+        {count > 0 && (
+          <span className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-600 px-1 text-[11px] font-semibold text-white">{count}</span>
+        )}
+      </button>
+      {open &&
+        pos &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="dialog"
+            aria-label="More filters"
+            style={{ top: pos.top, left: pos.left, width: 288 }}
+            className="fixed z-50 space-y-3 rounded-xl border border-surface-200 bg-white p-3.5 shadow-pop animate-slide-up"
+          >
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-surface-400">Status</label>
+              <FilterSelect className="w-full" value={readState} onChange={onReadState} placeholder="Read & Unread" options={[{ value: 'unread', label: 'Unread' }, { value: 'read', label: 'Read' }]} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-surface-400">Owner</label>
+              <FilterSelect className="w-full" value={owner} onChange={onOwner} placeholder="All owners" options={OWNERS.map((o) => ({ value: o, label: o }))} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-surface-400">Date range</label>
+              <div className="flex items-center gap-1.5">
+                <input type="date" aria-label="From date" value={dateFrom} onChange={(e) => onDateFrom(e.target.value)} className="input h-8 flex-1 py-1 text-[12px]" title="From date" />
+                <span className="text-surface-400">→</span>
+                <input type="date" aria-label="To date" value={dateTo} onChange={(e) => onDateTo(e.target.value)} className="input h-8 flex-1 py-1 text-[12px]" title="To date" />
+              </div>
+            </div>
+            {count > 0 && (
+              <button
+                onClick={() => { onReadState(''); onOwner(''); onDateFrom(''); onDateTo(''); }}
+                className="text-[11px] font-semibold text-surface-500 hover:text-brand-600 hover:underline"
+              >
+                Reset these filters
+              </button>
+            )}
+          </div>,
+          document.body
+        )}
     </>
   );
 }

@@ -266,12 +266,12 @@ export function RevisionQuotePanel({
         <section className="mb-4">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-[12px] font-semibold uppercase tracking-wide text-surface-500">Editable Quote Generator</h3>
-            {changed && !alreadySent && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Unsaved edits</span>}
+            {changed && !alreadySent && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">Unsaved edits</span>}
           </div>
           <div className="overflow-hidden rounded-xl border border-surface-200">
             <table className="w-full border-collapse text-[12px]">
               <thead>
-                <tr className="border-b border-surface-200 bg-surface-50 text-[10.5px] font-semibold uppercase tracking-[0.02em] text-surface-500">
+                <tr className="border-b border-surface-200 bg-surface-50 text-[11px] font-semibold uppercase tracking-[0.02em] text-surface-500">
                   <th className="px-2.5 py-2 text-left">Item</th>
                   <th className="px-1.5 py-2 text-right">Qty</th>
                   <th className="px-1.5 py-2 text-right">Unit Price</th>
@@ -284,7 +284,7 @@ export function RevisionQuotePanel({
                   <tr key={it.id}>
                     <td className="px-2.5 py-2 align-top">
                       <p className="font-medium text-surface-800">{it.description}</p>
-                      <p className="text-[10.5px] text-surface-400">{it.itemCode} · HSN {it.hsnCode}</p>
+                      <p className="text-[11px] text-surface-400">{it.itemCode} · HSN {it.hsnCode}</p>
                     </td>
                     <td className="px-1.5 py-2 text-right align-top">
                       {canEdit && !alreadySent ? (
@@ -432,7 +432,7 @@ export function RevisionQuotePanel({
         <div className="mt-4 overflow-hidden rounded-xl border border-surface-200">
           <table className="w-full border-collapse text-[12px]">
             <thead>
-              <tr className="border-b border-surface-200 bg-surface-50 text-[10.5px] font-semibold uppercase tracking-[0.02em] text-surface-500">
+              <tr className="border-b border-surface-200 bg-surface-50 text-[11px] font-semibold uppercase tracking-[0.02em] text-surface-500">
                 <th className="px-3 py-2 text-left">Item</th>
                 <th className="px-2 py-2 text-right">Qty</th>
                 <th className="px-2 py-2 text-right">Unit Price</th>
@@ -442,7 +442,7 @@ export function RevisionQuotePanel({
             <tbody className="divide-y divide-surface-100">
               {items.map((it) => (
                 <tr key={it.id}>
-                  <td className="px-3 py-2"><p className="font-medium text-surface-800">{it.description}</p><p className="text-[10.5px] text-surface-400">{it.itemCode}</p></td>
+                  <td className="px-3 py-2"><p className="font-medium text-surface-800">{it.description}</p><p className="text-[11px] text-surface-400">{it.itemCode}</p></td>
                   <td className="px-2 py-2 text-right text-surface-700">{it.quantity} {it.unit}</td>
                   <td className="px-2 py-2 text-right text-surface-700">{formatINR(it.unitPrice)}</td>
                   <td className="px-3 py-2 text-right font-medium text-surface-800">{formatINR(lineTotal(it.quantity, it.unitPrice, it.discountPct))}</td>
@@ -469,7 +469,7 @@ export function RevisionQuotePanel({
         <div className="overflow-hidden rounded-xl border border-surface-200">
           <table className="w-full border-collapse text-[12px]">
             <thead>
-              <tr className="border-b border-surface-200 bg-surface-50 text-[10.5px] font-semibold uppercase tracking-[0.02em] text-surface-500">
+              <tr className="border-b border-surface-200 bg-surface-50 text-[11px] font-semibold uppercase tracking-[0.02em] text-surface-500">
                 <th className="px-3 py-2 text-left">Item</th>
                 <th className="px-2 py-2 text-right">Qty</th>
                 <th className="px-2 py-2 text-right">Unit Price</th>
@@ -479,7 +479,7 @@ export function RevisionQuotePanel({
             <tbody className="divide-y divide-surface-100">
               {q.items.map((it) => (
                 <tr key={it.id}>
-                  <td className="px-3 py-2"><p className="font-medium text-surface-800">{it.description}</p><p className="text-[10.5px] text-surface-400">{it.itemCode}</p></td>
+                  <td className="px-3 py-2"><p className="font-medium text-surface-800">{it.description}</p><p className="text-[11px] text-surface-400">{it.itemCode}</p></td>
                   <td className="px-2 py-2 text-right text-surface-700">{it.quantity} {it.unit}</td>
                   <td className="px-2 py-2 text-right text-surface-700">{formatINR(it.unitPrice)}</td>
                   <td className="px-3 py-2 text-right font-medium text-surface-800">{formatINR(lineTotal(it.quantity, it.unitPrice, it.discountPct))}</td>

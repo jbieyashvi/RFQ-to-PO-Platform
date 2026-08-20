@@ -93,7 +93,7 @@ export function QuoteToolsPanel({ email, quotation }: { email: InboxEmail; quota
               tone={QUOTATION_DELIVERY[quotation.deliveryState].tone}
               label={QUOTATION_DELIVERY[quotation.deliveryState].label}
               dot={false}
-              className="!text-[10px]"
+              className="!text-[11px]"
             />
           </div>
           <div className="mt-2 flex items-center justify-between border-t border-surface-200 pt-2 text-[12px]">

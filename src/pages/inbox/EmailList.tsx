@@ -1,16 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { AlertTriangle, Sparkles } from 'lucide-react';
 import type { InboxEmail } from '@/types';
 import { StatusBadge, EmptyState } from '@/components/ui';
 import { INBOX_CLASSIFICATION } from '@/lib/labels';
 import { classNames, formatDateTime } from '@/lib/format';
-import { confidenceBucket } from './helpers';
-
-const confDot: Record<'high' | 'medium' | 'low', string> = {
-  high: 'bg-emerald-500',
-  medium: 'bg-amber-500',
-  low: 'bg-rose-500',
-};
 
 export function EmailList({
   emails,
@@ -42,8 +34,15 @@ export function EmailList({
     <ul className="divide-y divide-surface-100">
       {emails.map((e) => {
         const cls = INBOX_CLASSIFICATION[e.classification];
-        const bucket = confidenceBucket(e.aiConfidence);
         const active = e.id === selectedId;
+        // A single, non-duplicated lifecycle chip (Sent › Draft) — the AI score,
+        // sparkle and the repeated "Review" chip were removed to keep each row
+        // scannable. "Needs review" already has its own tab.
+        const statusChip = e.sent
+          ? { label: 'Sent', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200' }
+          : e.draftSaved
+          ? { label: 'Draft', cls: 'bg-blue-50 text-blue-700 ring-blue-200' }
+          : null;
         return (
           <li key={e.id} ref={active ? selectedRef : undefined}>
             <button
@@ -51,47 +50,33 @@ export function EmailList({
               className={classNames(
                 // 3px left indicator on every row keeps text alignment steady;
                 // only the selected row lights up the brand colour + background.
-                'flex w-full flex-col gap-0.5 border-l-[3px] px-4 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/50',
+                // A tight 3-line layout keeps rows in the 84–96px band so ~7–8
+                // fit on screen at desktop widths.
+                'flex min-h-[84px] w-full flex-col justify-center gap-1 border-l-[3px] px-4 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/50',
                 active ? 'border-brand-600 bg-brand-50' : 'border-transparent hover:bg-surface-50',
                 !active && !e.read && !e.sent && 'bg-brand-50/30'
               )}
             >
               <div className="flex items-center gap-2">
                 {!e.read && !e.sent && <span className="h-2 w-2 flex-none rounded-full bg-brand-600" title="Unread" />}
-                <span className={classNames('truncate text-[13px]', !e.read && !e.sent ? 'font-semibold text-surface-900' : 'font-medium text-surface-700')}>
+                <span className={classNames('min-w-0 flex-1 truncate text-[13px]', !e.read && !e.sent ? 'font-semibold text-surface-900' : 'font-medium text-surface-700')}>
                   {e.senderName}
                 </span>
-                <span className="ml-auto flex-none text-[11px] text-surface-400">
+                <span className="flex-none text-[12px] text-surface-400">
                   {formatDateTime(e.sent && e.sentAt ? e.sentAt : e.receivedAt).replace(/,/, '')}
                 </span>
               </div>
               <p className={classNames('truncate text-[13px]', !e.read && !e.sent ? 'font-medium text-surface-800' : 'text-surface-600')}>
                 {e.subject}
               </p>
-              <p className="truncate text-[11px] text-surface-400">{e.customerName ?? e.senderEmail}</p>
-              <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                <StatusBadge tone={cls.tone} label={cls.label} dot={false} className="!px-1.5 !py-0 !text-[10px]" />
-                <span
-                  title={`AI confidence ${e.aiConfidence}%`}
-                  className="inline-flex items-center gap-1 rounded-full bg-surface-100 px-1.5 py-0 text-[10px] font-medium text-surface-500"
-                >
-                  <Sparkles className="h-2.5 w-2.5" />
-                  <span className={classNames('h-1.5 w-1.5 rounded-full', confDot[bucket])} />
-                  {e.aiConfidence}%
-                </span>
-                {e.needsReview && !e.sent && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
-                    <AlertTriangle className="h-2.5 w-2.5" /> Review
-                  </span>
-                )}
-                {e.draftSaved && !e.sent && (
-                  <span className="rounded-full bg-blue-50 px-1.5 py-0 text-[10px] font-medium text-blue-700 ring-1 ring-inset ring-blue-200">
-                    Draft
-                  </span>
-                )}
-                {e.sent && (
-                  <span className="rounded-full bg-emerald-50 px-1.5 py-0 text-[10px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
-                    Sent
+              {/* Customer/company and the single classification badge share one
+                  line to keep the row compact (3 lines total). */}
+              <div className="flex items-center gap-2">
+                <p className="min-w-0 flex-1 truncate text-[12px] text-surface-400">{e.customerName ?? e.senderEmail}</p>
+                <StatusBadge tone={cls.tone} label={cls.label} dot={false} className="!px-1.5 !py-0 !text-[11px] flex-none" />
+                {statusChip && (
+                  <span className={classNames('flex-none rounded-full px-1.5 py-0 text-[11px] font-medium ring-1 ring-inset', statusChip.cls)}>
+                    {statusChip.label}
                   </span>
                 )}
               </div>

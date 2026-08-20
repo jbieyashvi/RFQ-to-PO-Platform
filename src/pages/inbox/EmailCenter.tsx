@@ -65,7 +65,7 @@ export function EmailCenter({ email, embedded }: { email: InboxEmail; embedded?:
       {/* Header */}
       <div className={classNames('border-b border-surface-100 px-5 py-4', !embedded && 'flex-none')}>
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <h2 className="text-base font-semibold text-surface-900">{email.subject}</h2>
+          <h2 className="text-[15px] font-semibold leading-snug text-surface-900">{email.subject}</h2>
           <div className="flex items-center gap-2">
             <StatusBadge tone={cls.tone} label={cls.label} />
             {canClassify && (
@@ -95,28 +95,41 @@ export function EmailCenter({ email, embedded }: { email: InboxEmail; embedded?:
           </div>
         </div>
 
-        <div className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1 text-[13px] sm:grid-cols-2">
+        <div className="mt-2.5 grid grid-cols-1 gap-x-6 gap-y-1 text-[12px] sm:grid-cols-2">
           <p><span className="text-surface-400">From:</span> <span className="font-medium text-surface-700">{email.senderName}</span> &lt;{email.senderEmail}&gt;</p>
           <p><span className="text-surface-400">To:</span> <span className="text-surface-700">{email.recipient}</span></p>
           {email.cc.length > 0 && <p><span className="text-surface-400">Cc:</span> <span className="text-surface-700">{email.cc.join(', ')}</span></p>}
           <p><span className="text-surface-400">Received:</span> <span className="text-surface-700">{formatDateTime(email.receivedAt)}</span></p>
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="chip"><Building2 className="h-3 w-3" /> {officeName(email.officeId)}</span>
-          <span className="chip"><UserRound className="h-3 w-3" /> {email.owner}</span>
-          {email.customerName && <span className="chip">{email.customerName}{email.customerCode ? ` · ${email.customerCode}` : ''}</span>}
-          {email.inquiryNo && <span className="chip !text-amber-700 !bg-amber-50 !border-amber-200">Inquiry: {email.inquiryNo}</span>}
-          {email.linkedQuotation && <span className="chip !text-brand-700 !bg-brand-50 !border-brand-200">Quote: {email.linkedQuotation}</span>}
-          {email.linkedPO && <span className="chip !text-violet-700 !bg-violet-50 !border-violet-200">PO: {email.linkedPO}</span>}
-          {email.linkedSO && <span className="chip !text-teal-700 !bg-teal-50 !border-teal-200">SO: {email.linkedSO}</span>}
         </div>
       </div>
 
       {/* Body (scrolls with the composer below it when embedded) */}
       <div className={classNames('px-5 py-4', !embedded && 'flex-1 overflow-y-auto')}>
         {/* Body */}
-        <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-surface-700">{email.body}</div>
+        <div className="whitespace-pre-wrap text-[13px] leading-[1.5] text-surface-700">{email.body}</div>
+
+        {/* Related details — one compact row combining office/owner/customer and
+            the linked document references, instead of many large separate chips. */}
+        <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-lg border border-surface-200 bg-surface-50/60 px-3 py-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-surface-400">Related</span>
+          <span className="inline-flex items-center gap-1 text-[12px] text-surface-600">
+            <Building2 className="h-3 w-3 text-surface-400" /> {officeName(email.officeId)}
+          </span>
+          <span className="text-surface-300">·</span>
+          <span className="inline-flex items-center gap-1 text-[12px] text-surface-600">
+            <UserRound className="h-3 w-3 text-surface-400" /> {email.owner}
+          </span>
+          {email.customerName && (
+            <>
+              <span className="text-surface-300">·</span>
+              <span className="text-[12px] font-medium text-surface-700">{email.customerName}{email.customerCode ? ` · ${email.customerCode}` : ''}</span>
+            </>
+          )}
+          {email.inquiryNo && <span className="chip !py-0 !text-[11px] !text-amber-700 !bg-amber-50 !border-amber-200">Inquiry: {email.inquiryNo}</span>}
+          {email.linkedQuotation && <span className="chip !py-0 !text-[11px] !text-brand-700 !bg-brand-50 !border-brand-200">Quote: {email.linkedQuotation}</span>}
+          {email.linkedPO && <span className="chip !py-0 !text-[11px] !text-violet-700 !bg-violet-50 !border-violet-200">PO: {email.linkedPO}</span>}
+          {email.linkedSO && <span className="chip !py-0 !text-[11px] !text-teal-700 !bg-teal-50 !border-teal-200">SO: {email.linkedSO}</span>}
+        </div>
 
         {/* Thread */}
         {email.thread.length > 0 && (
@@ -145,7 +158,7 @@ export function EmailCenter({ email, embedded }: { email: InboxEmail; embedded?:
               <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-brand-50 text-brand-600"><Sparkles className="h-3.5 w-3.5" /></span>
               <h3 className="text-[13px] font-semibold text-surface-800">AI Extraction</h3>
               <span className="rounded-full bg-surface-100 px-2 py-0.5 text-[11px] font-medium text-surface-500">{email.aiConfidence}% confidence</span>
-              {email.extractionConfirmed && <StatusBadge tone="green" dot={false} label="Confirmed" className="!text-[10px]" />}
+              {email.extractionConfirmed && <StatusBadge tone="green" dot={false} label="Confirmed" className="!text-[11px]" />}
             </div>
             {canEditExtraction && (
               <div className="flex items-center gap-1.5">
@@ -175,7 +188,7 @@ export function EmailCenter({ email, embedded }: { email: InboxEmail; embedded?:
                     <span className="text-[11px] font-medium uppercase tracking-wide text-surface-400">
                       {f.label}{f.required && <span className="text-rose-500"> *</span>}
                     </span>
-                    <span className={classNames('text-[10px] font-semibold', meta.tone)}>{meta.label}</span>
+                    <span className={classNames('text-[11px] font-semibold', meta.tone)}>{meta.label}</span>
                   </div>
                   {editing && canEditExtraction ? (
                     <input

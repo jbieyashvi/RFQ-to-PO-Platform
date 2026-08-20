@@ -467,16 +467,17 @@ export function SoRevisionPanel({
   const stateMeta = so.revisionState ? REVISION_STATE[so.revisionState] : null;
 
   return (
-    <div className="space-y-3">
-      {/* Revision context banner */}
-      <div className="flex items-start gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-[12px] text-brand-700">
-        <FilePenLine className="h-4 w-4 flex-none" />
-        <span>
-          Handling the customer's revision request for <span className="font-semibold">{so.number}</span>. Prepare the
-          revised Sales Order below, then add it to the email — the revised acknowledgement is sent from the centre panel.
+    <div className="flex h-full flex-col">
+      {/* Compact one-line context banner */}
+      <div className="flex flex-none items-center gap-1.5 border-b border-brand-100 bg-brand-50/70 px-4 py-2 text-[12px] text-brand-700">
+        <FilePenLine className="h-3.5 w-3.5 flex-none" />
+        <span className="truncate">
+          Revising <span className="font-semibold">{so.number}</span> — prepare the revised SO, then add it to the email.
         </span>
       </div>
 
+      {/* Independently-scrolling workspace body */}
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
       {/* Header meta */}
       <div className="overflow-hidden rounded-xl border border-surface-200">
         <div className="flex items-center justify-between border-b border-surface-100 bg-surface-50/70 px-3 py-2">
@@ -633,7 +634,7 @@ export function SoRevisionPanel({
                       />
                       <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[12px] text-surface-400">%</span>
                     </div>
-                    <p className="mt-0.5 text-[10.5px] text-surface-500">{SO_PAYMENT_LABEL[f.key]}</p>
+                    <p className="mt-0.5 text-[11px] text-surface-500">{SO_PAYMENT_LABEL[f.key]}</p>
                   </div>
                 ))}
               </div>
@@ -660,33 +661,34 @@ export function SoRevisionPanel({
             <p className="mt-1 text-[11px] italic text-surface-500">{amountInWords(totals.grandTotal)}</p>
           </FormSection>
 
-          {attachedRev && (
-            <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-700">
-              <Paperclip className="h-4 w-4 flex-none" /> Revised Sales Order added to the email — set the next review date and send it from the centre panel.
-            </div>
-          )}
-
-          {/* Actions — NO direct send here; the send is the composer's */}
-          <div className="space-y-2 pt-1">
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant="secondary" size="sm" leftIcon={<Save className="h-4 w-4" />} onClick={() => saveDraft()} disabled={!canRevise}>Save Revision Draft</Button>
-              <Button variant="secondary" size="sm" leftIcon={<Eye className="h-4 w-4" />} onClick={() => setPreview('revised')}>Preview Revised SO</Button>
-            </div>
-            <Button
-              variant="primary"
-              size="sm"
-              className="w-full"
-              leftIcon={canRevise ? <Mail className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
-              onClick={addToEmail}
-              disabled={!canRevise}
-              title="Attach the revised Sales Order to the email in the centre panel"
-            >
-              {attachedRev ? 'Update Revised SO in Email' : 'Add Revised SO to Email'}
-            </Button>
-            {!canRevise && <p className="text-center text-[11px] font-medium text-rose-600">Sales Order edit permission required.</p>}
-          </div>
         </div>
       )}
+      </div>
+
+      {/* Sticky action footer — primary revised-SO actions stay visible */}
+      <div className="flex-none space-y-2 border-t border-surface-100 bg-surface-50/60 px-4 py-3">
+        {attachedRev && (
+          <p className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-700">
+            <Paperclip className="h-3.5 w-3.5 flex-none" /> Revised SO attached — set the review date and send from the centre panel.
+          </p>
+        )}
+        <div className="grid grid-cols-2 gap-2">
+          <Button variant="secondary" size="sm" leftIcon={<Save className="h-4 w-4" />} onClick={() => saveDraft()} disabled={!canRevise}>Save Draft</Button>
+          <Button variant="secondary" size="sm" leftIcon={<Eye className="h-4 w-4" />} onClick={() => setPreview('revised')}>Preview Revised SO</Button>
+        </div>
+        <Button
+          variant="primary"
+          size="sm"
+          className="w-full"
+          leftIcon={canRevise ? <Mail className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
+          onClick={addToEmail}
+          disabled={!canRevise}
+          title="Attach the revised Sales Order to the email in the centre panel"
+        >
+          {attachedRev ? 'Update Revised SO in Email' : 'Add Revised SO to Email'}
+        </Button>
+        {!canRevise && <p className="text-center text-[11px] font-medium text-rose-600">Sales Order edit permission required.</p>}
+      </div>
 
       {preview !== null && (() => {
         const isOrig = preview === 'original';
@@ -762,7 +764,7 @@ function OriginalTab({
       <div className="overflow-x-auto rounded-xl border border-surface-200">
         <table className="w-full min-w-[520px] border-collapse text-[12px]">
           <thead>
-            <tr className="border-b border-surface-200 bg-surface-50 text-[10.5px] font-semibold uppercase tracking-[0.02em] text-surface-500">
+            <tr className="border-b border-surface-200 bg-surface-50 text-[11px] font-semibold uppercase tracking-[0.02em] text-surface-500">
               <th className="px-3 py-2 text-left">Item</th>
               <th className="px-2 py-2 text-right">Qty</th>
               <th className="px-2 py-2 text-right">Unit Price</th>
@@ -773,7 +775,7 @@ function OriginalTab({
           <tbody className="divide-y divide-surface-100">
             {original.items.map((it) => (
               <tr key={it.id}>
-                <td className="px-3 py-2"><p className="font-medium text-surface-800">{it.description || '—'}</p><p className="text-[10.5px] text-surface-400">{it.itemCode}{it.hsnCode ? ` · HSN ${it.hsnCode}` : ''}</p></td>
+                <td className="px-3 py-2"><p className="font-medium text-surface-800">{it.description || '—'}</p><p className="text-[11px] text-surface-400">{it.itemCode}{it.hsnCode ? ` · HSN ${it.hsnCode}` : ''}</p></td>
                 <td className="px-2 py-2 text-right text-surface-700">{it.quantity} {it.unit}</td>
                 <td className="px-2 py-2 text-right text-surface-700">{formatINR(it.unitPrice)}</td>
                 <td className="px-2 py-2 text-right text-surface-700">{it.discountPct}%</td>
@@ -879,7 +881,7 @@ function RevItemEditor({
                     <option key={c.id} value={c.id}>{c.code} — {c.name}</option>
                   ))}
                 </select>
-                {isNew && <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 ring-1 ring-inset ring-emerald-200">New</span>}
+                {isNew && <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-600 ring-1 ring-inset ring-emerald-200">New</span>}
                 <button
                   type="button"
                   onClick={() => removeLine(line.id)}
@@ -892,22 +894,22 @@ function RevItemEditor({
 
               <div className="grid grid-cols-2 gap-2 px-2.5 pb-2 sm:grid-cols-4">
                 <label className="block">
-                  <span className="mb-0.5 block text-[10.5px] text-surface-500">Qty</span>
+                  <span className="mb-0.5 block text-[11px] text-surface-500">Qty</span>
                   <input type="number" min={0} value={line.quantity} onChange={(e) => update(line.id, { quantity: Math.max(0, Number(e.target.value)) })} className={classNames('input py-1.5 text-right text-[13px]', qtyChanged && changedCell)} />
-                  {qtyChanged && <span className="mt-0.5 block text-[10px] text-amber-600">was {o!.quantity}</span>}
+                  {qtyChanged && <span className="mt-0.5 block text-[11px] text-amber-600">was {o!.quantity}</span>}
                 </label>
                 <label className="block">
-                  <span className="mb-0.5 block text-[10.5px] text-surface-500">Unit Price</span>
+                  <span className="mb-0.5 block text-[11px] text-surface-500">Unit Price</span>
                   <input type="number" min={0} value={line.unitPrice} onChange={(e) => update(line.id, { unitPrice: Math.max(0, Number(e.target.value)) })} className={classNames('input py-1.5 text-right text-[13px]', priceChanged && changedCell)} />
-                  {priceChanged && <span className="mt-0.5 block text-[10px] text-amber-600">was {formatINR(o!.unitPrice)}</span>}
+                  {priceChanged && <span className="mt-0.5 block text-[11px] text-amber-600">was {formatINR(o!.unitPrice)}</span>}
                 </label>
                 <label className="block">
-                  <span className="mb-0.5 block text-[10.5px] text-surface-500">Disc %</span>
+                  <span className="mb-0.5 block text-[11px] text-surface-500">Disc %</span>
                   <input type="number" min={0} max={100} value={line.discountPct} onChange={(e) => update(line.id, { discountPct: Math.max(0, Number(e.target.value)) })} className={classNames('input py-1.5 text-right text-[13px]', discChanged && changedCell)} />
-                  {discChanged && <span className="mt-0.5 block text-[10px] text-amber-600">was {o!.discountPct}%</span>}
+                  {discChanged && <span className="mt-0.5 block text-[11px] text-amber-600">was {o!.discountPct}%</span>}
                 </label>
                 <label className="block">
-                  <span className="mb-0.5 block text-[10.5px] text-surface-500">GST %</span>
+                  <span className="mb-0.5 block text-[11px] text-surface-500">GST %</span>
                   <input type="number" min={0} max={100} value={line.taxPct} onChange={(e) => update(line.id, { taxPct: Math.max(0, Number(e.target.value)) })} className="input py-1.5 text-right text-[13px]" />
                 </label>
               </div>
@@ -928,7 +930,7 @@ function RevItemEditor({
                 <div className="grid grid-cols-1 gap-2 border-t border-surface-100 bg-surface-50/50 px-2.5 py-2.5 sm:grid-cols-2">
                   {TECH_SPEC_FIELDS.map((f) => (
                     <label key={f.key} className="block">
-                      <span className="mb-0.5 block text-[10.5px] text-surface-500">{f.label}</span>
+                      <span className="mb-0.5 block text-[11px] text-surface-500">{f.label}</span>
                       <input
                         type={f.key === 'expectedArrival' ? 'date' : 'text'}
                         value={(sp[f.key] as string) ?? ''}
@@ -969,23 +971,31 @@ function FormSection({
   label,
   action,
   children,
+  defaultOpen = true,
 }: {
   icon: React.ReactNode;
   n: number;
   label: string;
   action?: React.ReactNode;
   children: React.ReactNode;
+  defaultOpen?: boolean;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <section className="rounded-xl border border-surface-200">
       <div className="flex items-center justify-between gap-2 border-b border-surface-100 px-3 py-2">
-        <h4 className="flex items-center gap-1.5 text-[12px] font-semibold text-surface-700">
-          <span className="flex h-5 w-5 items-center justify-center rounded bg-brand-50 text-brand-600">{icon}</span>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex min-w-0 items-center gap-1.5 text-[13px] font-semibold text-surface-700"
+        >
+          {open ? <ChevronDown className="h-3.5 w-3.5 flex-none text-surface-400" /> : <ChevronRight className="h-3.5 w-3.5 flex-none text-surface-400" />}
+          <span className="flex h-5 w-5 flex-none items-center justify-center rounded bg-brand-50 text-brand-600">{icon}</span>
           <span className="text-surface-400">{n}.</span> {label}
-        </h4>
+        </button>
         {action}
       </div>
-      <div className="space-y-2.5 p-3">{children}</div>
+      {open && <div className="space-y-2.5 p-3">{children}</div>}
     </section>
   );
 }

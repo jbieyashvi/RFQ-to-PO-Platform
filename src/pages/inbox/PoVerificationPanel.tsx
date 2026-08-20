@@ -435,7 +435,7 @@ export function PoVerificationPanel({
         <div className="overflow-hidden rounded-xl border border-surface-200">
           <table className="w-full border-collapse text-[12px]">
             <thead>
-              <tr className="border-b border-surface-200 bg-surface-50 text-[10.5px] font-semibold uppercase tracking-[0.02em] text-surface-500">
+              <tr className="border-b border-surface-200 bg-surface-50 text-[11px] font-semibold uppercase tracking-[0.02em] text-surface-500">
                 <th className="px-3 py-2 text-left">Item</th>
                 <th className="px-2 py-2 text-right">Qty</th>
                 <th className="px-2 py-2 text-right">Unit Price</th>
@@ -445,7 +445,7 @@ export function PoVerificationPanel({
             <tbody className="divide-y divide-surface-100">
               {items.map((it) => (
                 <tr key={it.id}>
-                  <td className="px-3 py-2"><p className="font-medium text-surface-800">{it.description}</p><p className="text-[10.5px] text-surface-400">{it.itemCode}</p></td>
+                  <td className="px-3 py-2"><p className="font-medium text-surface-800">{it.description}</p><p className="text-[11px] text-surface-400">{it.itemCode}</p></td>
                   <td className="px-2 py-2 text-right text-surface-700">{it.quantity} {it.unit}</td>
                   <td className="px-2 py-2 text-right text-surface-700">{formatINR(it.unitPrice)}</td>
                   <td className="px-3 py-2 text-right font-medium text-surface-800">{formatINR(lineTotal(it.quantity, it.unitPrice, it.discountPct))}</td>
@@ -473,7 +473,7 @@ export function PoVerificationPanel({
           <div className="overflow-hidden rounded-xl border border-surface-200">
             <table className="w-full border-collapse text-[12px]">
               <thead>
-                <tr className="border-b border-surface-200 bg-surface-50 text-[10.5px] font-semibold uppercase tracking-[0.02em] text-surface-500">
+                <tr className="border-b border-surface-200 bg-surface-50 text-[11px] font-semibold uppercase tracking-[0.02em] text-surface-500">
                   <th className="px-3 py-2 text-left">Item</th>
                   <th className="px-2 py-2 text-right">Qty</th>
                   <th className="px-2 py-2 text-right">Unit Price</th>
@@ -483,7 +483,7 @@ export function PoVerificationPanel({
               <tbody className="divide-y divide-surface-100">
                 {quote.items.map((it) => (
                   <tr key={it.id}>
-                    <td className="px-3 py-2"><p className="font-medium text-surface-800">{it.description}</p><p className="text-[10.5px] text-surface-400">{it.itemCode}</p></td>
+                    <td className="px-3 py-2"><p className="font-medium text-surface-800">{it.description}</p><p className="text-[11px] text-surface-400">{it.itemCode}</p></td>
                     <td className="px-2 py-2 text-right text-surface-700">{it.quantity} {it.unit}</td>
                     <td className="px-2 py-2 text-right text-surface-700">{formatINR(it.unitPrice)}</td>
                     <td className="px-3 py-2 text-right font-medium text-surface-800">{formatINR(lineTotal(it.quantity, it.unitPrice, it.discountPct))}</td>
@@ -580,7 +580,7 @@ function CompareTab({
       <div className="overflow-hidden rounded-xl border border-surface-200">
         <table className="w-full border-collapse text-[12px]">
           <thead>
-            <tr className="border-b border-surface-200 bg-surface-50 text-[10.5px] font-semibold uppercase tracking-[0.02em] text-surface-500">
+            <tr className="border-b border-surface-200 bg-surface-50 text-[11px] font-semibold uppercase tracking-[0.02em] text-surface-500">
               <th className="px-2.5 py-2 text-left">Field</th>
               <th className="px-2.5 py-2 text-left">Accepted Quotation</th>
               <th className="px-2.5 py-2 text-left">Customer PO</th>
@@ -733,7 +733,7 @@ function CorrectQuoteEditor({
       <div className="overflow-hidden rounded-xl border border-surface-200">
         <table className="w-full border-collapse text-[12px]">
           <thead>
-            <tr className="border-b border-surface-200 bg-surface-50 text-[10.5px] font-semibold uppercase tracking-[0.02em] text-surface-500">
+            <tr className="border-b border-surface-200 bg-surface-50 text-[11px] font-semibold uppercase tracking-[0.02em] text-surface-500">
               <th className="px-2.5 py-2 text-left">Item</th>
               <th className="px-1.5 py-2 text-right">Qty</th>
               <th className="px-1.5 py-2 text-right">Unit Price</th>
@@ -746,7 +746,7 @@ function CorrectQuoteEditor({
               <tr key={it.id}>
                 <td className="px-2.5 py-2 align-top">
                   <p className="font-medium text-surface-800">{it.description}</p>
-                  <p className="text-[10.5px] text-surface-400">{it.itemCode} · HSN {it.hsnCode}</p>
+                  <p className="text-[11px] text-surface-400">{it.itemCode} · HSN {it.hsnCode}</p>
                 </td>
                 <td className="px-1.5 py-2 text-right align-top">
                   {canEdit ? (
@@ -1307,7 +1307,7 @@ function GenerateTab({
                     />
                     <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[12px] text-surface-400">%</span>
                   </div>
-                  <p className="mt-0.5 text-[10.5px] text-surface-500">{SO_PAYMENT_LABEL[f.key]}</p>
+                  <p className="mt-0.5 text-[11px] text-surface-500">{SO_PAYMENT_LABEL[f.key]}</p>
                 </div>
               ))}
             </div>

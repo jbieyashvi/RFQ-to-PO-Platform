@@ -607,7 +607,7 @@ export function InboxCenterPanel({
           <div className="mb-2 flex items-center justify-between">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-surface-400">{heading}</p>
             {composePrepared && draft.aiGenerated && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-medium text-brand-700 ring-1 ring-inset ring-brand-200">
+              <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700 ring-1 ring-inset ring-brand-200">
                 <Sparkles className="h-2.5 w-2.5" /> AI-drafted
               </span>
             )}
@@ -679,7 +679,7 @@ export function InboxCenterPanel({
                             <p className="flex items-center gap-1.5 truncate text-[12px] font-medium text-surface-800">
                               {email.attachedSalesOrder.soNumber}
                               {email.attachedSalesOrder.revisionLabel && (
-                                <span className="inline-flex flex-none items-center rounded-full bg-brand-100 px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-brand-700">
+                                <span className="inline-flex flex-none items-center rounded-full bg-brand-100 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-brand-700">
                                   {email.attachedSalesOrder.revisionLabel}
                                 </span>
                               )}
@@ -836,7 +836,7 @@ export function InboxCenterPanel({
           <div className="overflow-hidden rounded-xl border border-surface-200">
             <table className="w-full border-collapse text-[12px]">
               <thead>
-                <tr className="border-b border-surface-200 bg-surface-50 text-[10.5px] font-semibold uppercase tracking-[0.02em] text-surface-500">
+                <tr className="border-b border-surface-200 bg-surface-50 text-[11px] font-semibold uppercase tracking-[0.02em] text-surface-500">
                   <th className="px-3 py-2 text-left">Item</th>
                   <th className="px-2 py-2 text-right">Qty</th>
                   <th className="px-2 py-2 text-right">Unit Price</th>
@@ -846,7 +846,7 @@ export function InboxCenterPanel({
               <tbody className="divide-y divide-surface-100">
                 {quotation.items.map((it) => (
                   <tr key={it.id}>
-                    <td className="px-3 py-2"><p className="font-medium text-surface-800">{it.description}</p><p className="text-[10.5px] text-surface-400">{it.itemCode}</p></td>
+                    <td className="px-3 py-2"><p className="font-medium text-surface-800">{it.description}</p><p className="text-[11px] text-surface-400">{it.itemCode}</p></td>
                     <td className="px-2 py-2 text-right text-surface-700">{it.quantity} {it.unit}</td>
                     <td className="px-2 py-2 text-right text-surface-700">{formatINR(it.unitPrice)}</td>
                     <td className="px-3 py-2 text-right font-medium text-surface-800">{formatINR(lineTotal(it.quantity, it.unitPrice, it.discountPct))}</td>
