@@ -51,6 +51,13 @@ export interface RequirementItem {
   confidence: number; // 0–100
   /** The whole datasheet. An empty string means the enquiry never stated it. */
   fields: Record<string, string>;
+  /**
+   * The same datasheet AS THE ENQUIRY WAS READ, before a human touched it. The
+   * compare-with-source view prints this, so the document on the left never
+   * moves when a line is corrected on the right — which is the only way a
+   * correction can be seen as a divergence from what the customer actually sent.
+   */
+  sourceFields: Record<string, string>;
   /** Required field keys the enquiry never stated. */
   missingKeys: string[];
   /** Those keys as datasheet labels — the gap before this line can be quoted. */
@@ -593,6 +600,7 @@ export function requirementExtraction(
         quantityRaw: line.quantityRaw,
         confidence,
         fields,
+        sourceFields: seeded,
         missingKeys,
         missingFields: missingKeys.map((key) => fieldLabel(FIELD_BY_KEY[key], domain)),
         invalid,

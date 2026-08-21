@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { AlertTriangle, CheckCircle2, ChevronRight, Columns3, ListChecks, OctagonAlert, Tag } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronRight, Columns2, Columns3, ListChecks, OctagonAlert, Tag } from 'lucide-react';
 import type { InboxEmail } from '@/types';
 import type { RequirementItem, RequirementStatus } from '@/lib/requirementExtraction';
 import { requirementExtraction } from '@/lib/requirementExtraction';
 import { RequirementDetailDrawer } from '@/pages/inbox/RequirementDetailDrawer';
 import { RequirementMatrixModal } from '@/pages/inbox/RequirementMatrixModal';
+import { RequirementCompareModal } from '@/pages/inbox/RequirementCompareModal';
 import { StatusBadge } from '@/components/ui';
 import { classNames } from '@/lib/format';
 import { useApp } from '@/context/AppContext';
@@ -18,11 +19,13 @@ import type { BadgeTone } from '@/lib/labels';
  * score; the scrollable cards below answer it per line, so an incomplete or
  * low-confidence instrument is visible without opening anything.
  *
- * Two ways deeper, because there are two questions. Clicking a card opens that
- * line's datasheet in the detail drawer — the place a gap is actually filled in.
- * View Details opens the comparison matrix, where every line of the enquiry is
- * read side by side, which is the only way to see that one tag out of twelve
- * was never given a flange rating.
+ * Three ways deeper, because there are three questions. Clicking a card opens
+ * that line's datasheet in the detail drawer — the place a gap is actually
+ * filled in. View Details opens the comparison matrix, where every line of the
+ * enquiry is read side by side, which is the only way to see that one tag out of
+ * twelve was never given a flange rating. Compare with Source sets that same
+ * matrix beside the document the enquiry arrived as, which is the only way to
+ * see that a figure was read off the wrong row.
  */
 
 const STATUS_META: Record<RequirementStatus, { label: string; tone: BadgeTone }> = {
@@ -69,6 +72,10 @@ export function RequirementExtractionPanel({ email }: { email: InboxEmail }) {
   // line found by comparison should hand you straight back to the comparison.
   const [matrixOpen, setMatrixOpen] = useState(false);
   const [matrixFocusId, setMatrixFocusId] = useState<string | null>(null);
+  // The source comparison, which can be reached either straight from here or
+  // from the matrix. When it was opened from the matrix the matrix stays
+  // mounted underneath, so Back hands the review straight back to it.
+  const [compareOpen, setCompareOpen] = useState(false);
 
   const extraction = requirementExtraction(email, quotations, salesOrders);
   // Looked up rather than held: the open line is re-derived on every render, so
@@ -79,6 +86,16 @@ export function RequirementExtractionPanel({ email }: { email: InboxEmail }) {
   const openMatrix = (focus: string | null) => {
     setMatrixFocusId(focus);
     setMatrixOpen(true);
+  };
+
+  const openCompare = (focus: string | null) => {
+    setMatrixFocusId(focus);
+    setCompareOpen(true);
+  };
+
+  const closeAll = () => {
+    setCompareOpen(false);
+    setMatrixOpen(false);
   };
 
   if (!extraction) {
@@ -116,13 +133,23 @@ export function RequirementExtractionPanel({ email }: { email: InboxEmail }) {
                 Overall Accuracy
               </span>
             </div>
-            <button
-              type="button"
-              onClick={() => openMatrix(null)}
-              className="inline-flex flex-none items-center gap-1 rounded-lg border border-surface-200 bg-white px-2 py-1 text-[11px] font-semibold text-brand-700 transition-colors hover:border-brand-200 hover:bg-brand-50"
-            >
-              <Columns3 className="h-3 w-3" /> View Details
-            </button>
+            <div className="flex flex-none items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => openCompare(null)}
+                title="Read the extraction against the document the enquiry arrived as"
+                className="inline-flex flex-none items-center gap-1 rounded-lg border border-surface-200 bg-white px-2 py-1 text-[11px] font-semibold text-brand-700 transition-colors hover:border-brand-200 hover:bg-brand-50"
+              >
+                <Columns2 className="h-3 w-3" /> Compare with Source
+              </button>
+              <button
+                type="button"
+                onClick={() => openMatrix(null)}
+                className="inline-flex flex-none items-center gap-1 rounded-lg border border-surface-200 bg-white px-2 py-1 text-[11px] font-semibold text-brand-700 transition-colors hover:border-brand-200 hover:bg-brand-50"
+              >
+                <Columns3 className="h-3 w-3" /> View Details
+              </button>
+            </div>
           </div>
           <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/70">
             <div className={classNames('h-full rounded-full', meta.bar)} style={{ width: `${extraction.accuracy}%` }} />
@@ -175,9 +202,22 @@ export function RequirementExtractionPanel({ email }: { email: InboxEmail }) {
           email={email}
           extraction={extraction}
           focusId={matrixFocusId}
-          blocked={activeId !== null}
+          blocked={activeId !== null || compareOpen}
           onOpenItem={setActiveId}
+          onCompareSource={() => setCompareOpen(true)}
           onClose={() => setMatrixOpen(false)}
+        />
+      )}
+      {compareOpen && (
+        <RequirementCompareModal
+          email={email}
+          extraction={extraction}
+          focusId={matrixFocusId}
+          blocked={activeId !== null}
+          fromMatrix={matrixOpen}
+          onOpenItem={setActiveId}
+          onBack={() => setCompareOpen(false)}
+          onClose={closeAll}
         />
       )}
       {activeItem && (
