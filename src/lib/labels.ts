@@ -106,10 +106,7 @@ export const SO_STATUS: Record<SOStatus, { label: string; tone: BadgeTone }> = {
 };
 
 export const ERP_HANDOFF_STATE: Record<ErpHandoffState, { label: string; tone: BadgeTone }> = {
-  pending: { label: 'Pending', tone: 'gray' },
   submitted: { label: 'Submitted', tone: 'blue' },
-  accepted: { label: 'Accepted', tone: 'green' },
-  failed: { label: 'Failed', tone: 'red' },
 };
 
 export const ERP_HANDOFF_SOURCE: Record<ErpHandoffSource, string> = {

@@ -497,14 +497,14 @@ export function InboxCenterPanel({
   // ---- PO verification — Path 3: send the generated Sales Order. The SO was
   // generated + attached by the SO Generation drawer; here we email it, stamp
   // the SO Sent Date and — now that the customer email has actually gone out —
-  // submit the SO to ERP Handoff (Pending). Legacy records that already carry a
-  // handoff keep it untouched (no duplicate is ever created). ----
+  // submit the SO to ERP Handoff (Submitted). Legacy records that already carry
+  // a handoff keep it untouched (no duplicate is ever created). ----
   const sendSalesOrder = () => {
     if (!canFinalSend || !salesOrder) return;
     const so = salesOrder;
     const newHandoff = !so.erpHandoff;
     const erpHandoff: ErpHandoff = so.erpHandoff ?? {
-      state: 'pending',
+      state: 'submitted',
       source: 'po_verification',
       submittedAt: SENT_TS,
       submittedBy: currentUser.fullName,
@@ -521,7 +521,7 @@ export function InboxCenterPanel({
         date: SENT_TS,
         actor: currentUser.fullName,
         action: 'Submitted to ERP Handoff',
-        detail: `${so.number} added to ERP Handoff (Pending) after the SO email was sent`,
+        detail: `${so.number} added to ERP Handoff (Submitted) after the SO email was sent`,
       });
     }
     updateEmail(email.id, { draft, draftSaved: true, sent: true, sentAt: SENT_TS, needsReview: false });
@@ -535,8 +535,8 @@ export function InboxCenterPanel({
       type: 'success',
       title: 'Sales Order sent successfully.',
       message: newHandoff
-        ? `${so.number} emailed to ${draft.to} and submitted to ERP Handoff (Pending).`
-        : `${so.number} emailed to ${draft.to}. ERP Handoff remains Pending.`,
+        ? `${so.number} emailed to ${draft.to} and submitted to ERP Handoff (Submitted).`
+        : `${so.number} emailed to ${draft.to}. Already in ERP Handoff (Submitted).`,
     });
   };
 
@@ -574,12 +574,12 @@ export function InboxCenterPanel({
     // handoff record. State stays as-is (manufacturing is not auto-confirmed).
     const handoffNote = `Revised Sales Order ${so.number} (Rev ${nextNum}) available for ERP update.`;
     // Update the SINGLE ERP Handoff record in place — never create a duplicate.
-    // A revised SO re-enters the queue as Pending so operations re-push it to the
-    // ERP, carrying the new revision number and a fresh updated timestamp.
+    // The record stays Submitted, carrying the new revision number and a fresh
+    // updated timestamp so the ERP picks up the revised order.
     const erpHandoff: ErpHandoff = so.erpHandoff
-      ? { ...so.erpHandoff, state: 'pending', revisionNumber: nextNum, updatedAt: SENT_TS, reference: handoffNote, processedAt: undefined, processedBy: undefined, failureReason: undefined }
+      ? { ...so.erpHandoff, state: 'submitted', revisionNumber: nextNum, updatedAt: SENT_TS, reference: handoffNote }
       : {
-          state: 'pending',
+          state: 'submitted',
           source: 'po_verification',
           submittedAt: SENT_TS,
           submittedBy: currentUser.fullName,

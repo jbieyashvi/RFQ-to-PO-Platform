@@ -447,12 +447,12 @@ export interface VerificationField {
 
 // ---------- ERP Handoff ----------
 // A final, approved Sales Order enters the ERP Handoff queue when it is
-// generated from Global Inbox, created via Create SO Manually, or when an
-// approved revision is sent. It moves Pending → Submitted → Accepted / Failed
-// as it is pushed to the ERP. No real ERP is called — this records the
-// operational handoff step only. A single record is kept per SO (revisions
-// update it in place, never duplicate it).
-export type ErpHandoffState = 'pending' | 'submitted' | 'accepted' | 'failed';
+// generated from Global Inbox or created via Create SO Manually. The single
+// status is Submitted — every SO handed to the ERP stays permanently visible
+// as Submitted. No real ERP is called — this records the operational handoff
+// step only. A single record is kept per SO (approved revisions update it in
+// place, never duplicate it).
+export type ErpHandoffState = 'submitted';
 
 // Which flow pushed the Sales Order into the ERP Handoff queue.
 export type ErpHandoffSource = 'po_verification' | 'manual';
@@ -465,9 +465,6 @@ export interface ErpHandoff {
   updatedAt: string; // ISO datetime of the latest change to this handoff record
   revisionNumber?: number; // SO revision reflected here (mirrors SalesOrder.revisionNumber)
   reference?: string; // ERP reference / handoff note
-  processedAt?: string; // ISO datetime the ERP responded (accepted / failed)
-  processedBy?: string;
-  failureReason?: string; // populated when state === 'failed'
 }
 
 // How the customer PO reached us — drives the required proof on Create SO.

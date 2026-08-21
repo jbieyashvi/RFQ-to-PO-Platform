@@ -1,7 +1,6 @@
 import type {
   ActivityEvent,
   ErpHandoff,
-  ErpHandoffState,
   FieldResolution,
   LineItem,
   RevisionState,
@@ -281,27 +280,20 @@ function generate(): SalesOrder[] {
     const value = poValue;
 
     // Generated SOs are, by definition, final approved orders — seed a matching
-    // ERP Handoff record so the queue mirrors the Sales Orders list. Rotate
-    // through the lifecycle so every status (and the Failed → Retry path) is
-    // demoable on a fresh load.
+    // ERP Handoff record so the queue mirrors the Sales Orders list. Every
+    // handed-off SO carries the single status: Submitted.
     const soGenerated = flavor === 'verified' && (status === 'so_sent' || status === 'finalised');
     let erpHandoff: ErpHandoff | undefined;
     if (soGenerated) {
-      const cycle: ErpHandoffState[] = ['accepted', 'pending', 'failed', 'submitted', 'accepted'];
-      const st = cycle[i % cycle.length];
       const submittedAt = sentAt ?? verifiedAt ?? `${createdDate}T12:30:00`;
-      const processedAt = st === 'accepted' || st === 'failed' ? `${addDays(createdDate, 2)}T10:00:00` : undefined;
       erpHandoff = {
-        state: st,
+        state: 'submitted',
         source: 'po_verification',
         submittedAt,
         submittedBy: verifiedBy ?? q.owner,
-        updatedAt: processedAt ?? submittedAt,
+        updatedAt: submittedAt,
         revisionNumber: 0,
-        reference: st === 'accepted' ? `ERP-${pad(500 + i + 1, 4)}` : undefined,
-        processedAt,
-        processedBy: processedAt ? 'ERP Bridge' : undefined,
-        failureReason: st === 'failed' ? 'ERP rejected: customer master code not found. Sync customer master and retry.' : undefined,
+        reference: `ERP-${pad(500 + i + 1, 4)}`,
       };
     }
 

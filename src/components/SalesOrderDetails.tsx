@@ -22,7 +22,7 @@ export function SalesOrderDetailsDrawer({
   if (!order) return null;
   const so = order;
   const resolved = resolveSalesOrder(so, { parties, catalog: ITEMS });
-  const pendingHandoff = so.erpHandoff?.state === 'pending';
+  const inHandoff = !!so.erpHandoff;
 
   const download = () => {
     downloadText(`${so.number.replace(/\//g, '-')}.txt`, salesOrderText(resolved));
@@ -46,7 +46,7 @@ export function SalesOrderDetailsDrawer({
       footer={
         <div className="flex items-center justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>Close</Button>
-          {pendingHandoff && (
+          {inHandoff && (
             <Button variant="secondary" leftIcon={<ExternalLink className="h-4 w-4" />} onClick={() => navigate('/erp-handoff')}>
               View in ERP Handoff
             </Button>
@@ -69,11 +69,7 @@ export function SalesOrderDetailsDrawer({
               <Meta label="Revision" value={so.revisionNumber > 0 ? `Rev ${so.revisionNumber}` : 'Original'} />
               <Meta label="Submitted" value={`${formatDateTime(so.erpHandoff.submittedAt)} · ${so.erpHandoff.submittedBy}`} />
               <Meta label="Last Updated" value={formatDateTime(so.erpHandoff.updatedAt)} />
-              {so.erpHandoff.processedAt && (
-                <Meta label="ERP Response" value={`${formatDateTime(so.erpHandoff.processedAt)} · ${so.erpHandoff.processedBy ?? ''}`} />
-              )}
               {so.erpHandoff.reference && <Meta label="ERP Reference" value={so.erpHandoff.reference} />}
-              {so.erpHandoff.failureReason && <Meta label="Failure Reason" value={so.erpHandoff.failureReason} />}
             </dl>
           </div>
         )}

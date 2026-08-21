@@ -456,7 +456,7 @@ export default function CreateSalesOrder() {
       inspection: form.inspection || undefined,
       additionalTerms: form.additionalTerms || undefined,
       sentAt: opts.withHandoff ? now : undefined,
-      erpHandoff: opts.withHandoff ? { state: 'pending', source: 'manual', submittedAt: now, submittedBy: currentUser.fullName, updatedAt: now, revisionNumber: 0 } : undefined,
+      erpHandoff: opts.withHandoff ? { state: 'submitted', source: 'manual', submittedAt: now, submittedBy: currentUser.fullName, updatedAt: now, revisionNumber: 0 } : undefined,
       revisionNumber: 0,
       versions: [
         {
@@ -485,7 +485,7 @@ export default function CreateSalesOrder() {
       activity: [
         { id: `act-${Date.now()}-created`, date: now, actor: form.owner, action: 'Sales Order created', detail: q ? `From quotation ${q.number}` : 'Created manually' },
         ...(opts.withHandoff
-          ? [{ id: `act-${Date.now()}-erp`, date: now, actor: currentUser.fullName, action: 'Submitted to ERP Handoff', detail: 'Pending manufacturing handover' }]
+          ? [{ id: `act-${Date.now()}-erp`, date: now, actor: currentUser.fullName, action: 'Submitted to ERP Handoff', detail: 'Submitted for manufacturing handover' }]
           : []),
       ],
       verificationFields: [],
@@ -516,7 +516,7 @@ export default function CreateSalesOrder() {
     addToast({
       type: 'success',
       title: `Sales Order ${so.number} created`,
-      message: `${so.number} added to the Sales Order list and to ERP Handoff (Pending).`,
+      message: `${so.number} added to the Sales Order list and to ERP Handoff (Submitted).`,
     });
     navigate('/erp-handoff', { state: { highlightId: so.id } });
   };

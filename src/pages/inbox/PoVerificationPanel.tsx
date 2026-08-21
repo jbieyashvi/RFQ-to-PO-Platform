@@ -866,18 +866,18 @@ function GenerateTab({
   const previewResolved = useMemo(() => resolveSalesOrder(so, { parties, catalog }), [so, parties, catalog]);
 
   // Repair a broken link: a Sales Order already emailed (seed/legacy) but with
-  // no ERP Handoff record. Creates the missing Pending handoff.
+  // no ERP Handoff record. Creates the missing Submitted handoff.
   const repairHandoff = () => {
     if (so.erpHandoff) return;
     const now = `${TODAY_ISO}T12:30:00`;
     updateSalesOrder(so.id, {
-      erpHandoff: { state: 'pending', source: 'po_verification', submittedAt: now, submittedBy: currentUser.fullName, updatedAt: now, revisionNumber: so.revisionNumber },
+      erpHandoff: { state: 'submitted', source: 'po_verification', submittedAt: now, submittedBy: currentUser.fullName, updatedAt: now, revisionNumber: so.revisionNumber },
       activity: [
         ...so.activity,
-        { id: `act-${so.id}-handoffrepair-${Date.now()}`, date: now, actor: currentUser.fullName, action: 'ERP Handoff record created', detail: `Linked ERP Handoff (Pending) created for ${so.number}` },
+        { id: `act-${so.id}-handoffrepair-${Date.now()}`, date: now, actor: currentUser.fullName, action: 'ERP Handoff record created', detail: `Linked ERP Handoff (Submitted) created for ${so.number}` },
       ],
     });
-    addToast({ type: 'success', title: 'ERP Handoff linked', message: `${so.number} added to ERP Handoff (Pending).` });
+    addToast({ type: 'success', title: 'ERP Handoff linked', message: `${so.number} added to ERP Handoff (Submitted).` });
   };
 
   // Attach the generated SO PDF to the middle composer and prefill the customer
@@ -951,7 +951,7 @@ function GenerateTab({
         <CheckCircle2 className="h-4 w-4 flex-none" />
         <span>
           <span className="font-semibold">{so.number}</span> generated from the verified PO &amp; quotation
-          {so.erpHandoff ? ' and added to ERP Handoff (Pending).' : '.'}
+          {so.erpHandoff ? ' and added to ERP Handoff (Submitted).' : '.'}
           {!so.erpHandoff && !soEmailed && ' It will be submitted to ERP Handoff once the email is sent.'}
           {!soEmailed && ' Review the email in the centre panel and send it.'}
         </span>
