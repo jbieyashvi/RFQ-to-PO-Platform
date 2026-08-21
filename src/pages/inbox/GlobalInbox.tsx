@@ -1,15 +1,14 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
-import { Inbox, ArrowLeft, MailOpen, FileText, RefreshCw, ClipboardCheck, FilePenLine, Link2, Layers, SlidersHorizontal, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Inbox, ArrowLeft, MailOpen, FileText, RefreshCw, ClipboardCheck, FilePenLine, Link2, SlidersHorizontal, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import { SearchInput, FilterSelect, FilterBar, EmptyState, type FilterChip } from '@/components/ui';
 import { Tabs } from '@/components/ui/misc';
 import { useApp, useOfficeScope, useNoOfficeAssigned } from '@/context/AppContext';
 import { NoOfficeAssigned } from '@/components/NoOfficeAssigned';
 import { OWNERS } from '@/data/users';
-import { officeName } from '@/data/offices';
-import { inquiryById, inquiryIdOfEmail } from '@/lib/inquiry';
+import { inquiryById, inquiryEmailsOf, inquiryIdOfEmail } from '@/lib/inquiry';
 import { INBOX_CLASSIFICATION } from '@/lib/labels';
 import type { EmailClassification, InboxEmail } from '@/types';
 import { classNames } from '@/lib/format';
@@ -17,6 +16,7 @@ import { EmailList, EmailIconRail } from './EmailList';
 import { SoGenerationDrawer } from './SoGenerationDrawer';
 import { EmailActionPanel } from './EmailActionPanel';
 import { InboxCenterPanel } from './InboxCenterPanel';
+import { InquiryBundle } from './InquiryBundle';
 import { QuoteToolsPanel } from './QuoteToolsPanel';
 import { RevisionQuotePanel } from './RevisionQuotePanel';
 import { PoVerificationPanel } from './PoVerificationPanel';
@@ -69,30 +69,27 @@ export default function GlobalInbox() {
     return mode === 'quote-send' && emailId && qtnId ? { emailId, qtnId } : null;
   });
 
-  // ---- Inquiry scoping ----------------------------------------------------
-  // The inbox has two modes:
-  //   • Direct /inbox — every classified business email the user can access.
-  //   • Workflow / deep-link — only the emails of ONE inquiry, however many
-  //     separate email threads they arrived in.
+  // ---- Inquiry grouping ---------------------------------------------------
+  // The full classified inbox on the left NEVER goes away. On top of it, the
+  // emails of ONE inquiry are bundled together: whenever an email is selected —
+  // or the inbox is opened from a workflow deep link — every message carrying
+  // the same inquiryId is gathered into a compact inquiry header + its own
+  // small list above the conversation, however many separate email threads they
+  // arrived in (RFQ, quotation, revision ask, Purchase Order, Sales Order).
+  //
   // The inquiry is keyed by the quotation behind the enquiry and carried in
-  // ?inq, so the scope survives a reload and every move between its messages.
-  // Merely clicking a workflow email while browsing /inbox never narrows the
-  // list — the scope is only ever entered through a deep link.
+  // ?inquiryId, so the context survives a reload and every move between its
+  // messages. "Back to All Emails" drops the grouping.
   const inquiryIdOf = useMemo(
     () => (e: InboxEmail) => inquiryIdOfEmail(e, quotations, salesOrders),
     [quotations, salesOrders]
   );
 
-  // Entered ONLY from a deep link: an explicit ?inq, or a workflow ?mode whose
-  // email resolves to an inquiry (how the Verification, Quote Revision and SO
-  // Revision queues open the inbox). Read at mount, when the deep link lands.
-  const [inquiryId, setInquiryId] = useState<string | null>(() => {
-    const inq = params.get('inq');
-    if (inq) return inq;
-    if (!params.get('mode')) return null;
-    const e = emails.find((x) => x.id === params.get('email'));
-    return e ? inquiryIdOfEmail(e, quotations, salesOrders) : null;
-  });
+  // ?inquiryId is the route-level inquiry context (?inq is the older spelling,
+  // still accepted so existing links keep working).
+  const [inquiryId, setInquiryId] = useState<string | null>(
+    () => params.get('inquiryId') ?? params.get('inq')
+  );
 
   // Bumped whenever a right-hand workspace PREPARES the centre composer (adds a
   // revised/corrected quote, drafts a PO-correction request). The centre panel
@@ -145,17 +142,16 @@ export default function GlobalInbox() {
     [scoped]
   );
 
-  // The inquiry currently in scope. An id that no longer resolves to a
-  // quotation falls back to the full inbox rather than an empty list.
+  // The inquiry currently grouped. An id that no longer resolves to a quotation
+  // simply shows no bundle — the inbox itself is unaffected.
   const inquiry = useMemo(() => (inquiryId ? inquiryById(inquiryId, quotations) : null), [inquiryId, quotations]);
   const inquiryScopeId = inquiry?.id ?? null;
 
+  // The full classified list — deliberately NOT narrowed by the inquiry.
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
     return scoped
       .filter((e) => {
-        // Inquiry mode wins over everything: only this inquiry's messages.
-        if (inquiryScopeId && inquiryIdOf(e) !== inquiryScopeId) return false;
         if (tab === 'needs_review' && !(e.needsReview && !e.sent)) return false;
         if (tab === 'drafts' && !(e.draftSaved && !e.sent)) return false;
         if (classification && e.classification !== classification) return false;
@@ -175,7 +171,16 @@ export default function GlobalInbox() {
         return true;
       })
       .sort((a, b) => ((a.sent && a.sentAt ? a.sentAt : a.receivedAt) < (b.sent && b.sentAt ? b.sentAt : b.receivedAt) ? 1 : -1));
-  }, [scoped, tab, search, classification, owner, readState, dateFrom, dateTo, inquiryScopeId, inquiryIdOf]);
+  }, [scoped, tab, search, classification, owner, readState, dateFrom, dateTo]);
+
+  // The bundle: every email of this inquiry the user can access, oldest first —
+  // office scope applies, inbox tabs/filters deliberately do not (the bundle is
+  // the whole inquiry, not the filtered slice of it).
+  const inquiryEmails = useMemo(
+    () => (inquiryScopeId ? inquiryEmailsOf(inquiryScopeId, scoped, quotations, salesOrders) : []),
+    [inquiryScopeId, scoped, quotations, salesOrders]
+  );
+  const inquiryEmailIds = useMemo(() => new Set(inquiryEmails.map((e) => e.id)), [inquiryEmails]);
 
   // Deep-link: ?email=<id> (+ optional ?mode=quote-send|quote-revision|
   // po-verification & qtn/po params) — used by "Review & Send Email" from Quotes
@@ -207,12 +212,10 @@ export default function GlobalInbox() {
       const e = emails.find((x) => x.id === id);
       if (e && !e.read) updateEmail(id, { read: true });
     }
-    // Only an explicit ?inq enters the scope on an already-mounted inbox. A
-    // bare ?mode must not: selecting a workflow email while browsing the full
-    // inbox writes its mode into the URL, and that should never narrow the
-    // list. Leaving the scope is explicit too — see exitInquiry — so a missing
-    // param never silently drops it either (in-place escalations keep it).
-    const inq = params.get('inq');
+    // An explicit inquiry in the route wins (in-place escalations and deep
+    // links). A missing param never drops the grouping — leaving it is explicit,
+    // see exitInquiry — and the selection effect below re-derives it anyway.
+    const inq = params.get('inquiryId') ?? params.get('inq');
     if (inq) setInquiryId(inq);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
@@ -227,6 +230,16 @@ export default function GlobalInbox() {
     () => emails.find((e) => e.id === selectedId) ?? null,
     [emails, selectedId]
   );
+
+  // Selecting ANY email groups its inquiry — that is the whole point: a message
+  // is never shown alone when it belongs to a wider inquiry. Selecting an email
+  // that belongs to no inquiry (an unassociated PO, a cold enquiry) clears the
+  // grouping. Keyed on the resolved id so "Back to All Emails" is not undone
+  // while the same conversation stays open.
+  const selectedInquiryId = selected ? inquiryIdOf(selected) : null;
+  useEffect(() => {
+    setInquiryId(selectedInquiryId);
+  }, [selectedInquiryId]);
 
   // Quote-send tools appear ONLY on the specific deep-linked email, and only
   // when its passed quotation is resolvable and scoped to the same customer.
@@ -278,20 +291,29 @@ export default function GlobalInbox() {
   // Any dedicated business workflow occupying the right panel.
   const isWorkflowMode = showQuoteTools || isRevision || isPoVerify || isSoRevision || isPoAssociate;
 
-  // LAYOUT ONLY: workflow conversations open with the email list collapsed to
-  // its icon rail by default, giving the saved width to the thread and the
-  // business workspace. The collapse is remembered as "automatic" so leaving
-  // workflow mode restores the full list; a manual toggle (the Show / Hide
-  // Emails control) always wins over the automatic behaviour.
+  // LAYOUT ONLY: a workflow conversation that belongs to NO inquiry opens with
+  // the email list collapsed to its icon rail, giving the saved width to the
+  // thread and the business workspace. Inside an inquiry the full list always
+  // stays open — the inbox is never traded away for a single conversation. The
+  // collapse is remembered as "automatic" so leaving workflow mode restores the
+  // list; a manual toggle (Show / Hide Emails) always wins over it.
   const autoCollapsedRef = useRef(false);
   const workflowEmailRef = useRef<string | null>(null);
   useEffect(() => {
     if (!selected) return;
     if (isWorkflowMode) {
       if (workflowEmailRef.current !== selected.id) {
+        // The email is marked as handled either way, so that later dropping the
+        // grouping ("Back to All Emails") on the SAME conversation never
+        // collapses the list the user just asked to go back to.
         workflowEmailRef.current = selected.id;
-        autoCollapsedRef.current = true;
-        setListCollapsed(true);
+        // Read the inquiry off the SELECTED email, not off the grouping state:
+        // the state lands one render later, and by then the list would already
+        // have been collapsed for an email that does belong to an inquiry.
+        if (!selectedInquiryId) {
+          autoCollapsedRef.current = true;
+          setListCollapsed(true);
+        }
       }
     } else {
       workflowEmailRef.current = null;
@@ -300,7 +322,7 @@ export default function GlobalInbox() {
         setListCollapsed(false);
       }
     }
-  }, [selected, isWorkflowMode]);
+  }, [selected, isWorkflowMode, selectedInquiryId]);
 
   const toggleList = () => {
     autoCollapsedRef.current = false;
@@ -344,10 +366,12 @@ export default function GlobalInbox() {
 
   // Keep the URL describing the current conversation + its workflow so a reload
   // restores exactly what the user is looking at.
-  const urlFor = (e: InboxEmail): Record<string, string> => {
-    // ?inq keeps the inquiry in scope while moving between its messages, even
-    // when the next message came in through a different email thread.
-    const inq: Record<string, string> = inquiryScopeId ? { inq: inquiryScopeId } : {};
+  const urlFor = (e: InboxEmail, groupInquiry = true): Record<string, string> => {
+    // ?inquiryId keeps the inquiry context in the route rather than depending on
+    // ?email alone, so a reload restores the bundle even when the next message
+    // came in through a completely different email thread.
+    const id = groupInquiry ? inquiryIdOf(e) : null;
+    const inq: Record<string, string> = id ? { inquiryId: id } : {};
     if (quoteSend && e.id === quoteSend.emailId) return { ...inq, mode: 'quote-send', email: e.id, qtn: quoteSend.qtnId };
     if (e.revisionSendId) return { ...inq, mode: 'quote-revision', email: e.id, qtn: e.revisionSendId };
     if (e.poVerifyId) {
@@ -361,12 +385,13 @@ export default function GlobalInbox() {
     return { ...inq, email: e.id };
   };
 
-  // Leave inquiry mode — back to the full classified inbox, keeping the current
-  // conversation open. The workflow panels are derived from the email itself, so
-  // dropping the mode params never changes what the right panel offers.
+  // "Back to All Emails" — drop the inquiry grouping. The full list on the left
+  // never moved, so this only removes the bundle and its route context; the
+  // conversation stays open and its workflow panel is unchanged (those are
+  // derived from the email itself, never from the query).
   const exitInquiry = () => {
     setInquiryId(null);
-    setParams(selectedId ? { email: selectedId } : {}, { replace: true });
+    setParams(selected ? urlFor(selected, false) : {}, { replace: true });
   };
 
   const onSelect = (id: string) => {
@@ -418,36 +443,10 @@ export default function GlobalInbox() {
         crumbs={[{ label: 'Global Inbox' }]}
       />
 
-      {/* Inquiry mode — one compact header replaces the tabs + filter toolbar.
-          The list beneath is already scoped to this inquiry, so inbox-wide
-          tabs, classification and owner filters would only mislead. */}
-      {inquiry ? (
-        <div className="card mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2">
-          <button
-            onClick={exitInquiry}
-            className="inline-flex h-7 flex-none items-center gap-1 rounded-lg border border-surface-200 bg-white px-2 text-[12px] font-medium text-surface-600 transition-colors hover:bg-surface-50 hover:text-surface-800"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" /> All emails
-          </button>
-          <span className="hidden h-4 w-px flex-none bg-surface-200 sm:block" />
-          <Layers className="h-4 w-4 flex-none text-brand-600" />
-          <span className="text-[13px] font-semibold text-surface-900">{inquiry.number}</span>
-          <span className="chip !border-surface-200 !bg-surface-50 !py-0 !text-[11px] !text-surface-600">
-            {inquiry.quotationNumber}
-          </span>
-          <span className="truncate text-[13px] text-surface-700">{inquiry.customerName}</span>
-          <span className="text-[12px] text-surface-500">
-            Owner: <span className="font-medium text-surface-700">{inquiry.owner}</span>
-          </span>
-          <span className="text-[12px] text-surface-500">
-            Office: <span className="font-medium text-surface-700">{officeName(inquiry.officeId)}</span>
-          </span>
-          <span className="ml-auto flex-none text-[12px] text-surface-500">
-            <span className="font-semibold text-surface-800">{filtered.length}</span> message
-            {filtered.length === 1 ? '' : 's'} in this inquiry
-          </span>
-        </div>
-      ) : (
+      {/* The inbox toolbar is always present: direct /inbox and inquiry mode
+          share the SAME full classified list. Inquiry grouping is additive —
+          it renders as a bundle above the conversation, never as a replacement
+          for the list. */}
       <div className="card mb-4">
         {/* Tabs */}
         <div className="px-4 pt-2">
@@ -490,7 +489,6 @@ export default function GlobalInbox() {
           </FilterBar>
         </div>
       </div>
-      )}
 
       {/* Connected three-panel workspace — one surface, vertical dividers, no
           gaps. The fr ratios (0.55 / 0.95 / 1 ≈ 22% / 38% / 40%) make the right
@@ -565,11 +563,11 @@ export default function GlobalInbox() {
                   <EmailIconRail emails={filtered} selectedId={selectedId} onSelect={onSelect} />
                 </div>
                 <div className="min-[1180px]:hidden">
-                  <EmailList emails={filtered} selectedId={selectedId} onSelect={onSelect} />
+                  <EmailList emails={filtered} selectedId={selectedId} onSelect={onSelect} inquiryIds={inquiryEmailIds} />
                 </div>
               </>
             ) : (
-              <EmailList emails={filtered} selectedId={selectedId} onSelect={onSelect} />
+              <EmailList emails={filtered} selectedId={selectedId} onSelect={onSelect} inquiryIds={inquiryEmailIds} />
             )}
           </div>
         </div>
@@ -591,6 +589,17 @@ export default function GlobalInbox() {
               >
                 <ArrowLeft className="h-4 w-4" /> Back to list
               </button>
+              {/* Inquiry bundle — compact header + this inquiry's own emails,
+                  grouped across every thread they arrived in. */}
+              {inquiry && inquiryEmails.length > 0 && (
+                <InquiryBundle
+                  inquiry={inquiry}
+                  emails={inquiryEmails}
+                  selectedId={selectedId}
+                  onSelect={onSelect}
+                  onExit={exitInquiry}
+                />
+              )}
               {showQuoteTools && (
                 <div className="flex flex-none items-center gap-1.5 border-b border-brand-100 bg-brand-50/70 px-4 py-2 text-[12px] font-medium text-brand-700">
                   <FileText className="h-3.5 w-3.5" /> Quote-send mode — {quoteSendQuotation!.number}

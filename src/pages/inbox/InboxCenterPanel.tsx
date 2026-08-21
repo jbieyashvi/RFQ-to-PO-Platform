@@ -436,6 +436,9 @@ export function InboxCenterPanel({
       linkedPO: so.poNumber,
       linkedQuotation: so.quotationNumber,
       linkedSO: so.number,
+      // Keeps the outgoing mail inside the same inquiry bundle as the thread it
+      // was answered from, even though it is a brand-new conversation.
+      inquiryId: email.inquiryId ?? so.quotationId,
       attachedQuote: withAttachment ? email.attachedQuote : undefined,
       extraction: [],
       extractionConfirmed: true,

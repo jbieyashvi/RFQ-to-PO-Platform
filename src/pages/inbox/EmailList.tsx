@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { Layers } from 'lucide-react';
 import type { InboxEmail } from '@/types';
 import { StatusBadge, EmptyState } from '@/components/ui';
 import { INBOX_CLASSIFICATION } from '@/lib/labels';
@@ -8,10 +9,14 @@ export function EmailList({
   emails,
   selectedId,
   onSelect,
+  inquiryIds,
 }: {
   emails: InboxEmail[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  // Ids of the emails belonging to the inquiry currently grouped, so the full
+  // list shows which of its rows the bundle above is made of.
+  inquiryIds?: Set<string>;
 }) {
   // Scroll the selected email into view (e.g. when arriving via a deep link from
   // the SO Revisions list), so the highlighted row is always visible.
@@ -59,6 +64,11 @@ export function EmailList({
             >
               <div className="flex items-center gap-2">
                 {!e.read && !e.sent && <span className="h-2 w-2 flex-none rounded-full bg-brand-600" title="Unread" />}
+                {inquiryIds?.has(e.id) && (
+                  <span className="flex-none text-brand-500" title="Part of the grouped inquiry" aria-label="Part of the grouped inquiry">
+                    <Layers className="h-3.5 w-3.5" />
+                  </span>
+                )}
                 <span className={classNames('min-w-0 flex-1 truncate text-[13px]', !e.read && !e.sent ? 'font-semibold text-surface-900' : 'font-medium text-surface-700')}>
                   {e.senderName}
                 </span>

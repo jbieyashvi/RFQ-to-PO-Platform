@@ -569,6 +569,7 @@ export function SoRevisionPanel({
       customerCode: q.customerCode,
       linkedQuotation: q.number,
       revisionSendId: q.id,
+      inquiryId: q.id,
       queueLabel: 'Quote Needs Revision',
       requestedChanges: email.requestedChanges,
       reviewDate: q.reviewDate,

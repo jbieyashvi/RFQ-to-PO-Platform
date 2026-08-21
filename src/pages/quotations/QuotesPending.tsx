@@ -249,6 +249,8 @@ export default function QuotesPending() {
       customerCode: q.customerCode,
       linkedQuotation: q.number,
       quotationSendId: q.id,
+      inquiryId: q.id,
+      inquiryNo: r.inquiryNo,
       extraction: [
         { key: 'customer', label: 'Customer', value: q.customerName, confidence: 'high', required: true },
         { key: 'inquiry', label: 'Inquiry Number', value: r.inquiryNo, confidence: 'high', required: true },

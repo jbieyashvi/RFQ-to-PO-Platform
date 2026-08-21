@@ -726,6 +726,12 @@ export interface InboxEmail {
   // inbox right panel renders the Sales Order Revision workspace instead of the
   // generic composer. Holds the linked SalesOrder id being revised.
   soRevisionId?: string;
+  // Inquiry bundling. `inquiryId` is the STABLE key of the inquiry this email
+  // belongs to (the quotation behind the enquiry) — set explicitly on every
+  // email that is part of an inquiry conversation, whatever thread it arrived
+  // in. When absent it is derived from the workflow ids / document numbers (see
+  // lib/inquiry.ts), so older records still group correctly.
+  inquiryId?: string;
   inquiryNo?: string; // linked inquiry identifier shown in the centre panel
   queueLabel?: string; // e.g. "Quote Needs Revision"
   requestedChanges?: RequestedChange[]; // customer-requested old → new changes

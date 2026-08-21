@@ -78,6 +78,9 @@ export function inquiryIdOfEmail(
   salesOrders: SalesOrder[]
 ): string | null {
   const candidate =
+    // Explicitly stamped on the email when it was created / seeded — the
+    // strongest link there is, and independent of any document number.
+    email.inquiryId ??
     email.revisionSendId ??
     email.quotationSendId ??
     quotationIdOfSo(email.poVerifyId, salesOrders) ??
@@ -105,6 +108,27 @@ export function inquiryOfEmail(
   if (!id) return null;
   const q = quotations.find((x) => x.id === id);
   return q ? inquiryOf(q) : null;
+}
+
+/** When an email actually happened — sent time for outgoing, arrival otherwise. */
+export function emailTimeOf(e: InboxEmail): string {
+  return e.sent && e.sentAt ? e.sentAt : e.receivedAt;
+}
+
+/**
+ * Every email that belongs to ONE inquiry, oldest first — however many separate
+ * email threads they arrived in (RFQ, quotation sent, revision ask, Purchase
+ * Order, Sales Order acknowledgement, SO revision request).
+ */
+export function inquiryEmailsOf(
+  inquiryId: string,
+  emails: InboxEmail[],
+  quotations: Quotation[],
+  salesOrders: SalesOrder[]
+): InboxEmail[] {
+  return emails
+    .filter((e) => inquiryIdOfEmail(e, quotations, salesOrders) === inquiryId)
+    .sort((a, b) => (emailTimeOf(a) < emailTimeOf(b) ? -1 : 1));
 }
 
 /** The inquiry for a quotation id, or null when it cannot be resolved. */

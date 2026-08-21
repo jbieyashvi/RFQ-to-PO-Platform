@@ -200,6 +200,7 @@ export default function QuotesRevisions() {
       customerCode: q.customerCode,
       linkedQuotation: q.number,
       revisionSendId: q.id,
+      inquiryId: q.id,
       inquiryNo: r.inquiryNo,
       queueLabel: 'Quote Needs Revision',
       requestedChanges: changes,
