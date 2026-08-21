@@ -5,6 +5,7 @@ import { PageHeader } from '@/layout/PageHeader';
 import {
   Button,
   DataTable,
+  StatusBadge,
   SearchInput,
   FilterBar,
   FilterSelect,
@@ -16,7 +17,8 @@ import { NoOfficeAssigned } from '@/components/NoOfficeAssigned';
 import { useApp, useOfficeScope, useNoOfficeAssigned } from '@/context/AppContext';
 import { OFFICES, officeName } from '@/data/offices';
 import type { SalesOrder } from '@/types';
-import { formatDate } from '@/lib/format';
+import { formatDateTime } from '@/lib/format';
+import { SLA_FILTER_OPTIONS, revisionReceivedAtOf, revisionSla, slaDueAt } from '@/lib/sla';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 
 export default function SalesOrderRevisions() {
@@ -26,6 +28,7 @@ export default function SalesOrderRevisions() {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [office, setOffice] = useState('');
+  const [sla, setSla] = useState('');
   const loading = useSimulatedLoading([]);
 
   const ownerOf = (so: SalesOrder) => so.revisionOwner ?? so.owner;
@@ -45,23 +48,27 @@ export default function SalesOrderRevisions() {
     return salesOrders.filter((so) => {
       if (!inScope(so.officeId) || !so.revisionState) return false;
       if (office && so.officeId !== office) return false;
+      if (sla && revisionSla(so)?.state !== sla) return false;
       // Search by SO number, customer and owner only (never revision reason/state).
       if (s && !`${so.number} ${so.customerName} ${ownerOf(so)}`.toLowerCase().includes(s)) return false;
       return true;
     });
-  }, [salesOrders, inScope, search, office]);
+  }, [salesOrders, inScope, search, office, sla]);
 
   const { page, pageSize, setPage, setPageSize, pageRows, total } = usePaginated(filtered, 10);
 
   const chips: FilterChip[] = [];
   if (office) chips.push({ key: 'o', label: `Office: ${officeName(office)}`, onRemove: () => setOffice('') });
+  if (sla) chips.push({ key: 'sla', label: `SLA: ${SLA_FILTER_OPTIONS.find((o) => o.value === sla)?.label ?? sla}`, onRemove: () => setSla('') });
   if (search) chips.push({ key: 'q', label: `Search: "${search}"`, onRemove: () => setSearch('') });
 
   const columns: Column<SalesOrder>[] = [
     { key: 'so', header: 'SO No', width: '128px', sticky: 'left', sortValue: (r) => r.number, render: (r) => <span className="font-medium text-surface-800">{r.number}</span> },
     { key: 'customer', header: 'Customer', truncate: true, title: (r) => r.customerName, sortValue: (r) => r.customerName, render: (r) => <span className="font-medium text-surface-800">{r.customerName}</span> },
     { key: 'office', header: 'Sales Office', truncate: true, title: (r) => officeName(r.officeId), render: (r) => <span className="text-surface-600">{officeName(r.officeId)}</span> },
-    { key: 'requested', header: 'Requested Date', width: '132px', sortValue: (r) => r.revisionRequestedDate ?? '', render: (r) => <span className="text-surface-600">{r.revisionRequestedDate ? formatDate(r.revisionRequestedDate) : '—'}</span> },
+    { key: 'received', header: 'Received At', width: '148px', sortValue: (r) => revisionReceivedAtOf(r) ?? '', render: (r) => { const at = revisionReceivedAtOf(r); return <span className="text-surface-600">{at ? formatDateTime(at) : '—'}</span>; } },
+    { key: 'due', header: 'Due Date', width: '148px', sortValue: (r) => { const at = revisionReceivedAtOf(r); return at ? slaDueAt(at) : ''; }, render: (r) => { const at = revisionReceivedAtOf(r); return <span className="text-surface-600">{at ? formatDateTime(slaDueAt(at)) : '—'}</span>; } },
+    { key: 'sla', header: 'SLA Status', width: '132px', sortValue: (r) => revisionSla(r)?.state ?? '', render: (r) => { const info = revisionSla(r); return info ? <StatusBadge tone={info.tone} label={info.label} dot /> : <span className="text-surface-400">—</span>; } },
     { key: 'owner', header: 'Owner', truncate: true, title: (r) => ownerOf(r), render: (r) => <span className="text-surface-600">{ownerOf(r)}</span> },
     {
       key: 'actions',
@@ -102,9 +109,10 @@ export default function SalesOrderRevisions() {
 
       <div className="card">
         <div className="border-b border-surface-100 p-4">
-          <FilterBar chips={chips} onClearAll={() => { setOffice(''); setSearch(''); }}>
+          <FilterBar chips={chips} onClearAll={() => { setOffice(''); setSla(''); setSearch(''); }}>
             <SearchInput value={search} onChange={setSearch} placeholder="Search SO number or customer…" className="w-full sm:w-72" />
             {role === 'super_admin' && <FilterSelect value={office} onChange={setOffice} placeholder="All offices" options={OFFICES.map((o) => ({ value: o.id, label: o.name }))} />}
+            <FilterSelect value={sla} onChange={setSla} placeholder="All SLA" options={SLA_FILTER_OPTIONS} />
           </FilterBar>
         </div>
         <DataTable columns={columns} rows={pageRows} rowKey={(r) => r.id} loading={loading} onRowClick={(r) => openInbox(r)} emptyTitle="No revisions here" emptyMessage="No sales orders are currently under revision." />

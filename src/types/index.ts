@@ -491,12 +491,18 @@ export interface SalesOrder {
   status: SOStatus;
   verificationStatus: VerificationStatus;
   receivedDate: string;
+  // ISO datetime the customer PO email arrived — drives the system-generated
+  // 24h PO vs Quote Verification SLA (due = poReceivedAt + 24h).
+  poReceivedAt?: string;
   createdDate: string;
   deliveryDate: string;
   billingAddress: string;
   shippingAddress: string;
   revisionReason?: string;
   revisionRequestedDate?: string;
+  // ISO datetime the revision request arrived — drives the system-generated
+  // 24h Sales Order Revision SLA (due = revisionRequestedAt + 24h).
+  revisionRequestedAt?: string;
   revisionRequestedBy?: string;
   // Revision workflow
   revisionState?: RevisionState;

@@ -12,6 +12,7 @@ import type {
   VerificationField,
 } from '@/types';
 import { computeTotals, formatINR } from '@/lib/format';
+import { hoursBeforeNow } from '@/lib/sla';
 import { deriveVerificationStatus } from '@/lib/verification';
 import { QUOTATIONS } from './quotations';
 import { PARTIES } from './masters';
@@ -109,6 +110,12 @@ const REVISION_REASONS = [
   'Line item price to be updated per PO',
 ];
 
+// Hours-before-now spreads for the two 24h SLA clocks, cycled across records
+// still in the queue so every SLA state (Due in Xh / Due Today / Overdue) is
+// demoable on a fresh load. Completed records keep older receipt dates.
+const PENDING_PO_HOURS_AGO = [4, 20, 30, 75];
+const REVISION_REQ_HOURS_AGO = [5, 21, 28, 80];
+
 function buildVerificationFields(
   rand: () => number,
   quoteValue: number,
@@ -145,6 +152,11 @@ function generate(): SalesOrder[] {
     (q) => q.status === 'received' || q.stage === 'finalised' || q.status === 'closed'
   ).slice(0, 18);
 
+  // Cycle counters for the SLA hour spreads (only advanced for records that
+  // actually sit in the respective queue, so the spread stays even).
+  let pendSeq = 0;
+  let revSeq = 0;
+
   source.forEach((q, i) => {
     const rand = rng(5000 + i * 53);
     const items: LineItem[] = q.items.map((it) => ({ ...it, id: `so-${it.id}` }));
@@ -174,9 +186,17 @@ function generate(): SalesOrder[] {
     }
     const isSent = status === 'so_sent' || status === 'finalised';
 
-    const receivedDate = addDays('2026-08-13', -(3 + Math.floor(rand() * 30)));
+    // PO receipt drives the 24h verification SLA. Verified records keep older
+    // receipt dates (fractional 3.5h lands them at 08:30); records still in
+    // the verification queue are spread across the SLA states.
+    const poHoursAgo = mismatch
+      ? PENDING_PO_HOURS_AGO[pendSeq++ % PENDING_PO_HOURS_AGO.length]
+      : 24 * (3 + Math.floor(rand() * 30)) + 3.5;
+    const poReceivedAt = hoursBeforeNow(poHoursAgo);
+    const receivedDate = poReceivedAt.slice(0, 10);
     const poDate = addDays(receivedDate, -2);
-    const createdDate = addDays(receivedDate, 1);
+    // Never future-dated: a PO received today is processed the same day.
+    const createdDate = addDays(receivedDate, 1) > '2026-08-13' ? '2026-08-13' : addDays(receivedDate, 1);
     const deliveryDate = addDays('2026-08-13', 15 + Math.floor(rand() * 40));
 
     const isRevision = status === 'revision_required';
@@ -185,7 +205,14 @@ function generate(): SalesOrder[] {
     const billingAddress = party?.billingAddress ?? 'Corporate Office, India';
     const shippingAddress = party?.shippingAddress ?? 'Central Warehouse, India';
     const revisionReason = isRevision ? REVISION_REASONS[i % REVISION_REASONS.length] : undefined;
-    const revisionRequestedDate = isRevision ? addDays('2026-08-13', -Math.floor(rand() * 5)) : undefined;
+    // Revision request drives the 24h revision SLA; it can never precede the
+    // PO receipt, so cap the spread just inside the PO's own age.
+    const revisionRequestedAt = isRevision
+      ? hoursBeforeNow(
+          Math.min(REVISION_REQ_HOURS_AGO[revSeq++ % REVISION_REQ_HOURS_AGO.length], Math.max(1, poHoursAgo - 2))
+        )
+      : undefined;
+    const revisionRequestedDate = revisionRequestedAt?.slice(0, 10);
     const revisionRequestedBy = isRevision ? REQUESTERS[i % REQUESTERS.length] : undefined;
 
     // Base (pre-revision) snapshot — becomes the immutable "Original" version.
@@ -204,7 +231,7 @@ function generate(): SalesOrder[] {
     if (isRevision) {
       activity.push({
         id: `act-${i}-revreq`,
-        date: `${revisionRequestedDate}T11:00:00`,
+        date: revisionRequestedAt!,
         actor: revisionRequestedBy ?? q.owner,
         action: 'Revision requested',
         detail: revisionReason,
@@ -296,12 +323,14 @@ function generate(): SalesOrder[] {
       status,
       verificationStatus,
       receivedDate,
+      poReceivedAt,
       createdDate,
       deliveryDate,
       billingAddress,
       shippingAddress,
       revisionReason,
       revisionRequestedDate,
+      revisionRequestedAt,
       revisionRequestedBy,
       revisionState: isRevision ? 'revision_required' : undefined,
       revisionNumber: 0,
@@ -382,6 +411,7 @@ function seedRevisionSubStates(list: SalesOrder[]) {
     sent.revisionReason = reason;
     sent.revisionRequestedBy = 'Meera Joshi (Customer)';
     sent.revisionRequestedDate = addDays(stamp, 2);
+    sent.revisionRequestedAt = `${addDays(stamp, 2)}T10:15:00`;
     sent.revisionOwner = sent.owner;
     sent.revisionState = 'revised_sent';
     sent.revisionNumber = 1;

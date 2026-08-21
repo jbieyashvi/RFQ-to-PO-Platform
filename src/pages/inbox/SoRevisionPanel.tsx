@@ -59,9 +59,11 @@ import {
   classNames,
   computeTotals,
   formatDate,
+  formatDateTime,
   formatINR,
   lineTotal,
 } from '@/lib/format';
+import { revisionReceivedAtOf, revisionSla, slaDueAt } from '@/lib/sla';
 import {
   activeDeliveryOptions,
   defaultDeliveryOption,
@@ -666,7 +668,10 @@ export function SoRevisionPanel({
           <span className="flex items-center gap-1.5 text-[12px] font-semibold text-surface-700">
             <FileSpreadsheet className="h-3.5 w-3.5 text-brand-600" /> {so.number}
           </span>
-          {stateMeta && <StatusBadge tone={stateMeta.tone} label={stateMeta.label} dot />}
+          <span className="flex flex-wrap items-center justify-end gap-1.5">
+            {(() => { const info = revisionSla(so); return info ? <StatusBadge tone={info.tone} label={info.label} dot /> : null; })()}
+            {stateMeta && <StatusBadge tone={stateMeta.tone} label={stateMeta.label} dot />}
+          </span>
         </div>
         <div className="grid grid-cols-1 gap-x-5 gap-y-1 px-3 py-2.5 text-[12px] sm:grid-cols-2">
           <p><span className="text-surface-400">Current revision:</span> <span className="font-medium text-surface-800">Rev {so.revisionNumber}{so.revisionNumber === 0 ? ' (Original)' : ''} → preparing Rev {nextRevNum}</span></p>
@@ -675,7 +680,18 @@ export function SoRevisionPanel({
           <p><span className="text-surface-400">Owner:</span> <span className="font-medium text-surface-800">{so.revisionOwner ?? so.owner}</span></p>
           <p><span className="text-surface-400">Linked PO:</span> <span className="font-medium text-surface-800">{so.poNumber}</span></p>
           <p><span className="text-surface-400">Linked quotation:</span> <span className="font-medium text-surface-800">{so.quotationNumber ?? '—'}</span></p>
-          <p><span className="text-surface-400">Requested date:</span> <span className="font-medium text-surface-800">{so.revisionRequestedDate ? formatDate(so.revisionRequestedDate, { short: true }) : '—'}</span></p>
+          {(() => {
+            const receivedAt = revisionReceivedAtOf(so);
+            if (!receivedAt) {
+              return <p><span className="text-surface-400">Requested date:</span> <span className="font-medium text-surface-800">{so.revisionRequestedDate ? formatDate(so.revisionRequestedDate, { short: true }) : '—'}</span></p>;
+            }
+            return (
+              <>
+                <p><span className="text-surface-400">Request received:</span> <span className="font-medium text-surface-800">{formatDateTime(receivedAt)}</span></p>
+                <p><span className="text-surface-400">Due (24h SLA):</span> <span className="font-medium text-surface-800">{formatDateTime(slaDueAt(receivedAt))}</span></p>
+              </>
+            );
+          })()}
           {so.revisionReason && <p className="sm:col-span-2"><span className="text-surface-400">Reason:</span> <span className="font-medium text-surface-800">{so.revisionReason}</span></p>}
         </div>
       </div>

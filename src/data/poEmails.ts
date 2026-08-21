@@ -31,7 +31,7 @@ export const PO_VERIFICATION_EMAILS: InboxEmail[] = SALES_ORDERS.map((so) => {
     recipient: 'sales@flowtech-instruments.com',
     cc: [`accounts@${domain}`],
     subject: `Purchase Order ${so.poNumber} against ${so.quotationNumber ?? 'quotation'}`,
-    receivedAt: `${so.receivedDate}T08:30:00`,
+    receivedAt: so.poReceivedAt ?? `${so.receivedDate}T08:30:00`,
     body: `Dear ${so.owner.split(' ')[0]},\n\nThis is our Purchase Order ${so.poNumber}, issued against your quotation ${so.quotationNumber ?? ''}.\n\nKindly verify the order against the accepted quotation and confirm the delivery schedule.\n\nRegards,\n${contact} Procurement Team\n${so.customerName}`,
     thread: [],
     classification: 'purchase_order',

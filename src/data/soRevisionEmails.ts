@@ -44,6 +44,9 @@ export const SO_REVISION_EMAILS: InboxEmail[] = REVISION_ORDERS.map((so, idx) =>
     .map((c) => `  • ${c.label}: ${c.oldValue} → ${c.newValue}`)
     .join('\n');
   const reason = so.revisionReason ?? 'Change request against the confirmed Sales Order';
+  // Arrival time of the revision request — the anchor of the 24h revision SLA.
+  const requestedAt =
+    so.revisionRequestedAt ?? `${so.revisionRequestedDate ?? so.receivedDate}T10:15:00`;
 
   return {
     id: `em-so-rev-${so.id}`,
@@ -52,13 +55,13 @@ export const SO_REVISION_EMAILS: InboxEmail[] = REVISION_ORDERS.map((so, idx) =>
     recipient: officeEmail(so.officeId),
     cc: [`purchase@${domain}`],
     subject: `Revision request — Sales Order ${so.number} (${so.poNumber})`,
-    receivedAt: `${so.revisionRequestedDate ?? so.receivedDate}T10:15:00`,
+    receivedAt: requestedAt,
     body: `Dear ${so.owner.split(' ')[0]},\n\nWe would like to request a revision to Sales Order ${so.number}, raised against our PO ${so.poNumber}${so.quotationNumber ? ` / quotation ${so.quotationNumber}` : ''}.\n\nReason: ${reason}\n\nRequested changes:\n${changeLines}\n\nKindly issue a revised Sales Order acknowledgement reflecting the above and confirm the updated schedule.\n\nRegards,\n${contactFirst}\n${so.customerName}`,
     thread: [
       {
         id: `th-so-rev-${so.id}-1`,
         from: senderEmail,
-        date: `${so.revisionRequestedDate ?? so.receivedDate}T10:15:00`,
+        date: requestedAt,
         snippet: `Revision request against Sales Order ${so.number}.`,
       },
     ],

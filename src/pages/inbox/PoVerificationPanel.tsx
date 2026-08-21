@@ -55,7 +55,8 @@ import { OFFICES, officeName } from '@/data/offices';
 import { emailSignature } from '@/lib/brand';
 import { OWNERS, USERS } from '@/data/users';
 import { ITEMS } from '@/data/masters';
-import { classNames, computeTotals, formatDate, formatINR, lineTotal } from '@/lib/format';
+import { classNames, computeTotals, formatDate, formatDateTime, formatINR, lineTotal } from '@/lib/format';
+import { poReceivedAtOf, slaDueAt, verificationSla } from '@/lib/sla';
 import {
   activeDeliveryOptions,
   defaultDeliveryOption,
@@ -340,7 +341,10 @@ export function PoVerificationPanel({
       {/* Case header */}
       <div className="flex-none border-b border-surface-100 px-4 py-3">
         <div className="flex items-center justify-between gap-2">
-          <StatusBadge tone={statusMeta.tone} label={statusMeta.label} />
+          <div className="flex flex-wrap items-center gap-1.5">
+            <StatusBadge tone={statusMeta.tone} label={statusMeta.label} />
+            {(() => { const info = verificationSla(so); return info ? <StatusBadge tone={info.tone} label={info.label} dot /> : null; })()}
+          </div>
           <span className="text-[11px] font-semibold text-surface-400">{so.number}</span>
         </div>
         <div className="mt-2 grid grid-cols-1 gap-y-0.5 text-[12px]">
@@ -348,8 +352,15 @@ export function PoVerificationPanel({
           <p><span className="text-surface-400">Quotation:</span> <span className="font-medium text-surface-700">{so.quotationNumber ?? '—'}</span></p>
           <p><span className="text-surface-400">Customer:</span> <span className="font-medium text-surface-700">{so.customerName}</span></p>
           <p><span className="text-surface-400">Sales Office:</span> <span className="font-medium text-surface-700">{officeName(so.officeId)}</span> · <span className="text-surface-400">Owner:</span> <span className="font-medium text-surface-700">{so.owner}</span></p>
+          {(() => {
+            const receivedAt = poReceivedAtOf(so);
+            if (!receivedAt) return null;
+            return (
+              <p><span className="text-surface-400">PO Received:</span> <span className="font-medium text-surface-700">{formatDateTime(receivedAt)}</span> · <span className="text-surface-400">Due (24h SLA):</span> <span className="font-medium text-surface-700">{formatDateTime(slaDueAt(receivedAt))}</span></p>
+            );
+          })()}
           {so.reviewDate && (
-            <p className="flex items-center gap-1 text-surface-500"><CalendarClock className="h-3 w-3" /> Next review {formatDate(so.reviewDate, { short: true })}</p>
+            <p className="flex items-center gap-1 text-surface-500"><CalendarClock className="h-3 w-3" /> Next review (manual) {formatDate(so.reviewDate, { short: true })}</p>
           )}
         </div>
       </div>
