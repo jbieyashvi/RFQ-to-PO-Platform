@@ -39,6 +39,19 @@ export function inquiryNumberFor(q: Quotation): string {
   return `INQ/${prefix}/25-26/${String(seqOf(q.id)).padStart(5, '0')}`;
 }
 
+/**
+ * The inquiry identifier for an enquiry that has NOT been quoted yet. A new
+ * enquiry is an inquiry from the moment it arrives — it simply has no quotation
+ * behind it, so the number is derived from the email's own sequence instead.
+ * Stable for the life of the email, and replaced by the quotation-derived
+ * number the moment the enquiry is quoted.
+ */
+export function inquiryNumberForEmail(email: InboxEmail): string {
+  if (email.inquiryNo) return email.inquiryNo;
+  const prefix = OFFICE_PREFIX[email.officeId] ?? 'INQ';
+  return `INQ/${prefix}/25-26/${String(seqOf(email.id)).padStart(5, '0')}`;
+}
+
 export function inquiryOf(q: Quotation): Inquiry {
   return {
     id: q.id,

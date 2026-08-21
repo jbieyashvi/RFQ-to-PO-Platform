@@ -199,6 +199,21 @@ export default function GlobalInbox() {
     [selected, quotations, salesOrders]
   );
 
+  // Restore saved progress. An enquiry whose lines are all confirmed AND whose
+  // quote has already been built and attached was left mid-send, so reopening
+  // it lands back on the compose window rather than making the user walk the
+  // extraction and the builder again. Declared AFTER the reset that clears the
+  // builder and composer on a conversation change, so it is not clobbered by
+  // it, and it never fires on a mail that has already gone out.
+  const resumedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selected || resumedRef.current === selected.id) return;
+    resumedRef.current = selected.id;
+    const done = !!inquiryExtraction && inquiryExtraction.needsReview + inquiryExtraction.errors === 0;
+    if (done && selected.attachedQuote && !selected.sent) setComposeOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, selected, inquiryExtraction]);
+
   const builderQuotation = useMemo(
     () => (builderQtnId ? quotations.find((q) => q.id === builderQtnId) ?? null : null),
     [builderQtnId, quotations]
@@ -346,13 +361,23 @@ export default function GlobalInbox() {
     return q;
   }, [isQuoteSend, quoteSend, quotations, selected, inquiryScopeId]);
 
-  const showQuoteTools = isQuoteSend && !!quoteSendQuotation;
+  // The line-item review is the ENTRY to a quotation, never something a link
+  // can jump past: while any line is in Error or Needs Review, no quotation
+  // workspace opens over this enquiry.
+  const extractionPending =
+    !!inquiryExtraction && inquiryExtraction.needsReview + inquiryExtraction.errors > 0;
+
+  const showQuoteTools = isQuoteSend && !!quoteSendQuotation && !extractionPending;
 
   // A ?mode=quote-send whose quotation was rejected above is not carried around
-  // as dead context — it is dropped, and the route is rewritten without it.
+  // as dead context — it is dropped, and the route is rewritten without it. The
+  // same applies to a quote-send landing on an enquiry that has not been
+  // reviewed yet: the mode is dropped so the inbox starts where it should, on
+  // the extraction, instead of flipping into the quotation workspace the moment
+  // the last line is confirmed.
   useEffect(() => {
-    if (isQuoteSend && !quoteSendQuotation) setQuoteSend(null);
-  }, [isQuoteSend, quoteSendQuotation]);
+    if (isQuoteSend && (!quoteSendQuotation || extractionPending)) setQuoteSend(null);
+  }, [isQuoteSend, quoteSendQuotation, extractionPending]);
 
   // Business context for the revision and PO-verification workflows is derived
   // directly from the selected email's own workflow ids, so it survives reloads

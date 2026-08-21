@@ -281,9 +281,12 @@ function build(): InboxEmail[] {
     }
 
     if (q.workState === 'pending_send') {
-      // Quote not out yet — the enquiry thread plus the clarifications that came
-      // in behind it. The RFQ itself is raised by "Review & Send Email".
-      list.push(...clarificationEmails(q));
+      // Quote not out yet — so the RFQ is still the live document, and this is
+      // the mail "Quotes Pending to be Sent" opens. It carries NO quotation
+      // number: the quotation is what the line-item review produces from it,
+      // not something the enquiry already knows about. Behind it sit the
+      // clarifications that came in while the quote was being worked out.
+      list.push(rfqEmail(q, false), ...clarificationEmails(q));
       continue;
     }
 

@@ -13,11 +13,10 @@ import {
 import { NoOfficeAssigned } from '@/components/NoOfficeAssigned';
 import { useApp, useOfficeScope, useNoOfficeAssigned } from '@/context/AppContext';
 import { officeName, officeCode } from '@/data/offices';
-import { APP_NAME, emailSignature } from '@/lib/brand';
 import type { InboxEmail, Quotation } from '@/types';
 import { classNames } from '@/lib/format';
-import { inquiryNumberFor } from '@/lib/inquiry';
-import { emailBelongsToInquiry, inboxUrl } from '@/lib/inboxContext';
+import { inquiryIdOfEmail, inquiryNumberFor, inquiryNumberForEmail } from '@/lib/inquiry';
+import { inboxUrl } from '@/lib/inboxContext';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 
 // ---------------------------------------------------------------------------
@@ -38,14 +37,42 @@ const UNASSIGNED_AT = 3;
 
 type DueState = 'overdue' | 'due_soon' | 'upcoming';
 
+// One row = one inquiry whose quotation has not gone out yet. There is no
+// separate Inquiry module, so this queue holds BOTH shapes an inquiry can be
+// in: a brand-new enquiry that has not been quoted at all (no quotation, no
+// number, no value) and an enquiry whose quotation exists but is still pending
+// send. `q` is what tells them apart.
 interface PendingRow {
-  q: Quotation;
+  /** Stable identity — the quotation id, or the enquiry email id when unquoted. */
+  key: string;
+  /** The quotation, once one exists. null while the inquiry is still unquoted. */
+  q: Quotation | null;
+  /** The enquiry mail this row opens, when it is already in the inbox. */
+  emailId: string | null;
   inquiryNo: string;
+  /** null until a quotation has been generated for this inquiry. */
+  quotationNo: string | null;
+  partyId: string | null;
+  customerName: string;
+  customerCode: string;
+  officeId: string;
   owner: string; // '' → Unassigned
+  /** null until the quotation carries priced line items. */
+  value: number | null;
   queryCreatedAt: string; // ISO
   dueAt: string; // ISO
   state: DueState;
   overdueLabel?: string; // e.g. "Overdue by 3h"
+}
+
+// Due Date + its derived state, shared by both row shapes so the overdue /
+// due-soon thresholds stay identical whichever way the row was built.
+function dueFields(dueMs: number): Pick<PendingRow, 'dueAt' | 'state' | 'overdueLabel'> {
+  const dueAt = new Date(dueMs).toISOString();
+  const left = dueMs - NOW.getTime();
+  if (left <= 0) return { dueAt, state: 'overdue', overdueLabel: overdueLabel(-left) };
+  if (left <= DUE_SOON_WINDOW) return { dueAt, state: 'due_soon' };
+  return { dueAt, state: 'upcoming' };
 }
 
 const VALUE_BUCKETS = [
@@ -134,35 +161,84 @@ export default function QuotesPending() {
   const [valueBucket, setValueBucket] = useState('');
   const [dueState, setDueState] = useState('');
 
+  // The enquiry mail behind each inquiry — the mail "Open" lands on. Resolved
+  // through inquiryIdOfEmail rather than by document number, because the RFQ of
+  // a pending inquiry deliberately carries NO quotation number. Earliest mail
+  // wins, so the queue opens the original RFQ and not a later clarification.
+  const enquiryByInquiry = useMemo(() => {
+    const map = new Map<string, InboxEmail>();
+    for (const e of emails) {
+      if (e.sent || e.classification !== 'inquiry') continue;
+      const id = inquiryIdOfEmail(e, quotations, salesOrders);
+      if (!id) continue;
+      const prev = map.get(id);
+      if (!prev || e.receivedAt < prev.receivedAt) map.set(id, e);
+    }
+    return map;
+  }, [emails, quotations, salesOrders]);
+
+  // Newly received enquiries that have not been quoted at all. A new inquiry
+  // belongs in this queue from the moment it arrives — waiting for a quotation
+  // to exist would hide exactly the work this page is meant to surface.
+  const unquoted = useMemo(
+    () =>
+      emails.filter(
+        (e) =>
+          !e.sent &&
+          e.classification === 'inquiry' &&
+          !!e.partyId &&
+          inScope(e.officeId) &&
+          inquiryIdOfEmail(e, quotations, salesOrders) === null
+      ),
+    [emails, quotations, salesOrders, inScope]
+  );
+
   // Base pending queue (scoped), enriched into view-model rows.
   const rows = useMemo<PendingRow[]>(() => {
     const pending = quotations
       .filter((q) => q.workState === 'pending_send' && inScope(q.officeId))
       .sort((a, b) => (a.id < b.id ? -1 : 1));
-    return pending.map((q, i) => {
+
+    const quoted: PendingRow[] = pending.map((q, i) => {
       const dueMs = NOW.getTime() + DUE_OFFSET_MINUTES[i % DUE_OFFSET_MINUTES.length] * 60 * 1000;
-      const dueAt = new Date(dueMs);
-      const queryCreatedAt = new Date(dueMs - DAY);
-      const left = dueMs - NOW.getTime();
-      let state: DueState = 'upcoming';
-      let label: string | undefined;
-      if (left <= 0) {
-        state = 'overdue';
-        label = overdueLabel(NOW.getTime() - dueMs);
-      } else if (left <= DUE_SOON_WINDOW) {
-        state = 'due_soon';
-      }
       return {
+        key: q.id,
         q,
+        emailId: enquiryByInquiry.get(q.id)?.id ?? null,
         inquiryNo: inquiryNumberFor(q),
+        quotationNo: q.number,
+        partyId: q.partyId,
+        customerName: q.customerName,
+        customerCode: q.customerCode,
+        officeId: q.officeId,
         owner: i === UNASSIGNED_AT ? '' : q.owner,
-        queryCreatedAt: queryCreatedAt.toISOString(),
-        dueAt: dueAt.toISOString(),
-        state,
-        overdueLabel: label,
+        // An unpriced draft has no value yet — showing ₹0 would read as free.
+        value: q.items.length ? q.value : null,
+        queryCreatedAt: new Date(dueMs - DAY).toISOString(),
+        ...dueFields(dueMs),
       };
     });
-  }, [quotations, inScope]);
+
+    // Unquoted enquiries follow the documented rule directly: Due Date =
+    // Inquiry Received + exactly 24h, against the same fixed "now".
+    const fresh: PendingRow[] = unquoted.map((e) => ({
+      key: e.id,
+      q: null,
+      emailId: e.id,
+      inquiryNo: inquiryNumberForEmail(e),
+      quotationNo: null,
+      partyId: e.partyId ?? null,
+      customerName: e.customerName ?? e.senderName,
+      customerCode: e.customerCode ?? '',
+      officeId: e.officeId,
+      owner: e.owner,
+      value: null,
+      queryCreatedAt: e.receivedAt,
+      ...dueFields(new Date(e.receivedAt).getTime() + DAY),
+    }));
+
+    return [...fresh, ...quoted];
+  }, [quotations, inScope, enquiryByInquiry, unquoted]);
 
   const overdueCount = rows.filter((r) => r.state === 'overdue').length;
 
@@ -174,7 +250,7 @@ export default function QuotesPending() {
   }, [rows]);
 
   const locationOptions = useMemo(() => {
-    const ids = Array.from(new Set(rows.map((r) => r.q.officeId)));
+    const ids = Array.from(new Set(rows.map((r) => r.officeId)));
     return ids
       .map((id) => ({ value: id, label: officeName(id) }))
       .sort((a, b) => a.label.localeCompare(b.label));
@@ -184,13 +260,20 @@ export default function QuotesPending() {
     const s = search.trim().toLowerCase();
     return rows
       .filter((r) => {
-        if (location && r.q.officeId !== location) return false;
+        if (location && r.officeId !== location) return false;
         if (ownerFilter === 'unassigned' && r.owner) return false;
         if (ownerFilter && ownerFilter !== 'unassigned' && r.owner !== ownerFilter) return false;
-        if (valueBucket && !inValueBucket(r.q.value, valueBucket)) return false;
+        // An inquiry with no quotation yet has no value to bucket, so it falls
+        // out of every SPECIFIC bucket rather than counting as "Below ₹1L".
+        if (valueBucket && (r.value === null || !inValueBucket(r.value, valueBucket))) return false;
         if (dueState === 'overdue' && r.state !== 'overdue') return false;
         if (dueState === 'due_soon' && r.state !== 'due_soon') return false;
-        if (s && !`${r.inquiryNo} ${r.q.customerName} ${r.q.customerCode}`.toLowerCase().includes(s))
+        if (
+          s &&
+          !`${r.inquiryNo} ${r.quotationNo ?? ''} ${r.customerName} ${r.customerCode}`
+            .toLowerCase()
+            .includes(s)
+        )
           return false;
         return true;
       })
@@ -209,43 +292,43 @@ export default function QuotesPending() {
     setDueState('');
   };
 
-  // Open the inquiry's linked Global Inbox conversation in focused quote-send
-  // mode — selecting the correct email for THIS inquiry and passing the QTN so
-  // the inbox opens its quote tools. Nothing is sent; the composer stays for
-  // human review. No quotation drawer opens on this page.
+  // Open the inquiry's Global Inbox conversation — email + customer + inquiry,
+  // every id taken from THIS row. Deliberately NO quote-send mode and no `qtn`:
+  // Open always lands on the enquiry and its AI Requirement Extraction review,
+  // never on a ready-made quotation workspace. The quotation is what the review
+  // produces, through Generate Quote.
   const openInbox = (r: PendingRow) => {
-    const q = r.q;
-    // The candidate must RESOLVE to this inquiry — same customer, and a link
-    // that walks back to this quotation. An email that merely cites a similar
-    // number, or another customer's mail, is never opened as this inquiry.
-    const existing = emails.find(
-      (e) =>
-        !e.sent &&
-        (e.quotationSendId === q.id || e.linkedQuotation === q.number) &&
-        emailBelongsToInquiry(e, q.id, quotations, salesOrders)
-    );
-    const emailId = existing?.id ?? `em-inq-${q.id}`;
-    if (!existing && !emails.some((e) => e.id === emailId)) addEmail(buildInquiryEmail(q, r, emailId));
-    // One context object, every id taken from THIS quotation record.
-    navigate(inboxUrl({ emailId, customerId: q.partyId, inquiryId: q.id, mode: 'quote-send', qtn: q.id }));
+    let emailId = r.emailId;
+    if (!emailId && r.q) {
+      // A pending quotation with no enquiry mail in this session — raise the
+      // enquiry it stands for, as a plain RFQ with nothing pre-confirmed.
+      emailId = `em-inq-${r.q.id}`;
+      const id = emailId;
+      if (!emails.some((e) => e.id === id)) addEmail(buildInquiryEmail(r.q, r, id));
+    }
+    if (!emailId) return;
+    navigate(inboxUrl({ emailId, customerId: r.partyId, inquiryId: r.q?.id ?? null }));
   };
 
+  // The customer's RFQ, exactly as it would have arrived: itemised, unconfirmed
+  // and with no outgoing draft. Pre-confirming the extraction or pre-writing the
+  // quotation mail here would skip the review this page exists to route into.
   const buildInquiryEmail = (q: Quotation, r: PendingRow, id: string): InboxEmail => {
     const party = parties.find((p) => p.id === q.partyId);
-    const from = officeEmail(q.officeId);
-    const to = party?.email ?? 'procurement@customer.com';
+    const from = party?.email ?? 'procurement@customer.com';
+    const items = q.items.map((it) => `  • ${it.description} — ${it.quantity} ${it.unit}`).join('\n');
     return {
       id,
       senderName: party?.contactPerson ?? q.customerName,
-      senderEmail: to,
-      recipient: from,
+      senderEmail: from,
+      recipient: officeEmail(q.officeId),
       cc: [],
-      subject: `Enquiry ${r.inquiryNo} — ${q.customerName}`,
+      subject: `Enquiry ${r.inquiryNo} — request for quotation`,
       receivedAt: r.queryCreatedAt.slice(0, 19),
-      body: `Dear Flowtech team,\n\nPlease share your quotation against our enquiry ${r.inquiryNo}. Kindly include GST, delivery and payment terms.\n\nRegards,\n${party?.contactPerson ?? 'Procurement'}\n${q.customerName}`,
+      body: `Dear Flowtech team,\n\nPlease share your best quotation against our enquiry ${r.inquiryNo} for the following requirement:\n\n${items}\n\nKindly include GST, delivery schedule and payment terms in your offer.\n\nRegards,\n${party?.contactPerson ?? 'Procurement'}\n${q.customerName}`,
       thread: [],
       classification: 'inquiry',
-      aiConfidence: 95,
+      aiConfidence: 93,
       read: true,
       needsReview: false,
       officeId: q.officeId,
@@ -253,28 +336,19 @@ export default function QuotesPending() {
       partyId: q.partyId,
       customerName: q.customerName,
       customerCode: q.customerCode,
-      linkedQuotation: q.number,
-      quotationSendId: q.id,
       inquiryId: q.id,
       inquiryNo: r.inquiryNo,
       extraction: [
-        { key: 'customer', label: 'Customer', value: q.customerName, confidence: 'high', required: true },
-        { key: 'inquiry', label: 'Inquiry Number', value: r.inquiryNo, confidence: 'high', required: true },
-        { key: 'quotation', label: 'Quotation Number', value: q.number, confidence: 'high', required: true },
-        { key: 'amount', label: 'Quotation Value', value: compactINR(q.value), confidence: 'high' },
+        { key: 'customer', label: 'Customer / Party', value: q.customerName, confidence: 'high', required: true },
+        { key: 'inquiryNo', label: 'Inquiry Number', value: r.inquiryNo, confidence: 'high', required: true },
+        { key: 'product', label: 'Products / Items', value: q.items.map((it) => it.description).join('; '), confidence: 'high', required: true },
+        { key: 'quantity', label: 'Quantity', value: q.items.map((it) => `${it.quantity} ${it.unit}`).join('; '), confidence: 'high', required: true },
+        { key: 'requestedDate', label: 'Requested Date', value: q.deliveryTerms, confidence: 'medium' },
       ],
-      extractionConfirmed: true,
-      draft: {
-        from,
-        to,
-        cc: '',
-        subject: `Quotation ${q.number} from ${APP_NAME}`,
-        body: `Dear ${party?.contactPerson ?? 'Sir/Madam'},\n\nThank you for your enquiry ${r.inquiryNo}. Our quotation ${q.number} is ready for your kind review.\n\nGrand total: ${compactINR(q.value)} (inclusive of applicable GST).\nPayment terms: ${q.paymentTerms}.\nDelivery: ${q.deliveryTerms}.\n\nThis quotation is valid for 30 days. We look forward to your confirmation.\n\n${emailSignature(q.owner, officeName(q.officeId))}`,
-        relatedDoc: q.number,
-        amount: q.value,
-        aiGenerated: true,
-      },
-      draftSaved: true,
+      // Nothing pre-confirmed and nothing pre-drafted: the line-item review in
+      // the inbox is the only thing that can clear this enquiry.
+      extractionConfirmed: false,
+      draftSaved: false,
       sent: false,
     };
   };
@@ -291,7 +365,11 @@ export default function QuotesPending() {
       render: (r) => (
         <div className="min-w-0 leading-tight">
           <p className="truncate font-semibold text-surface-800">{r.inquiryNo}</p>
-          <p className="truncate text-[11px] text-surface-400">{r.q.number}</p>
+          {r.quotationNo ? (
+            <p className="truncate text-[11px] text-surface-400">{r.quotationNo}</p>
+          ) : (
+            <p className="truncate text-[11px] italic text-surface-400">Quotation not generated</p>
+          )}
         </div>
       ),
     },
@@ -300,12 +378,12 @@ export default function QuotesPending() {
       header: 'Customer',
       width: '146px',
       truncate: true,
-      title: (r) => r.q.customerName,
-      sortValue: (r) => r.q.customerName,
+      title: (r) => r.customerName,
+      sortValue: (r) => r.customerName,
       render: (r) => (
         <div className="min-w-0 leading-tight">
-          <p className="truncate font-medium text-surface-800">{r.q.customerName}</p>
-          <p className="truncate text-[11px] text-surface-400">{r.q.customerCode}</p>
+          <p className="truncate font-medium text-surface-800">{r.customerName}</p>
+          <p className="truncate text-[11px] text-surface-400">{r.customerCode}</p>
         </div>
       ),
     },
@@ -314,12 +392,12 @@ export default function QuotesPending() {
       header: 'Location',
       width: '114px',
       truncate: true,
-      title: (r) => officeName(r.q.officeId),
-      sortValue: (r) => officeName(r.q.officeId),
+      title: (r) => officeName(r.officeId),
+      sortValue: (r) => officeName(r.officeId),
       render: (r) => (
         <div className="min-w-0 leading-tight">
-          <p className="truncate text-surface-700">{officeName(r.q.officeId)}</p>
-          <p className="truncate text-[11px] text-surface-400">{officeCode(r.q.officeId)}</p>
+          <p className="truncate text-surface-700">{officeName(r.officeId)}</p>
+          <p className="truncate text-[11px] text-surface-400">{officeCode(r.officeId)}</p>
         </div>
       ),
     },
@@ -342,8 +420,13 @@ export default function QuotesPending() {
       header: 'Value',
       width: '78px',
       align: 'right',
-      sortValue: (r) => r.q.value,
-      render: (r) => <span className="font-medium text-surface-800">{compactINR(r.q.value)}</span>,
+      sortValue: (r) => r.value ?? -1,
+      render: (r) =>
+        r.value === null ? (
+          <span className="text-surface-400" title="Value is set when the quotation is generated">—</span>
+        ) : (
+          <span className="font-medium text-surface-800">{compactINR(r.value)}</span>
+        ),
     },
     {
       key: 'created',
@@ -382,7 +465,7 @@ export default function QuotesPending() {
 
   const empty = hasFilters
     ? {
-        title: 'No matching quotations',
+        title: 'No matching inquiries',
         message: 'Try adjusting the search or filters.',
         action: (
           <Button size="sm" variant="secondary" onClick={clearFilters}>
@@ -390,14 +473,14 @@ export default function QuotesPending() {
           </Button>
         ),
       }
-    : { title: 'Nothing pending', message: 'Every quotation has been sent. 🎉' };
+    : { title: 'Nothing pending', message: 'Every inquiry has been quoted and sent. 🎉' };
 
   if (noOffice) {
     return (
       <>
         <PageHeader
           title="Quotes Pending to be Sent"
-          description="Open each inquiry in the Global Inbox to review and send its quotation to the customer."
+          description="Every new inquiry lands here until its quotation is sent. Open one to review the extracted line items, generate the quote and send it."
           crumbs={[{ label: 'Sales Quotations' }, { label: 'Quotes Pending to be Sent' }]}
         />
         <NoOfficeAssigned />
@@ -409,7 +492,7 @@ export default function QuotesPending() {
     <>
       <PageHeader
         title="Quotes Pending to be Sent"
-        description="Open each inquiry in the Global Inbox to review and send its quotation to the customer."
+        description="Every new inquiry lands here until its quotation is sent. Open one to review the extracted line items, generate the quote and send it."
         crumbs={[{ label: 'Sales Quotations' }, { label: 'Quotes Pending to be Sent' }]}
       />
 
@@ -417,7 +500,7 @@ export default function QuotesPending() {
         <div className="mb-3 flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-[13px] text-rose-700">
           <AlertCircle className="h-4 w-4 flex-none" />
           <span className="font-medium">
-            {overdueCount} quotation{overdueCount > 1 ? 's are' : ' is'} overdue.
+            {overdueCount} inquir{overdueCount > 1 ? 'ies are' : 'y is'} overdue.
           </span>
           {dueState !== 'overdue' && (
             <button
@@ -461,7 +544,7 @@ export default function QuotesPending() {
           <DataTable
             columns={columns}
             rows={pageRows}
-            rowKey={(r) => r.q.id}
+            rowKey={(r) => r.key}
             loading={loading}
             onRowClick={canOpen ? (r) => openInbox(r) : undefined}
             emptyTitle={empty.title}
@@ -481,7 +564,7 @@ export default function QuotesPending() {
           ) : (
             <ul className="divide-y divide-surface-100">
               {pageRows.map((r) => (
-                <MobileCard key={r.q.id} row={r} onOpen={() => openInbox(r)} canOpen={canOpen} />
+                <MobileCard key={r.key} row={r} onOpen={() => openInbox(r)} canOpen={canOpen} />
               ))}
             </ul>
           )}
@@ -528,12 +611,17 @@ function MobileCard({ row, onOpen, canOpen }: { row: PendingRow; onOpen: () => v
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate font-semibold text-surface-800">{row.inquiryNo}</p>
-          <p className="truncate text-[12px] text-surface-500">{row.q.customerName}</p>
+          <p className="truncate text-[12px] text-surface-500">{row.customerName}</p>
+          <p className="truncate text-[11px] text-surface-400">
+            {row.quotationNo ?? <span className="italic">Quotation not generated</span>}
+          </p>
         </div>
-        <span className="flex-none font-semibold text-surface-800">{compactINR(row.q.value)}</span>
+        <span className="flex-none font-semibold text-surface-800">
+          {row.value === null ? <span className="text-surface-400">—</span> : compactINR(row.value)}
+        </span>
       </div>
       <div className="space-y-1.5 rounded-lg bg-surface-50 px-3 py-2">
-        <Field label="Location">{officeName(row.q.officeId)}</Field>
+        <Field label="Location">{officeName(row.officeId)}</Field>
         <Field label="Owner">
           {row.owner || <span className="italic text-surface-400">Unassigned</span>}
         </Field>
