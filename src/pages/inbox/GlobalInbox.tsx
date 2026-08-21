@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
-import { Inbox, ArrowLeft, Building2, FileText, RefreshCw, ClipboardCheck, FilePenLine, Link2, SlidersHorizontal, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Inbox, ArrowLeft, Building2, FileText, RefreshCw, ClipboardCheck, FilePenLine, Link2, Mails, SlidersHorizontal, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import { SearchInput, FilterSelect, FilterBar, type FilterChip } from '@/components/ui';
 import { Tabs } from '@/components/ui/misc';
@@ -56,9 +56,11 @@ export default function GlobalInbox() {
     const id = params.get('email');
     return id && emails.some((e) => e.id === id) ? id : null;
   });
-  const [mobileView, setMobileView] = useState<'list' | 'detail'>(() =>
-    params.get('email') ? 'detail' : 'list'
-  );
+  // The company email list as an overlay, for widths that cannot spare a third
+  // column. It is never the ONLY way to the list at desktop sizes — there it is
+  // a real column — and never a silent replacement: the button that opens it is
+  // always on screen (see "Company Emails (n)" below).
+  const [emailDrawerOpen, setEmailDrawerOpen] = useState(false);
 
   // Focused quote-send mode — carried in from "Quotes Pending" via
   // ?mode=quote-send&qtn=<quotationId>. It stays scoped to the ONE deep-linked
@@ -124,6 +126,22 @@ export default function GlobalInbox() {
     setSidebarCollapsed(true);
     return () => setSidebarCollapsed(restore);
   }, [setSidebarCollapsed]);
+
+  // The workspace is laid out from the width it ACTUALLY has, not from the
+  // viewport: the app sidebar, the page gutters and the user's own zoom all
+  // change how much room the three panels get. Measuring means the left column
+  // survives wherever it fits and becomes a drawer only when it genuinely
+  // cannot — never because a viewport breakpoint guessed wrong.
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const [workspaceWidth, setWorkspaceWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = workspaceRef.current;
+    if (!el) return;
+    setWorkspaceWidth(Math.round(el.getBoundingClientRect().width));
+    const ro = new ResizeObserver(([entry]) => setWorkspaceWidth(Math.round(entry.contentRect.width)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const scoped = useMemo(() => emails.filter((e) => inScope(e.officeId)), [emails, inScope]);
 
@@ -216,7 +234,6 @@ export default function GlobalInbox() {
     if (id && emails.some((e) => e.id === id)) {
       setTab('all');
       setSelectedId(id);
-      setMobileView('detail');
       const e = emails.find((x) => x.id === id);
       if (e && !e.read) updateEmail(id, { read: true });
     } else if (id) {
@@ -238,7 +255,6 @@ export default function GlobalInbox() {
     if (id && id !== selectedId && emails.some((e) => e.id === id)) {
       setTab('all');
       setSelectedId(id);
-      setMobileView('detail');
       const e = emails.find((x) => x.id === id);
       if (e && !e.read) updateEmail(id, { read: true });
     }
@@ -440,13 +456,17 @@ export default function GlobalInbox() {
   const exitToInbox = () => {
     setSelectedId(null);
     setQuoteSend(null);
-    setMobileView('list');
+    setEmailDrawerOpen(false);
+    // The rail is a three-panel affordance; the direct inbox is always the
+    // full-width list, never a column of icons with no way to expand it.
+    autoCollapsedRef.current = false;
+    setListCollapsed(false);
     setParams({}, { replace: true });
   };
 
   const onSelect = (id: string) => {
     setSelectedId(id);
-    setMobileView('detail');
+    setEmailDrawerOpen(false);
     const e = emails.find((x) => x.id === id);
     if (e) {
       setParams(urlFor(e), { replace: true });
@@ -471,6 +491,51 @@ export default function GlobalInbox() {
   if (owner) chips.push({ key: 'o', label: `Owner: ${owner}`, onRemove: () => setOwner('') });
   if (dateFrom || dateTo)
     chips.push({ key: 'd', label: `Date: ${dateFrom || '…'} → ${dateTo || '…'}`, onRemove: () => { setDateFrom(''); setDateTo(''); } });
+
+  // ---- Responsive tiers for the contextual workspace ----------------------
+  // The panels never squeeze below a readable size and never scroll sideways;
+  // instead the layout steps down a tier at a time, and the company email list
+  // is the LAST thing to go — and even then only into a drawer that announces
+  // itself.
+  //   3 panels ≥ 880px  — list · conversation · workspace (the full layout,
+  //                       reached at a 1024px viewport). From 1040px it widens
+  //                       to the target sizes: list 260–300 · conversation
+  //                       ≥400 · workspace 380–460.
+  //   2 panels ≥ 700px  — conversation · workspace; the list moves to the
+  //                       "Company Emails (n)" drawer.
+  //   1 panel  < 700px  — conversation above workspace; list still in the
+  //                       drawer.
+  const panels = !selected ? 1 : workspaceWidth >= 880 ? 3 : workspaceWidth >= 700 ? 2 : 1;
+  const roomy = workspaceWidth >= 1040;
+  // The list is a column only in the full layout; otherwise it is the drawer,
+  // reachable from a button that is always visible beside the conversation.
+  const listAsColumn = !selected || panels === 3;
+  const listAsDrawer = !!selected && panels < 3;
+  // A connected single surface (fixed height, shared dividers, no gaps) as soon
+  // as two panels sit side by side; below that they are separate stacked cards.
+  const connected = panels >= 2;
+  const gridColumns = !selected
+    ? undefined
+    : panels === 3
+    ? `${listCollapsed ? '56px' : roomy ? 'minmax(260px, 300px)' : '240px'} ${
+        roomy ? 'minmax(400px, 1fr)' : 'minmax(320px, 1fr)'
+      } ${roomy ? 'minmax(380px, 460px)' : 'minmax(300px, 344px)'}`
+    : panels === 2
+    ? 'minmax(320px, 1fr) minmax(300px, 380px)'
+    : undefined;
+
+  // The drawer never outlives the width that needed it, and Escape closes it.
+  useEffect(() => {
+    if (!listAsDrawer) setEmailDrawerOpen(false);
+  }, [listAsDrawer]);
+  useEffect(() => {
+    if (!emailDrawerOpen) return;
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') setEmailDrawerOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [emailDrawerOpen]);
 
   if (noOffice) {
     return (
@@ -543,134 +608,113 @@ export default function GlobalInbox() {
 
       {/* MODE 1 — direct /inbox: one full-width column, the Gmail-style list of
           every classified email and nothing else.
-          MODE 2 — an email is open: the connected three-panel workspace — one
-          surface, vertical dividers, no gaps. The fr ratios (0.55 / 0.95 / 1 ≈
-          22% / 38% / 40%) make the right business-workspace panel — the primary
-          task area — widest: narrow list · read+compose · widest quote/action
-          tools. Enabled at ≥1180px; below that we fall back to progressive
-          list → detail navigation so the panels never squeeze or scroll
-          sideways. */}
+          MODE 2 — an email is open: the connected workspace — one surface,
+          vertical dividers, no gaps — laid out from the width it measures (see
+          the tiers above): list · conversation · business workspace whenever
+          three panels fit, otherwise the list steps into its drawer so the
+          remaining panels keep a readable width instead of squeezing. */}
       <div
+        ref={workspaceRef}
+        style={gridColumns ? { gridTemplateColumns: gridColumns } : undefined}
         className={classNames(
-          'grid grid-cols-1 gap-4',
-          'min-[1180px]:h-[calc(100vh-250px)] min-[1180px]:min-h-[520px] min-[1180px]:gap-0',
-          'min-[1180px]:overflow-hidden min-[1180px]:rounded-xl min-[1180px]:border min-[1180px]:border-surface-200 min-[1180px]:bg-white min-[1180px]:shadow-card',
-          // Collapsed → the left column shrinks to a 56px icon rail so the
-          // thread + workspace keep maximum width beside the SO drawer.
-          !selected
-            ? 'min-[1180px]:grid-cols-1'
-            : listCollapsed
-            ? 'min-[1180px]:grid-cols-[56px_minmax(320px,0.95fr)_minmax(340px,1fr)]'
-            : 'min-[1180px]:grid-cols-[minmax(220px,0.55fr)_minmax(320px,0.95fr)_minmax(340px,1fr)]'
+          'grid grid-cols-1',
+          connected
+            ? 'h-[calc(100vh-250px)] min-h-[520px] gap-0 overflow-hidden rounded-xl border border-surface-200 bg-white shadow-card'
+            : 'gap-4'
         )}
       >
-        {/* Left: email list — narrowest, compact, subtly muted, divider on right.
-            Collapsible to a compact icon rail (auto while the SO Generation
-            drawer is open; manually via the toggle). Collapse only exists at
-            desktop widths — mobile always gets the full list. */}
-        <div
-          className={classNames(
-            'card overflow-hidden min-[1180px]:flex min-[1180px]:flex-col',
-            'min-[1180px]:rounded-none min-[1180px]:border-0 min-[1180px]:shadow-none',
-            selected
-              ? 'min-[1180px]:border-r min-[1180px]:border-surface-200 min-[1180px]:bg-surface-50/40'
-              : 'min-[1180px]:bg-white',
-            mobileView === 'detail' && 'hidden min-[1180px]:flex'
-          )}
-        >
+        {/* Left: the email list — every company on direct /inbox, the selected
+            customer's mail in contextual mode. It is a real column whenever
+            three panels fit; below that it lives in the drawer instead (and is
+            reached from the "Company Emails (n)" button in the centre). Inside
+            the full layout it can still be collapsed to a 56px icon rail, so
+            the conversation + workspace keep their width beside the SO drawer. */}
+        {listAsColumn && (
           <div
             className={classNames(
-              'hidden flex-none items-center border-b border-surface-100 px-2 py-1.5',
-              selected ? 'min-[1180px]:flex' : 'min-[1180px]:hidden',
-              listCollapsed ? 'justify-center' : 'justify-between'
+              'card overflow-hidden',
+              connected && 'flex flex-col rounded-none border-0 shadow-none',
+              connected && selected && 'border-r border-surface-200 bg-surface-50/40'
             )}
           >
-            {listCollapsed ? (
-              /* "Show Emails (n)" — the expand control for the collapsed rail */
-              <button
-                onClick={toggleList}
-                title={customer ? `Show ${customer.companyName} emails (${filtered.length})` : `Show Emails (${filtered.length})`}
-                aria-label={customer ? `Show ${customer.companyName} emails (${filtered.length})` : `Show Emails (${filtered.length})`}
-                aria-expanded={false}
-                className="flex w-full flex-col items-center gap-0.5 rounded-lg py-1 text-surface-400 transition-colors hover:bg-surface-100 hover:text-surface-600"
-              >
-                <PanelLeftOpen className="h-4 w-4" />
-                <span className="rounded-full bg-surface-200/80 px-1.5 text-[10px] font-semibold leading-4 text-surface-600">
-                  {filtered.length}
-                </span>
-              </button>
-            ) : (
-              <>
-                {/* Contextual mode names the company the list belongs to and
-                    counts ITS emails — never the global total. */}
-                <span
-                  className={classNames(
-                    'min-w-0 truncate pl-2 text-[11px] font-semibold uppercase tracking-wide',
-                    customer ? 'text-brand-700' : 'text-surface-400'
-                  )}
-                  title={customer ? `${customer.companyName} — ${filtered.length} emails` : undefined}
-                >
-                  {customer
-                    ? `${customer.companyName} — ${filtered.length} Email${filtered.length === 1 ? '' : 's'}`
-                    : `${filtered.length} email${filtered.length === 1 ? '' : 's'}`}
-                </span>
+            <div
+              className={classNames(
+                'flex-none items-center border-b border-surface-100 px-2 py-1.5',
+                selected ? 'flex' : 'hidden',
+                listCollapsed ? 'justify-center' : 'justify-between'
+              )}
+            >
+              {listCollapsed ? (
+                /* The expand control for the collapsed rail — it names what it
+                   holds ("Company Emails") and how many, so the list is never
+                   reduced to an unlabelled strip of icons. */
                 <button
                   onClick={toggleList}
-                  title="Hide Emails"
-                  aria-label="Hide Emails"
-                  aria-expanded
-                  className="rounded-lg p-1.5 text-surface-400 transition-colors hover:bg-surface-100 hover:text-surface-600"
+                  title={`Company Emails (${filtered.length})${customer ? ` — ${customer.companyName}` : ''}`}
+                  aria-label={`Company Emails (${filtered.length})`}
+                  aria-expanded={false}
+                  className="flex w-full flex-col items-center gap-0.5 rounded-lg py-1 text-surface-400 transition-colors hover:bg-surface-100 hover:text-surface-600"
                 >
-                  <PanelLeftClose className="h-4 w-4" />
-                </button>
-              </>
-            )}
-          </div>
-          {/* Contextual mode — the way back to the direct Global Inbox: it
-              closes the conversation and its workspace and widens the list back
-              to every company. Kept on every width (the header above is
-              desktop-only), so opening an email is never a one-way door. */}
-          {selected && (
-            <div className="flex-none border-b border-brand-100 bg-brand-50/60">
-              {customer && (
-                <div className="flex items-center gap-1.5 px-3 pt-1.5 min-[1180px]:hidden">
-                  <Building2 className="h-3.5 w-3.5 flex-none text-brand-600" />
-                  <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-surface-800">
-                    {customer.companyName} — {filtered.length} Email{filtered.length === 1 ? '' : 's'}
+                  <PanelLeftOpen className="h-4 w-4" />
+                  <span className="rounded-full bg-surface-200/80 px-1.5 text-[10px] font-semibold leading-4 text-surface-600">
+                    {filtered.length}
                   </span>
-                </div>
+                </button>
+              ) : (
+                <>
+                  {/* Contextual mode names the company the list belongs to and
+                      counts ITS emails — never the global total. */}
+                  <span
+                    className={classNames(
+                      'min-w-0 truncate pl-2 text-[11px] font-semibold uppercase tracking-wide',
+                      customer ? 'text-brand-700' : 'text-surface-400'
+                    )}
+                    title={customer ? `${customer.companyName} — ${filtered.length} emails` : undefined}
+                  >
+                    {customer
+                      ? `${customer.companyName} — ${filtered.length} Email${filtered.length === 1 ? '' : 's'}`
+                      : `${filtered.length} email${filtered.length === 1 ? '' : 's'}`}
+                  </span>
+                  <button
+                    onClick={toggleList}
+                    title="Hide Emails"
+                    aria-label="Hide Emails"
+                    aria-expanded
+                    className="rounded-lg p-1.5 text-surface-400 transition-colors hover:bg-surface-100 hover:text-surface-600"
+                  >
+                    <PanelLeftClose className="h-4 w-4" />
+                  </button>
+                </>
               )}
-              <button
-                onClick={exitToInbox}
-                title="Back to All Emails — the full Global Inbox"
-                aria-label="Back to All Emails"
-                className={classNames(
-                  'flex w-full items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-700 transition-colors hover:bg-brand-100/60',
-                  listCollapsed && 'min-[1180px]:justify-center min-[1180px]:px-0'
-                )}
-              >
-                <ArrowLeft className="h-3.5 w-3.5 flex-none" />
-                <span className={classNames('truncate', listCollapsed && 'min-[1180px]:hidden')}>
-                  Back to All Emails
-                </span>
-              </button>
             </div>
-          )}
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {listCollapsed ? (
-              <>
-                <div className="hidden min-[1180px]:block">
-                  <EmailIconRail emails={filtered} selectedId={selectedId} onSelect={onSelect} />
-                </div>
-                <div className="min-[1180px]:hidden">
-                  <EmailList emails={filtered} selectedId={selectedId} onSelect={onSelect} inquiryIds={inquiryEmailIds} />
-                </div>
-              </>
-            ) : (
-              <EmailList emails={filtered} selectedId={selectedId} onSelect={onSelect} inquiryIds={inquiryEmailIds} />
+            {/* The way back to the direct Global Inbox: it closes the
+                conversation and its workspace and widens the list back to every
+                company, so opening an email is never a one-way door. */}
+            {selected && (
+              <div className="flex-none border-b border-brand-100 bg-brand-50/60">
+                <button
+                  onClick={exitToInbox}
+                  title="Back to All Emails — the full Global Inbox"
+                  aria-label="Back to All Emails"
+                  className={classNames(
+                    'flex w-full items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-700 transition-colors hover:bg-brand-100/60',
+                    listCollapsed && 'justify-center px-0'
+                  )}
+                >
+                  <ArrowLeft className="h-3.5 w-3.5 flex-none" />
+                  <span className={classNames('truncate', listCollapsed && 'hidden')}>Back to All Emails</span>
+                </button>
+              </div>
             )}
+            <div className={classNames('overflow-y-auto', connected && 'min-h-0 flex-1')}>
+              {listCollapsed && selected ? (
+                <EmailIconRail emails={filtered} selectedId={selectedId} onSelect={onSelect} />
+              ) : (
+                <EmailList emails={filtered} selectedId={selectedId} onSelect={onSelect} inquiryIds={inquiryEmailIds} />
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Center + Right */}
         {selected ? (
@@ -678,17 +722,37 @@ export default function GlobalInbox() {
             {/* Center: reading panel — comfortable width, divider on right */}
             <div
               className={classNames(
-                'card overflow-hidden min-[1180px]:flex min-[1180px]:flex-col',
-                'min-[1180px]:rounded-none min-[1180px]:border-0 min-[1180px]:border-r min-[1180px]:border-surface-200 min-[1180px]:bg-white min-[1180px]:shadow-none',
-                mobileView === 'list' && 'hidden min-[1180px]:flex'
+                'card overflow-hidden',
+                connected && 'flex flex-col rounded-none border-0 border-r border-surface-200 bg-white shadow-none'
               )}
             >
-              <button
-                onClick={() => setMobileView('list')}
-                className="flex flex-none items-center gap-1.5 border-b border-surface-100 px-4 py-2 text-[13px] font-medium text-brand-600 min-[1180px]:hidden"
-              >
-                <ArrowLeft className="h-4 w-4" /> Back to list
-              </button>
+              {/* The list's stand-in whenever it is not a column. It sits at the
+                  top of the conversation, states the company and the count, and
+                  opens the drawer — the list is moved, never hidden. */}
+              {listAsDrawer && (
+                <div className="flex flex-none items-center gap-2 border-b border-surface-100 bg-surface-50/70 px-3 py-2">
+                  <button
+                    onClick={() => setEmailDrawerOpen(true)}
+                    aria-haspopup="dialog"
+                    aria-expanded={emailDrawerOpen}
+                    title={customer ? `${customer.companyName} — ${filtered.length} emails` : undefined}
+                    className="flex min-w-0 items-center gap-1.5 rounded-lg border border-brand-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-brand-700 shadow-sm transition-colors hover:bg-brand-50"
+                  >
+                    <Mails className="h-3.5 w-3.5 flex-none" />
+                    <span className="truncate">Company Emails ({filtered.length})</span>
+                  </button>
+                  {customer && (
+                    <span className="min-w-0 flex-1 truncate text-[12px] text-surface-600">{customer.companyName}</span>
+                  )}
+                  <button
+                    onClick={exitToInbox}
+                    title="Back to All Emails — the full Global Inbox"
+                    className="flex flex-none items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-brand-700 transition-colors hover:text-brand-800"
+                  >
+                    <ArrowLeft className="h-3.5 w-3.5" /> All Emails
+                  </button>
+                </div>
+              )}
               {/* Which inquiry this conversation belongs to — identity only.
                   Its other emails are already in the left panel (this
                   customer's mail), so they are never listed again here. */}
@@ -718,7 +782,7 @@ export default function GlobalInbox() {
                   <Link2 className="h-3.5 w-3.5" /> Purchase Order received — quotation association required
                 </div>
               )}
-              <div className="min-h-0 flex-1">
+              <div className={classNames(connected && 'min-h-0 flex-1')}>
                 {showQuoteTools ? (
                   <InboxCenterPanel email={selected} mode="quote-send" quotation={quoteSendQuotation} focusTick={focusTick} />
                 ) : isRevision ? (
@@ -735,12 +799,11 @@ export default function GlobalInbox() {
             {/* Right: quote tools / business action — dedicated workflow surface */}
             <div
               className={classNames(
-                'card overflow-hidden min-[1180px]:flex min-[1180px]:flex-col',
-                'min-[1180px]:rounded-none min-[1180px]:border-0 min-[1180px]:bg-white min-[1180px]:shadow-none',
-                mobileView === 'list' && 'hidden min-[1180px]:flex'
+                'card overflow-hidden',
+                connected && 'flex flex-col rounded-none border-0 bg-white shadow-none'
               )}
             >
-              <div className="min-h-0 flex-1">
+              <div className={classNames(connected && 'min-h-0 flex-1')}>
                 {showQuoteTools ? (
                   <QuoteToolsPanel email={selected} quotation={quoteSendQuotation!} onPrepared={onPrepared} />
                 ) : isRevision ? (
@@ -773,9 +836,49 @@ export default function GlobalInbox() {
         />
       )}
 
-      {/* subtle icon reference so Inbox import is used when list is empty on mobile */}
-      {filtered.length === 0 && mobileView === 'list' && (
-        <div className="mt-4 flex justify-center text-surface-300 lg:hidden">
+      {/* The company email list as an overlay, for the widths that cannot spare
+          a third column. Same list, same selection, same "Back to All Emails" —
+          only its container changes. */}
+      {emailDrawerOpen && listAsDrawer && (
+        <div className="fixed inset-0 z-40 flex" role="dialog" aria-modal="true" aria-label="Company emails">
+          <div className="absolute inset-0 bg-surface-900/40" onClick={() => setEmailDrawerOpen(false)} />
+          <div className="relative z-10 flex h-full w-[min(340px,88vw)] flex-col bg-white shadow-2xl">
+            <div className="flex flex-none items-center gap-2 border-b border-surface-100 px-3 py-2.5">
+              <Mails className="h-4 w-4 flex-none text-brand-600" />
+              <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-surface-900">
+                Company Emails ({filtered.length})
+              </span>
+              <button
+                onClick={() => setEmailDrawerOpen(false)}
+                title="Close"
+                aria-label="Close company emails"
+                className="rounded-lg p-1.5 text-surface-400 transition-colors hover:bg-surface-100 hover:text-surface-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {customer && (
+              <div className="flex flex-none items-center gap-1.5 border-b border-surface-100 px-3 py-1.5">
+                <Building2 className="h-3.5 w-3.5 flex-none text-brand-600" />
+                <span className="min-w-0 truncate text-[12px] text-surface-700">{customer.companyName}</span>
+              </div>
+            )}
+            <button
+              onClick={exitToInbox}
+              className="flex flex-none items-center gap-1.5 border-b border-brand-100 bg-brand-50/60 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-700 transition-colors hover:bg-brand-100/60"
+            >
+              <ArrowLeft className="h-3.5 w-3.5 flex-none" /> Back to All Emails
+            </button>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <EmailList emails={filtered} selectedId={selectedId} onSelect={onSelect} inquiryIds={inquiryEmailIds} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* subtle icon reference so Inbox import is used when the list is empty */}
+      {!selected && filtered.length === 0 && (
+        <div className="mt-4 flex justify-center text-surface-300">
           <Inbox className="h-6 w-6" />
         </div>
       )}
