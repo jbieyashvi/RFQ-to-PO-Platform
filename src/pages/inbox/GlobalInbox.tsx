@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
-import { Inbox, ArrowLeft, MailOpen, FileText, RefreshCw, ClipboardCheck, FilePenLine, Link2, SlidersHorizontal, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Inbox, ArrowLeft, Building2, MailOpen, FileText, RefreshCw, ClipboardCheck, FilePenLine, Link2, SlidersHorizontal, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import { SearchInput, FilterSelect, FilterBar, EmptyState, type FilterChip } from '@/components/ui';
 import { Tabs } from '@/components/ui/misc';
@@ -91,6 +91,16 @@ export default function GlobalInbox() {
     () => params.get('inquiryId') ?? params.get('inq')
   );
 
+  // ---- Company (customer) scope -------------------------------------------
+  // The inbox has exactly two modes:
+  //   1. Direct /inbox — the classified emails of ALL companies.
+  //   2. Contextual / workflow mode — opened from a quote, PO or SO workflow
+  //      (or a ?customerId deep link): the LEFT panel narrows to the selected
+  //      customer, so the whole company conversation (inquiry, quote revision,
+  //      purchase order, sales order query) is at hand and no other customer's
+  //      mail is in the way. "Back to All Companies" returns to mode 1.
+  const [customerId, setCustomerId] = useState<string | null>(() => params.get('customerId'));
+
   // Bumped whenever a right-hand workspace PREPARES the centre composer (adds a
   // revised/corrected quote, drafts a PO-correction request). The centre panel
   // watches it to pull the freshly written draft in and scroll/focus itself.
@@ -131,15 +141,31 @@ export default function GlobalInbox() {
 
   const scoped = useMemo(() => emails.filter((e) => inScope(e.officeId)), [emails, inScope]);
 
+  // The company the inbox is currently scoped to (contextual mode). An id that
+  // no longer resolves to a party simply falls back to the global inbox.
+  const customer = useMemo(
+    () => (customerId ? parties.find((p) => p.id === customerId) ?? null : null),
+    [customerId, parties]
+  );
+  const customerScopeId = customer?.id ?? null;
+
+  // Everything the LEFT panel may show: all companies on direct /inbox, only
+  // the selected customer's emails in contextual mode. The tabs, the filters
+  // and the list all count from this — never from the global total.
+  const listScope = useMemo(
+    () => (customerScopeId ? scoped.filter((e) => e.partyId === customerScopeId) : scoped),
+    [scoped, customerScopeId]
+  );
+
   const tabCounts = useMemo(
     () => ({
       // "All Emails" is the full history the user can access — sent emails
       // included (for audit), so there is no separate Sent tab.
-      all: scoped.length,
-      needs_review: scoped.filter((e) => e.needsReview && !e.sent).length,
-      drafts: scoped.filter((e) => e.draftSaved && !e.sent).length,
+      all: listScope.length,
+      needs_review: listScope.filter((e) => e.needsReview && !e.sent).length,
+      drafts: listScope.filter((e) => e.draftSaved && !e.sent).length,
     }),
-    [scoped]
+    [listScope]
   );
 
   // The inquiry currently grouped. An id that no longer resolves to a quotation
@@ -147,10 +173,11 @@ export default function GlobalInbox() {
   const inquiry = useMemo(() => (inquiryId ? inquiryById(inquiryId, quotations) : null), [inquiryId, quotations]);
   const inquiryScopeId = inquiry?.id ?? null;
 
-  // The full classified list — deliberately NOT narrowed by the inquiry.
+  // The classified list — narrowed by the company in contextual mode, never by
+  // the inquiry (the inquiry is grouped in the centre, not cut out of the list).
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
-    return scoped
+    return listScope
       .filter((e) => {
         if (tab === 'needs_review' && !(e.needsReview && !e.sent)) return false;
         if (tab === 'drafts' && !(e.draftSaved && !e.sent)) return false;
@@ -171,7 +198,7 @@ export default function GlobalInbox() {
         return true;
       })
       .sort((a, b) => ((a.sent && a.sentAt ? a.sentAt : a.receivedAt) < (b.sent && b.sentAt ? b.sentAt : b.receivedAt) ? 1 : -1));
-  }, [scoped, tab, search, classification, owner, readState, dateFrom, dateTo]);
+  }, [listScope, tab, search, classification, owner, readState, dateFrom, dateTo]);
 
   // The bundle: every email of this inquiry the user can access, oldest first —
   // office scope applies, inbox tabs/filters deliberately do not (the bundle is
@@ -217,14 +244,22 @@ export default function GlobalInbox() {
     // see exitInquiry — and the selection effect below re-derives it anyway.
     const inq = params.get('inquiryId') ?? params.get('inq');
     if (inq) setInquiryId(inq);
+    // Same for the company scope: an explicit ?customerId in the route puts the
+    // inbox in contextual mode; its absence never silently drops the scope
+    // (leaving it is explicit — see exitCustomer).
+    const cust = params.get('customerId');
+    if (cust) setCustomerId(cust);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
 
-  // Keep a valid selection
+  // Keep a valid selection. An email reached through the inquiry bundle counts
+  // as valid even when the inbox tabs/filters would hide it — the bundle is the
+  // whole inquiry, so opening one of its messages must never bounce the
+  // selection back to the top of the filtered list.
   useEffect(() => {
-    if (selectedId && filtered.some((e) => e.id === selectedId)) return;
+    if (selectedId && (filtered.some((e) => e.id === selectedId) || inquiryEmailIds.has(selectedId))) return;
     setSelectedId(filtered[0]?.id ?? null);
-  }, [filtered, selectedId]);
+  }, [filtered, selectedId, inquiryEmailIds]);
 
   const selected: InboxEmail | null = useMemo(
     () => emails.find((e) => e.id === selectedId) ?? null,
@@ -290,6 +325,40 @@ export default function GlobalInbox() {
 
   // Any dedicated business workflow occupying the right panel.
   const isWorkflowMode = showQuoteTools || isRevision || isPoVerify || isSoRevision || isPoAssociate;
+
+  // Entering contextual mode: opening a quotation / PO / SO workflow scopes the
+  // left panel to that email's company. Keyed on the email whose workflow did
+  // it, so "Back to All Companies" is not immediately undone while the same
+  // conversation stays open, and so browsing the company's other (non-workflow)
+  // emails keeps the scope until the user leaves it deliberately.
+  const workflowCustomerRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selected) return;
+    if (isWorkflowMode) {
+      if (workflowCustomerRef.current !== selected.id) {
+        workflowCustomerRef.current = selected.id;
+        if (selected.partyId) setCustomerId(selected.partyId);
+      }
+    } else {
+      workflowCustomerRef.current = null;
+    }
+  }, [selected, isWorkflowMode]);
+
+  // Keep ?customerId and ?inquiryId in the route so a reload — or a link shared
+  // with a colleague — lands back in the same company scope and inquiry, even
+  // when the context was entered from a workflow that only linked ?email.
+  useEffect(() => {
+    const curCustomer = params.get('customerId') ?? null;
+    const curInquiry = params.get('inquiryId') ?? null;
+    if (curCustomer === customerScopeId && curInquiry === inquiryScopeId) return;
+    const next = new URLSearchParams(params);
+    if (customerScopeId) next.set('customerId', customerScopeId);
+    else next.delete('customerId');
+    if (inquiryScopeId) next.set('inquiryId', inquiryScopeId);
+    else next.delete('inquiryId');
+    next.delete('inq');
+    setParams(next, { replace: true });
+  }, [customerScopeId, inquiryScopeId, params, setParams]);
 
   // LAYOUT ONLY: a workflow conversation that belongs to NO inquiry opens with
   // the email list collapsed to its icon rail, giving the saved width to the
@@ -366,12 +435,14 @@ export default function GlobalInbox() {
 
   // Keep the URL describing the current conversation + its workflow so a reload
   // restores exactly what the user is looking at.
-  const urlFor = (e: InboxEmail, groupInquiry = true): Record<string, string> => {
+  const urlFor = (e: InboxEmail, opts?: { inquiry?: boolean; customer?: boolean }): Record<string, string> => {
     // ?inquiryId keeps the inquiry context in the route rather than depending on
     // ?email alone, so a reload restores the bundle even when the next message
-    // came in through a completely different email thread.
-    const id = groupInquiry ? inquiryIdOf(e) : null;
+    // came in through a completely different email thread. ?customerId is the
+    // company scope of the left panel — together they are the contextual mode.
+    const id = (opts?.inquiry ?? true) ? inquiryIdOf(e) : null;
     const inq: Record<string, string> = id ? { inquiryId: id } : {};
+    if ((opts?.customer ?? true) && customerScopeId) inq.customerId = customerScopeId;
     if (quoteSend && e.id === quoteSend.emailId) return { ...inq, mode: 'quote-send', email: e.id, qtn: quoteSend.qtnId };
     if (e.revisionSendId) return { ...inq, mode: 'quote-revision', email: e.id, qtn: e.revisionSendId };
     if (e.poVerifyId) {
@@ -391,7 +462,18 @@ export default function GlobalInbox() {
   // derived from the email itself, never from the query).
   const exitInquiry = () => {
     setInquiryId(null);
-    setParams(selected ? urlFor(selected, false) : {}, { replace: true });
+    setParams(selected ? urlFor(selected, { inquiry: false }) : {}, { replace: true });
+  };
+
+  // "Back to All Companies" — leave contextual mode for the direct Global
+  // Inbox: the left panel widens back to every company and the inquiry grouping
+  // goes with it. The conversation stays open and every workflow action on it
+  // is untouched (they are derived from the email, never from the query).
+  const exitCustomer = () => {
+    setCustomerId(null);
+    setInquiryId(null);
+    workflowCustomerRef.current = selected?.id ?? null;
+    setParams(selected ? urlFor(selected, { inquiry: false, customer: false }) : {}, { replace: true });
   };
 
   const onSelect = (id: string) => {
@@ -443,10 +525,11 @@ export default function GlobalInbox() {
         crumbs={[{ label: 'Global Inbox' }]}
       />
 
-      {/* The inbox toolbar is always present: direct /inbox and inquiry mode
-          share the SAME full classified list. Inquiry grouping is additive —
-          it renders as a bundle above the conversation, never as a replacement
-          for the list. */}
+      {/* The inbox toolbar is always present. Direct /inbox lists the
+          classified emails of every company; contextual mode narrows the list
+          to the selected customer (tabs, filters and counts follow it). The
+          inquiry grouping stays additive on top — a bundle above the
+          conversation, never a replacement for the list. */}
       <div className="card mb-4">
         {/* Tabs */}
         <div className="px-4 pt-2">
@@ -529,8 +612,8 @@ export default function GlobalInbox() {
               /* "Show Emails (n)" — the expand control for the collapsed rail */
               <button
                 onClick={toggleList}
-                title={`Show Emails (${filtered.length})`}
-                aria-label={`Show Emails (${filtered.length})`}
+                title={customer ? `Show ${customer.companyName} emails (${filtered.length})` : `Show Emails (${filtered.length})`}
+                aria-label={customer ? `Show ${customer.companyName} emails (${filtered.length})` : `Show Emails (${filtered.length})`}
                 aria-expanded={false}
                 className="flex w-full flex-col items-center gap-0.5 rounded-lg py-1 text-surface-400 transition-colors hover:bg-surface-100 hover:text-surface-600"
               >
@@ -541,8 +624,18 @@ export default function GlobalInbox() {
               </button>
             ) : (
               <>
-                <span className="pl-2 text-[11px] font-semibold uppercase tracking-wide text-surface-400">
-                  {filtered.length} email{filtered.length === 1 ? '' : 's'}
+                {/* Contextual mode names the company the list belongs to and
+                    counts ITS emails — never the global total. */}
+                <span
+                  className={classNames(
+                    'min-w-0 truncate pl-2 text-[11px] font-semibold uppercase tracking-wide',
+                    customer ? 'text-brand-700' : 'text-surface-400'
+                  )}
+                  title={customer ? `${customer.companyName} — ${filtered.length} emails` : undefined}
+                >
+                  {customer
+                    ? `${customer.companyName} — ${filtered.length} Email${filtered.length === 1 ? '' : 's'}`
+                    : `${filtered.length} email${filtered.length === 1 ? '' : 's'}`}
                 </span>
                 <button
                   onClick={toggleList}
@@ -556,6 +649,33 @@ export default function GlobalInbox() {
               </>
             )}
           </div>
+          {/* Contextual mode — the way back to the direct Global Inbox. Kept on
+              every width (the header above is desktop-only), so the company
+              scope is never a one-way door. */}
+          {customer && (
+            <div className="flex-none border-b border-brand-100 bg-brand-50/60">
+              <div className="flex items-center gap-1.5 px-3 pt-1.5 min-[1180px]:hidden">
+                <Building2 className="h-3.5 w-3.5 flex-none text-brand-600" />
+                <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-surface-800">
+                  {customer.companyName} — {filtered.length} Email{filtered.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              <button
+                onClick={exitCustomer}
+                title="Back to All Companies — the full Global Inbox"
+                aria-label="Back to All Companies"
+                className={classNames(
+                  'flex w-full items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-700 transition-colors hover:bg-brand-100/60',
+                  listCollapsed && 'min-[1180px]:justify-center min-[1180px]:px-0'
+                )}
+              >
+                <ArrowLeft className="h-3.5 w-3.5 flex-none" />
+                <span className={classNames('truncate', listCollapsed && 'min-[1180px]:hidden')}>
+                  Back to All Companies
+                </span>
+              </button>
+            </div>
+          )}
           <div className="min-h-0 flex-1 overflow-y-auto">
             {listCollapsed ? (
               <>
