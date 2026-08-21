@@ -27,7 +27,7 @@ import type {
   SalesOrder,
   VerificationField,
 } from '@/types';
-import { Button, Modal, StatusBadge } from '@/components/ui';
+import { Button, IconButton, Modal, StatusBadge } from '@/components/ui';
 import { useApp } from '@/context/AppContext';
 import { officeName } from '@/data/offices';
 import { emailSignature } from '@/lib/brand';
@@ -808,15 +808,15 @@ function CorrectQuoteEditor({
         </div>
       )}
 
-      <div className="mt-3 space-y-2">
-        <div className="grid grid-cols-2 gap-2">
-          <Button variant="secondary" size="sm" leftIcon={<Save className="h-4 w-4" />} onClick={onSave} disabled={!canEdit || items.length === 0}>Save Changes</Button>
-          <Button variant="secondary" size="sm" leftIcon={<Eye className="h-4 w-4" />} onClick={onPreview} disabled={items.length === 0}>Preview</Button>
-        </div>
+      {/* Secondary Save / Preview are compact icon buttons; the primary
+          Add-to-Email action keeps its visible text label. */}
+      <div className="mt-3 flex items-center gap-2">
+        <IconButton label="Save Changes" icon={<Save className="h-4 w-4" />} onClick={onSave} disabled={!canEdit || items.length === 0} />
+        <IconButton label="Preview Corrected Quote" icon={<Eye className="h-4 w-4" />} onClick={onPreview} disabled={items.length === 0} />
         <Button
           variant="primary"
           size="sm"
-          className="w-full"
+          className="min-w-0 flex-1"
           leftIcon={items.length > 0 ? <Paperclip className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
           onClick={onAddToEmail}
           disabled={!canEdit || items.length === 0}
@@ -1006,15 +1006,15 @@ function GenerateTab({
       {/* Generated-SO actions — NO direct send here; the send is the composer's */}
       <div className="space-y-2">
         {!soEmailed && (
-          <>
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant="secondary" size="sm" leftIcon={<Pencil className="h-4 w-4" />} onClick={onOpenDrawer} disabled={!canGenerate}>Edit Sales Order</Button>
-              <Button variant="secondary" size="sm" leftIcon={<Eye className="h-4 w-4" />} onClick={() => setPreview(true)}>Preview</Button>
-            </div>
-            <Button variant="primary" size="sm" className="w-full" leftIcon={<Mail className="h-4 w-4" />} onClick={addSoToEmail}>
+          /* Secondary Edit / Preview are compact icon buttons; the primary
+             Add-to-Email action keeps its visible text label. */
+          <div className="flex items-center gap-2">
+            <IconButton label="Edit Sales Order" icon={<Pencil className="h-4 w-4" />} onClick={onOpenDrawer} disabled={!canGenerate} />
+            <IconButton label="Preview Sales Order" icon={<Eye className="h-4 w-4" />} onClick={() => setPreview(true)} />
+            <Button variant="primary" size="sm" className="min-w-0 flex-1" leftIcon={<Mail className="h-4 w-4" />} onClick={addSoToEmail}>
               {soAttached ? 'Update Sales Order in Email' : 'Add Sales Order to Email'}
             </Button>
-          </>
+          </div>
         )}
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" size="sm" leftIcon={<FileSpreadsheet className="h-3.5 w-3.5" />} onClick={() => navigate('/sales-orders')}>View Sales Order</Button>

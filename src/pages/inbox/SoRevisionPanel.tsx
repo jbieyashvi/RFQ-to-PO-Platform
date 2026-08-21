@@ -39,6 +39,7 @@ import type {
 } from '@/types';
 import {
   Button,
+  IconButton,
   Modal,
   StatusBadge,
   TextField,
@@ -809,7 +810,9 @@ export function SoRevisionPanel({
       ) : (
         <div className="space-y-3">
           {/* 1. Client Details */}
-          <FormSection icon={<User2 className="h-3.5 w-3.5" />} n={1} label="Client Details">
+          {/* Sections 1–2 rarely change during a revision — collapsed by default
+              to keep the frequently edited items/terms sections in view. */}
+          <FormSection icon={<User2 className="h-3.5 w-3.5" />} n={1} label="Client Details" defaultOpen={false}>
             <div className="rounded-lg bg-surface-50 px-2.5 py-2 text-[12px]">
               <span className="text-surface-400">Customer / Party:</span>{' '}
               <span className="font-semibold text-surface-800">{so.customerName}</span>
@@ -839,7 +842,7 @@ export function SoRevisionPanel({
           </FormSection>
 
           {/* 2. Order Details */}
-          <FormSection icon={<FileText className="h-3.5 w-3.5" />} n={2} label="Order Details">
+          <FormSection icon={<FileText className="h-3.5 w-3.5" />} n={2} label="Order Details" defaultOpen={false}>
             <div className="grid grid-cols-2 gap-2">
               <TextField label="Customer PO Number" value={form.poNumber} onChange={(e) => set('poNumber', e.target.value)} className="py-1.5 text-[13px]" />
               <TextField label="PO Date" type="date" value={form.poDate} onChange={(e) => set('poDate', e.target.value)} className="py-1.5 text-[13px]" />
@@ -948,21 +951,23 @@ export function SoRevisionPanel({
             <Paperclip className="h-3.5 w-3.5 flex-none" /> Revised SO attached — set the review date and send from the centre panel.
           </p>
         )}
-        <div className="grid grid-cols-2 gap-2">
-          <Button variant="secondary" size="sm" leftIcon={<Save className="h-4 w-4" />} onClick={() => saveDraft()} disabled={!canRevise}>Save Draft</Button>
-          <Button variant="secondary" size="sm" leftIcon={<Eye className="h-4 w-4" />} onClick={() => setPreview('revised')}>Preview Revised SO</Button>
+        {/* Secondary Save / Preview are compact icon buttons; the primary
+            Add-to-Email action keeps its visible text label. */}
+        <div className="flex items-center gap-2">
+          <IconButton label="Save Draft" icon={<Save className="h-4 w-4" />} onClick={() => saveDraft()} disabled={!canRevise} />
+          <IconButton label="Preview Revised SO" icon={<Eye className="h-4 w-4" />} onClick={() => setPreview('revised')} />
+          <Button
+            variant="primary"
+            size="sm"
+            className="min-w-0 flex-1"
+            leftIcon={canRevise ? <Mail className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
+            onClick={addToEmail}
+            disabled={!canRevise}
+            title="Attach the revised Sales Order to the email in the centre panel"
+          >
+            {attachedRev ? 'Update Revised SO in Email' : 'Add Revised SO to Email'}
+          </Button>
         </div>
-        <Button
-          variant="primary"
-          size="sm"
-          className="w-full"
-          leftIcon={canRevise ? <Mail className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
-          onClick={addToEmail}
-          disabled={!canRevise}
-          title="Attach the revised Sales Order to the email in the centre panel"
-        >
-          {attachedRev ? 'Update Revised SO in Email' : 'Add Revised SO to Email'}
-        </Button>
         {!canRevise && <p className="text-center text-[11px] font-medium text-rose-600">Sales Order edit permission required.</p>}
       </div>
       )}

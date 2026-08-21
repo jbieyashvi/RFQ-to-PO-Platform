@@ -26,7 +26,7 @@ import type {
   SORevisionVersion,
   VerificationField,
 } from '@/types';
-import { Button, TextField, TextAreaField, Modal, StatusBadge } from '@/components/ui';
+import { Button, IconButton, TextField, TextAreaField, Modal, StatusBadge } from '@/components/ui';
 import { useApp } from '@/context/AppContext';
 import { INBOX_CLASSIFICATION } from '@/lib/labels';
 import { officeName } from '@/data/offices';
@@ -650,7 +650,7 @@ export function InboxCenterPanel({
 
       {/* Composer — fixed at the bottom; scrolls internally when tall */}
       <div className="max-h-[40%] flex-none overflow-y-auto border-t border-surface-100">
-        <div ref={composerRef} className="px-5 py-4">
+        <div ref={composerRef} className="px-4 py-3">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-surface-400">{heading}</p>
             {composePrepared && draft.aiGenerated && (
@@ -828,12 +828,14 @@ export function InboxCenterPanel({
       {!email.sent && (isWorkflow ? composePrepared : true) && (
         <div className="flex-none border-t border-surface-100 bg-surface-50/60 px-4 py-3">
           {isWorkflow ? (
-            <>
-              <Button variant="secondary" size="sm" className="w-full" leftIcon={<Save className="h-4 w-4" />} onClick={saveDraft} disabled={!canDraft}>Save Draft</Button>
+            /* Secondary Save Draft is a compact icon button; the primary Send
+               Email keeps its visible text label. */
+            <div className="flex items-center gap-2">
+              <IconButton label="Save Draft" icon={<Save className="h-4 w-4" />} onClick={saveDraft} disabled={!canDraft} />
               <Button
                 variant="primary"
                 size="sm"
-                className="mt-2 w-full"
+                className="min-w-0 flex-1"
                 leftIcon={canFinalSend ? <Send className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
                 onClick={onWorkflowSend}
                 disabled={!canFinalSend}
@@ -841,17 +843,15 @@ export function InboxCenterPanel({
               >
                 Send Email
               </Button>
-            </>
+            </div>
           ) : (
-            <>
-              <div className="grid grid-cols-2 gap-2">
-                <Button variant="secondary" size="sm" leftIcon={<Save className="h-4 w-4" />} onClick={saveDraft} disabled={!canDraft}>Save Draft</Button>
-                <Button variant="secondary" size="sm" leftIcon={<Eye className="h-4 w-4" />} onClick={() => setPreview(true)} disabled={!canDraft}>Preview</Button>
-              </div>
+            <div className="flex items-center gap-2">
+              <IconButton label="Save Draft" icon={<Save className="h-4 w-4" />} onClick={saveDraft} disabled={!canDraft} />
+              <IconButton label="Preview" icon={<Eye className="h-4 w-4" />} onClick={() => setPreview(true)} disabled={!canDraft} />
               <Button
                 variant="primary"
                 size="sm"
-                className="mt-2 w-full"
+                className="min-w-0 flex-1"
                 leftIcon={canFinalSend ? <Send className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
                 onClick={() => setPreview(true)}
                 disabled={!canFinalSend}
@@ -859,7 +859,7 @@ export function InboxCenterPanel({
               >
                 Approve &amp; Send
               </Button>
-            </>
+            </div>
           )}
           {!canFinalSend && blockReason && (
             <p className={classNames('mt-1.5 flex items-center justify-center gap-1 text-center text-[11px]', !permissionOk ? 'font-medium text-rose-600' : 'text-amber-600')}>

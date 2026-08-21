@@ -11,7 +11,7 @@ import {
   Paperclip,
 } from 'lucide-react';
 import type { InboxEmail, LineItem, RequestedChange } from '@/types';
-import { Button, Modal, StatusBadge } from '@/components/ui';
+import { Button, IconButton, Modal, StatusBadge } from '@/components/ui';
 import { DocumentLetterhead } from '@/components/DocumentLetterhead';
 import { useApp } from '@/context/AppContext';
 import { ITEMS } from '@/data/masters';
@@ -227,14 +227,12 @@ export function RevisionQuotePanel({
           <p><span className="text-surface-400">Inquiry:</span> <span className="font-semibold text-surface-800">{email.inquiryNo ?? '—'}</span></p>
           <p><span className="text-surface-400">Quotation:</span> <span className="font-medium text-surface-700">{q.number}</span></p>
         </div>
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <Button variant="secondary" size="sm" leftIcon={<Eye className="h-3.5 w-3.5" />} onClick={() => setShowLatest(true)}>
             View Latest Quote
           </Button>
           {canDownload && (
-            <Button variant="secondary" size="sm" leftIcon={<Download className="h-3.5 w-3.5" />} onClick={downloadLatest}>
-              Download
-            </Button>
+            <IconButton label="Download Latest Quote" icon={<Download className="h-3.5 w-3.5" />} onClick={downloadLatest} />
           )}
         </div>
       </div>
@@ -387,25 +385,23 @@ export function RevisionQuotePanel({
       {/* Footer — prepare actions only; the email is sent from the centre panel */}
       {!alreadySent && (
         <div className="flex-none space-y-2 border-t border-surface-100 bg-surface-50/60 px-4 py-3">
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="secondary" size="sm" leftIcon={<Save className="h-4 w-4" />} onClick={saveChanges} disabled={!canEdit || items.length === 0}>
-              Save Changes
-            </Button>
-            <Button variant="secondary" size="sm" leftIcon={<Eye className="h-4 w-4" />} onClick={() => setShowPreview(true)} disabled={items.length === 0}>
-              Preview
+          {/* Secondary Save / Preview are compact icon buttons; the primary
+              Add-to-Email action keeps its visible text label. */}
+          <div className="flex items-center gap-2">
+            <IconButton label="Save Changes" icon={<Save className="h-4 w-4" />} onClick={saveChanges} disabled={!canEdit || items.length === 0} />
+            <IconButton label="Preview Revised Quote" icon={<Eye className="h-4 w-4" />} onClick={() => setShowPreview(true)} disabled={items.length === 0} />
+            <Button
+              variant="primary"
+              size="sm"
+              className="min-w-0 flex-1"
+              leftIcon={<Paperclip className="h-4 w-4" />}
+              onClick={addRevisedToEmail}
+              disabled={!canEdit || items.length === 0}
+              title="Attach the revised quotation to the email in the centre panel"
+            >
+              Add Revised Quote to Email
             </Button>
           </div>
-          <Button
-            variant="primary"
-            size="sm"
-            className="w-full"
-            leftIcon={<Paperclip className="h-4 w-4" />}
-            onClick={addRevisedToEmail}
-            disabled={!canEdit || items.length === 0}
-            title="Attach the revised quotation to the email in the centre panel"
-          >
-            Add Revised Quote to Email
-          </Button>
           {savedRevision && !attachStale && attached && (
             <p className="flex items-center justify-center gap-1 text-center text-[11px] font-medium text-emerald-600">
               <CheckCircle2 className="h-3 w-3" /> Ready in the centre composer.

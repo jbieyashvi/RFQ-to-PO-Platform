@@ -1,4 +1,5 @@
 export { Button } from './Button';
+export { IconButton } from './IconButton';
 export { StatusBadge, badgeToneClass } from './StatusBadge';
 export { TextField, TextAreaField, SelectField, FieldWrap, Toggle } from './Field';
 export { Modal } from './Modal';

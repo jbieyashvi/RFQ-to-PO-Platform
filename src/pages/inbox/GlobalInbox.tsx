@@ -234,6 +234,38 @@ export default function GlobalInbox() {
     !showQuoteTools && !isRevision && !isPoVerify && !isSoRevision &&
     selected?.classification === 'purchase_order' && !selected?.poVerifyId;
 
+  // Any dedicated business workflow occupying the right panel.
+  const isWorkflowMode = showQuoteTools || isRevision || isPoVerify || isSoRevision || isPoAssociate;
+
+  // LAYOUT ONLY: workflow conversations open with the email list collapsed to
+  // its icon rail by default, giving the saved width to the thread and the
+  // business workspace. The collapse is remembered as "automatic" so leaving
+  // workflow mode restores the full list; a manual toggle (the Show / Hide
+  // Emails control) always wins over the automatic behaviour.
+  const autoCollapsedRef = useRef(false);
+  const workflowEmailRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selected) return;
+    if (isWorkflowMode) {
+      if (workflowEmailRef.current !== selected.id) {
+        workflowEmailRef.current = selected.id;
+        autoCollapsedRef.current = true;
+        setListCollapsed(true);
+      }
+    } else {
+      workflowEmailRef.current = null;
+      if (autoCollapsedRef.current) {
+        autoCollapsedRef.current = false;
+        setListCollapsed(false);
+      }
+    }
+  }, [selected, isWorkflowMode]);
+
+  const toggleList = () => {
+    autoCollapsedRef.current = false;
+    setListCollapsed((v) => !v);
+  };
+
   // Automatic association by quotation number: if the number cited in the PO
   // exists in the register (for the same customer), associate it and open the
   // PO vs Quote verification thread directly. Customer name alone NEVER
@@ -412,19 +444,36 @@ export default function GlobalInbox() {
               listCollapsed ? 'justify-center' : 'justify-between'
             )}
           >
-            {!listCollapsed && (
-              <span className="pl-2 text-[11px] font-semibold uppercase tracking-wide text-surface-400">
-                {filtered.length} email{filtered.length === 1 ? '' : 's'}
-              </span>
+            {listCollapsed ? (
+              /* "Show Emails (n)" — the expand control for the collapsed rail */
+              <button
+                onClick={toggleList}
+                title={`Show Emails (${filtered.length})`}
+                aria-label={`Show Emails (${filtered.length})`}
+                aria-expanded={false}
+                className="flex w-full flex-col items-center gap-0.5 rounded-lg py-1 text-surface-400 transition-colors hover:bg-surface-100 hover:text-surface-600"
+              >
+                <PanelLeftOpen className="h-4 w-4" />
+                <span className="rounded-full bg-surface-200/80 px-1.5 text-[10px] font-semibold leading-4 text-surface-600">
+                  {filtered.length}
+                </span>
+              </button>
+            ) : (
+              <>
+                <span className="pl-2 text-[11px] font-semibold uppercase tracking-wide text-surface-400">
+                  {filtered.length} email{filtered.length === 1 ? '' : 's'}
+                </span>
+                <button
+                  onClick={toggleList}
+                  title="Hide Emails"
+                  aria-label="Hide Emails"
+                  aria-expanded
+                  className="rounded-lg p-1.5 text-surface-400 transition-colors hover:bg-surface-100 hover:text-surface-600"
+                >
+                  <PanelLeftClose className="h-4 w-4" />
+                </button>
+              </>
             )}
-            <button
-              onClick={() => setListCollapsed((v) => !v)}
-              title={listCollapsed ? 'Expand email list' : 'Minimise email list'}
-              aria-label={listCollapsed ? 'Expand email list' : 'Minimise email list'}
-              className="rounded-lg p-1.5 text-surface-400 transition-colors hover:bg-surface-100 hover:text-surface-600"
-            >
-              {listCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-            </button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {listCollapsed ? (
