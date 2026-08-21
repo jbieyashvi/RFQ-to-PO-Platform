@@ -341,6 +341,9 @@ export function InboxCenterPanel({
     updateQuotation(quotation.id, {
       deliveryState: 'sent',
       workState: 'sent',
+      // Sent quotes enter the follow-up pipeline: stage "No Follow-up" with the
+      // mandatory next review date = Follow-up Pending.
+      stage: 'no_followup',
       sentAt: SENT_TS,
       sentBy: currentUser.fullName,
       sendChannel: 'Email (via Global Inbox)',
@@ -356,9 +359,16 @@ export function InboxCenterPanel({
           action: 'Quotation emailed to customer',
           detail: `${email.attachedQuote?.fileName ?? quotation.number} → ${draft.to} · next review ${reviewDate}`,
         },
+        {
+          id: `act-${Date.now()}-fu`,
+          date: SENT_TS,
+          actor: currentUser.fullName,
+          action: 'Moved to Follow-up Pending',
+          detail: `Follow-up scheduled for ${reviewDate}`,
+        },
       ],
     });
-    addToast({ type: 'success', title: 'Quotation sent successfully.', message: `${quotation.number} sent to ${draft.to} and removed from Quotes Pending.` });
+    addToast({ type: 'success', title: 'Quotation sent successfully.', message: `${quotation.number} sent to ${draft.to} — moved from Quotes Pending to Follow-up Pending.` });
   };
 
   // ---- Revision send (Send Email): the quote was already revised + saved by

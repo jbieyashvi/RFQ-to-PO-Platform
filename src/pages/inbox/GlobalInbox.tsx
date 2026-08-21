@@ -508,7 +508,7 @@ export default function GlobalInbox() {
             >
               <div className="min-h-0 flex-1">
                 {showQuoteTools ? (
-                  <QuoteToolsPanel email={selected} quotation={quoteSendQuotation!} />
+                  <QuoteToolsPanel email={selected} quotation={quoteSendQuotation!} onPrepared={onPrepared} />
                 ) : isRevision ? (
                   <RevisionQuotePanel email={selected} onPrepared={onPrepared} />
                 ) : isPoVerify ? (
