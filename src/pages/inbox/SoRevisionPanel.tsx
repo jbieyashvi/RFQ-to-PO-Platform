@@ -76,6 +76,7 @@ import {
 import { applyProposed } from '@/lib/revisionQueue';
 import { REVISION_STATE } from '@/lib/labels';
 import { specsForLine, TECH_SPEC_FIELDS } from '@/lib/technicalSpecs';
+import { inboxUrl } from '@/lib/inboxContext';
 
 // Prototype "today" — kept consistent with the rest of the app's seeded data.
 const TODAY_ISO = '2026-08-13';
@@ -628,7 +629,9 @@ export function SoRevisionPanel({
     updateEmail(email.id, { needsReview: false, queueLabel: 'Escalated to quote revision' });
 
     // 4. Open the linked quotation's revision thread in the Global Inbox.
-    const existing = emails.find((e) => e.revisionSendId === q.id && !e.sent);
+    const existing = emails.find(
+      (e) => e.revisionSendId === q.id && !e.sent && (!e.partyId || e.partyId === q.partyId)
+    );
     const targetId = existing?.id ?? `em-rev-${q.id}`;
     if (!existing && !emails.some((e) => e.id === targetId)) {
       addEmail(buildQuoteRevisionEmail(q, targetId));
@@ -639,7 +642,8 @@ export function SoRevisionPanel({
       title: 'Quote revision required',
       message: `Opened quotation ${q.number}. Send the revised quote, then await the updated PO.`,
     });
-    navigate(`/inbox?mode=quote-revision&qtn=${q.id}&email=${targetId}`);
+    // One context object, every id taken from THIS quotation record.
+    navigate(inboxUrl({ emailId: targetId, customerId: q.partyId, inquiryId: q.id, mode: 'quote-revision', qtn: q.id }));
   };
 
   const attachedRev = email.attachedSalesOrder?.soNumber === so.number && email.composeIntent === 'so-revise';

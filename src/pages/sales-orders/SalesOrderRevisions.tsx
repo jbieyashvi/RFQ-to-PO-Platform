@@ -19,6 +19,7 @@ import { OFFICES, officeName } from '@/data/offices';
 import type { SalesOrder } from '@/types';
 import { formatDateTime } from '@/lib/format';
 import { SLA_FILTER_OPTIONS, revisionReceivedAtOf, revisionSla, slaDueAt } from '@/lib/sla';
+import { inboxUrl } from '@/lib/inboxContext';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 
 export default function SalesOrderRevisions() {
@@ -38,9 +39,18 @@ export default function SalesOrderRevisions() {
   // the seeded revision-request email for this SO and deep-links to the inbox
   // with the Sales Order Revision workspace in the right panel.
   const openInbox = (so: SalesOrder) => {
-    const match = emails.find((e) => e.soRevisionId === so.id && !e.sent);
+    const match = emails.find((e) => e.soRevisionId === so.id && !e.sent && (!e.partyId || e.partyId === so.partyId));
     const emailId = match?.id ?? `em-so-rev-${so.id}`;
-    navigate(`/inbox?mode=so-revision&so=${encodeURIComponent(so.number)}&email=${emailId}`);
+    // One context object, every id taken from THIS sales-order record.
+    navigate(
+      inboxUrl({
+        emailId,
+        customerId: so.partyId,
+        inquiryId: so.quotationId ?? null,
+        mode: 'so-revision',
+        so: so.number,
+      })
+    );
   };
 
   const filtered = useMemo(() => {

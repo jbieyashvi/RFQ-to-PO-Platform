@@ -19,6 +19,7 @@ import { OFFICES, officeName } from '@/data/offices';
 import { VERIFICATION_STATUS } from '@/lib/labels';
 import { formatDateTime } from '@/lib/format';
 import { SLA_FILTER_OPTIONS, poReceivedAtOf, slaDueAt, verificationSla } from '@/lib/sla';
+import { inboxUrl } from '@/lib/inboxContext';
 import type { SalesOrder, VerificationStatus } from '@/types';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 
@@ -57,12 +58,24 @@ export default function Verification() {
   // Global Inbox. Open deep-links to that email; the inbox renders the two-step
   // PO vs Quote workflow. Guard the (prototype-only) case of a missing link.
   const openInInbox = (so: SalesOrder) => {
-    const linked = emails.find((e) => e.poVerifyId === so.id);
+    // Same customer, same record: the PO email is the one this verification was
+    // built from, never one that merely quotes the same document numbers.
+    const linked = emails.find((e) => e.poVerifyId === so.id && (!e.partyId || e.partyId === so.partyId));
     if (!linked) {
       addToast({ type: 'error', title: 'Purchase Order email not found', message: 'The source Purchase Order email could not be found.' });
       return;
     }
-    navigate(`/inbox?mode=po-verification&po=${encodeURIComponent(so.poNumber)}&qtn=${encodeURIComponent(so.quotationNumber ?? '')}&email=${linked.id}`);
+    // One context object, every id taken from THIS sales-order record.
+    navigate(
+      inboxUrl({
+        emailId: linked.id,
+        customerId: so.partyId,
+        inquiryId: so.quotationId ?? null,
+        mode: 'po-verification',
+        po: so.poNumber,
+        qtn: so.quotationNumber ?? '',
+      })
+    );
   };
 
   const columns: Column<SalesOrder>[] = [

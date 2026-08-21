@@ -16,6 +16,7 @@ import { officeName, officeCode } from '@/data/offices';
 import type { InboxEmail, Quotation } from '@/types';
 import { classNames, compactINR } from '@/lib/format';
 import { inquiryNumberFor } from '@/lib/inquiry';
+import { emailBelongsToInquiry, inboxUrl } from '@/lib/inboxContext';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 import {
   DAY,
@@ -76,7 +77,7 @@ function officeEmail(officeId: string) {
 }
 
 export default function QuotesRevisions() {
-  const { quotations, parties, emails, can, addEmail } = useApp();
+  const { quotations, salesOrders, parties, emails, can, addEmail } = useApp();
   const inScope = useOfficeScope();
   const noOffice = useNoOfficeAssigned();
   const navigate = useNavigate();
@@ -160,14 +161,13 @@ export default function QuotesRevisions() {
   // is sent; the Quote Generator opens for human review before "Send Revised Quote".
   const openInbox = (r: RevisionRow) => {
     const q = r.q;
-    const existing = emails.find((e) => e.revisionSendId === q.id && !e.sent);
-    if (existing) {
-      navigate(`/inbox?mode=quote-revision&qtn=${q.id}&email=${existing.id}`);
-      return;
-    }
-    const id = `em-rev-${q.id}`;
-    if (!emails.some((e) => e.id === id)) addEmail(buildRevisionEmail(q, r, id));
-    navigate(`/inbox?mode=quote-revision&qtn=${q.id}&email=${id}`);
+    const existing = emails.find(
+      (e) => e.revisionSendId === q.id && !e.sent && emailBelongsToInquiry(e, q.id, quotations, salesOrders)
+    );
+    const emailId = existing?.id ?? `em-rev-${q.id}`;
+    if (!existing && !emails.some((e) => e.id === emailId)) addEmail(buildRevisionEmail(q, r, emailId));
+    // One context object, every id taken from THIS quotation record.
+    navigate(inboxUrl({ emailId, customerId: q.partyId, inquiryId: q.id, mode: 'quote-revision', qtn: q.id }));
   };
 
   const buildRevisionEmail = (q: Quotation, r: RevisionRow, id: string): InboxEmail => {

@@ -17,6 +17,7 @@ import { APP_NAME, emailSignature } from '@/lib/brand';
 import type { InboxEmail, Quotation } from '@/types';
 import { classNames } from '@/lib/format';
 import { inquiryNumberFor } from '@/lib/inquiry';
+import { emailBelongsToInquiry, inboxUrl } from '@/lib/inboxContext';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 
 // ---------------------------------------------------------------------------
@@ -121,7 +122,7 @@ function officeEmail(officeId: string) {
 }
 
 export default function QuotesPending() {
-  const { quotations, parties, emails, can, addEmail } = useApp();
+  const { quotations, salesOrders, parties, emails, can, addEmail } = useApp();
   const inScope = useOfficeScope();
   const noOffice = useNoOfficeAssigned();
   const navigate = useNavigate();
@@ -214,14 +215,19 @@ export default function QuotesPending() {
   // human review. No quotation drawer opens on this page.
   const openInbox = (r: PendingRow) => {
     const q = r.q;
-    const existing = emails.find((e) => (e.quotationSendId === q.id || e.linkedQuotation === q.number) && !e.sent);
-    if (existing) {
-      navigate(`/inbox?email=${existing.id}&mode=quote-send&qtn=${q.id}`);
-      return;
-    }
-    const id = `em-inq-${q.id}`;
-    if (!emails.some((e) => e.id === id)) addEmail(buildInquiryEmail(q, r, id));
-    navigate(`/inbox?email=${id}&mode=quote-send&qtn=${q.id}`);
+    // The candidate must RESOLVE to this inquiry — same customer, and a link
+    // that walks back to this quotation. An email that merely cites a similar
+    // number, or another customer's mail, is never opened as this inquiry.
+    const existing = emails.find(
+      (e) =>
+        !e.sent &&
+        (e.quotationSendId === q.id || e.linkedQuotation === q.number) &&
+        emailBelongsToInquiry(e, q.id, quotations, salesOrders)
+    );
+    const emailId = existing?.id ?? `em-inq-${q.id}`;
+    if (!existing && !emails.some((e) => e.id === emailId)) addEmail(buildInquiryEmail(q, r, emailId));
+    // One context object, every id taken from THIS quotation record.
+    navigate(inboxUrl({ emailId, customerId: q.partyId, inquiryId: q.id, mode: 'quote-send', qtn: q.id }));
   };
 
   const buildInquiryEmail = (q: Quotation, r: PendingRow, id: string): InboxEmail => {

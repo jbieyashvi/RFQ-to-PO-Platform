@@ -1,14 +1,15 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
-import { Inbox, ArrowLeft, Building2, MailOpen, FileText, RefreshCw, ClipboardCheck, FilePenLine, Link2, SlidersHorizontal, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Inbox, ArrowLeft, Building2, FileText, RefreshCw, ClipboardCheck, FilePenLine, Link2, SlidersHorizontal, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
-import { SearchInput, FilterSelect, FilterBar, EmptyState, type FilterChip } from '@/components/ui';
+import { SearchInput, FilterSelect, FilterBar, type FilterChip } from '@/components/ui';
 import { Tabs } from '@/components/ui/misc';
 import { useApp, useOfficeScope, useNoOfficeAssigned } from '@/context/AppContext';
 import { NoOfficeAssigned } from '@/components/NoOfficeAssigned';
 import { OWNERS } from '@/data/users';
 import { inquiryById, inquiryEmailsOf, inquiryIdOfEmail } from '@/lib/inquiry';
+import { inboxParams, type InboxMode } from '@/lib/inboxContext';
 import { INBOX_CLASSIFICATION } from '@/lib/labels';
 import type { EmailClassification, InboxEmail } from '@/types';
 import { classNames } from '@/lib/format';
@@ -16,7 +17,7 @@ import { EmailList, EmailIconRail } from './EmailList';
 import { SoGenerationDrawer } from './SoGenerationDrawer';
 import { EmailActionPanel } from './EmailActionPanel';
 import { InboxCenterPanel } from './InboxCenterPanel';
-import { InquiryBundle } from './InquiryBundle';
+import { InquiryHeader } from './InquiryHeader';
 import { QuoteToolsPanel } from './QuoteToolsPanel';
 import { RevisionQuotePanel } from './RevisionQuotePanel';
 import { PoVerificationPanel } from './PoVerificationPanel';
@@ -63,43 +64,28 @@ export default function GlobalInbox() {
   // ?mode=quote-send&qtn=<quotationId>. It stays scoped to the ONE deep-linked
   // email + quotation, so browsing to other emails shows normal inbox tools.
   const [quoteSend, setQuoteSend] = useState<{ emailId: string; qtnId: string } | null>(() => {
-    const mode = params.get('mode');
+    const mode = params.get('mode') as InboxMode | null;
     const emailId = params.get('email');
     const qtnId = params.get('qtn');
     return mode === 'quote-send' && emailId && qtnId ? { emailId, qtnId } : null;
   });
 
-  // ---- Inquiry grouping ---------------------------------------------------
-  // The full classified inbox on the left NEVER goes away. On top of it, the
-  // emails of ONE inquiry are bundled together: whenever an email is selected —
-  // or the inbox is opened from a workflow deep link — every message carrying
-  // the same inquiryId is gathered into a compact inquiry header + its own
-  // small list above the conversation, however many separate email threads they
-  // arrived in (RFQ, quotation, revision ask, Purchase Order, Sales Order).
+  // ---- The two inbox modes -------------------------------------------------
+  //   1. Direct /inbox — NOTHING selected: just the Gmail-style list of every
+  //      classified company email. No conversation, no workspace, no inquiry.
+  //   2. An email is open (clicked in the list, or a workflow deep link) — the
+  //      three-panel workspace: the selected customer's emails on the left, the
+  //      conversation in the centre, its Quote / PO / SO workspace on the right.
+  //      "Back to All Emails" returns to mode 1.
   //
-  // The inquiry is keyed by the quotation behind the enquiry and carried in
-  // ?inquiryId, so the context survives a reload and every move between its
-  // messages. "Back to All Emails" drops the grouping.
+  // Everything about mode 2 — company scope, inquiry, workflow — is derived
+  // from the OPEN EMAIL, never from the query string alone. That is what keeps
+  // one link honest: the ids in the route always describe one record, so the
+  // inbox can never load one inquiry's email under another inquiry's id.
   const inquiryIdOf = useMemo(
     () => (e: InboxEmail) => inquiryIdOfEmail(e, quotations, salesOrders),
     [quotations, salesOrders]
   );
-
-  // ?inquiryId is the route-level inquiry context (?inq is the older spelling,
-  // still accepted so existing links keep working).
-  const [inquiryId, setInquiryId] = useState<string | null>(
-    () => params.get('inquiryId') ?? params.get('inq')
-  );
-
-  // ---- Company (customer) scope -------------------------------------------
-  // The inbox has exactly two modes:
-  //   1. Direct /inbox — the classified emails of ALL companies.
-  //   2. Contextual / workflow mode — opened from a quote, PO or SO workflow
-  //      (or a ?customerId deep link): the LEFT panel narrows to the selected
-  //      customer, so the whole company conversation (inquiry, quote revision,
-  //      purchase order, sales order query) is at hand and no other customer's
-  //      mail is in the way. "Back to All Companies" returns to mode 1.
-  const [customerId, setCustomerId] = useState<string | null>(() => params.get('customerId'));
 
   // Bumped whenever a right-hand workspace PREPARES the centre composer (adds a
   // revised/corrected quote, drafts a PO-correction request). The centre panel
@@ -141,13 +127,28 @@ export default function GlobalInbox() {
 
   const scoped = useMemo(() => emails.filter((e) => inScope(e.officeId)), [emails, inScope]);
 
-  // The company the inbox is currently scoped to (contextual mode). An id that
-  // no longer resolves to a party simply falls back to the global inbox.
-  const customer = useMemo(
-    () => (customerId ? parties.find((p) => p.id === customerId) ?? null : null),
-    [customerId, parties]
+  // The open conversation — the anchor of the whole contextual mode.
+  const selected: InboxEmail | null = useMemo(
+    () => emails.find((e) => e.id === selectedId) ?? null,
+    [emails, selectedId]
   );
-  const customerScopeId = customer?.id ?? null;
+
+  // Company scope: the customer of the OPEN email. Reading it off the email
+  // (rather than off ?customerId) is what makes a mismatched link impossible —
+  // the left panel always belongs to the conversation in the centre.
+  const customerScopeId = selected?.partyId ?? null;
+  const customer = useMemo(
+    () => (customerScopeId ? parties.find((p) => p.id === customerScopeId) ?? null : null),
+    [customerScopeId, parties]
+  );
+
+  // Inquiry context: likewise the inquiry of the OPEN email, so the header can
+  // never describe a different record than the message below it.
+  const inquiryScopeId = selected ? inquiryIdOf(selected) : null;
+  const inquiry = useMemo(
+    () => (inquiryScopeId ? inquiryById(inquiryScopeId, quotations) : null),
+    [inquiryScopeId, quotations]
+  );
 
   // Everything the LEFT panel may show: all companies on direct /inbox, only
   // the selected customer's emails in contextual mode. The tabs, the filters
@@ -168,13 +169,8 @@ export default function GlobalInbox() {
     [listScope]
   );
 
-  // The inquiry currently grouped. An id that no longer resolves to a quotation
-  // simply shows no bundle — the inbox itself is unaffected.
-  const inquiry = useMemo(() => (inquiryId ? inquiryById(inquiryId, quotations) : null), [inquiryId, quotations]);
-  const inquiryScopeId = inquiry?.id ?? null;
-
-  // The classified list — narrowed by the company in contextual mode, never by
-  // the inquiry (the inquiry is grouped in the centre, not cut out of the list).
+  // The classified list — narrowed by the company while a conversation is open,
+  // never by the inquiry (the company's whole mail stays reachable).
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
     return listScope
@@ -200,14 +196,15 @@ export default function GlobalInbox() {
       .sort((a, b) => ((a.sent && a.sentAt ? a.sentAt : a.receivedAt) < (b.sent && b.sentAt ? b.sentAt : b.receivedAt) ? 1 : -1));
   }, [listScope, tab, search, classification, owner, readState, dateFrom, dateTo]);
 
-  // The bundle: every email of this inquiry the user can access, oldest first —
-  // office scope applies, inbox tabs/filters deliberately do not (the bundle is
-  // the whole inquiry, not the filtered slice of it).
-  const inquiryEmails = useMemo(
-    () => (inquiryScopeId ? inquiryEmailsOf(inquiryScopeId, scoped, quotations, salesOrders) : []),
+  // The open email's inquiry, used only to MARK its messages in the left list
+  // (they are the company's own emails — never a second list of their own).
+  const inquiryEmailIds = useMemo(
+    () =>
+      new Set(
+        (inquiryScopeId ? inquiryEmailsOf(inquiryScopeId, scoped, quotations, salesOrders) : []).map((e) => e.id)
+      ),
     [inquiryScopeId, scoped, quotations, salesOrders]
   );
-  const inquiryEmailIds = useMemo(() => new Set(inquiryEmails.map((e) => e.id)), [inquiryEmails]);
 
   // Deep-link: ?email=<id> (+ optional ?mode=quote-send|quote-revision|
   // po-verification & qtn/po params) — used by "Review & Send Email" from Quotes
@@ -222,6 +219,12 @@ export default function GlobalInbox() {
       setMobileView('detail');
       const e = emails.find((x) => x.id === id);
       if (e && !e.read) updateEmail(id, { read: true });
+    } else if (id) {
+      // The link points at an email this session does not have — the prototype
+      // reseeds its data on every load, so the draft a workflow created before
+      // a refresh is gone. Fall back to the direct inbox rather than leave the
+      // route describing a conversation that is not on screen.
+      setParams({}, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -239,55 +242,42 @@ export default function GlobalInbox() {
       const e = emails.find((x) => x.id === id);
       if (e && !e.read) updateEmail(id, { read: true });
     }
-    // An explicit inquiry in the route wins (in-place escalations and deep
-    // links). A missing param never drops the grouping — leaving it is explicit,
-    // see exitInquiry — and the selection effect below re-derives it anyway.
-    const inq = params.get('inquiryId') ?? params.get('inq');
-    if (inq) setInquiryId(inq);
-    // Same for the company scope: an explicit ?customerId in the route puts the
-    // inbox in contextual mode; its absence never silently drops the scope
-    // (leaving it is explicit — see exitCustomer).
-    const cust = params.get('customerId');
-    if (cust) setCustomerId(cust);
+    // ?customerId and ?inquiryId are NOT applied from the route — they are read
+    // back off the opened email below, so a link whose ids came from different
+    // records can never put the inbox in a state its own email contradicts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
 
-  // Keep a valid selection. An email reached through the inquiry bundle counts
-  // as valid even when the inbox tabs/filters would hide it — the bundle is the
-  // whole inquiry, so opening one of its messages must never bounce the
-  // selection back to the top of the filtered list.
+  // Nothing is ever auto-selected: direct /inbox opens on the list alone, and a
+  // selection only drops when the email itself disappears from the data. The
+  // tabs and filters reshape the list; they never change the open conversation.
   useEffect(() => {
-    if (selectedId && (filtered.some((e) => e.id === selectedId) || inquiryEmailIds.has(selectedId))) return;
-    setSelectedId(filtered[0]?.id ?? null);
-  }, [filtered, selectedId, inquiryEmailIds]);
-
-  const selected: InboxEmail | null = useMemo(
-    () => emails.find((e) => e.id === selectedId) ?? null,
-    [emails, selectedId]
-  );
-
-  // Selecting ANY email groups its inquiry — that is the whole point: a message
-  // is never shown alone when it belongs to a wider inquiry. Selecting an email
-  // that belongs to no inquiry (an unassociated PO, a cold enquiry) clears the
-  // grouping. Keyed on the resolved id so "Back to All Emails" is not undone
-  // while the same conversation stays open.
-  const selectedInquiryId = selected ? inquiryIdOf(selected) : null;
-  useEffect(() => {
-    setInquiryId(selectedInquiryId);
-  }, [selectedInquiryId]);
+    if (selectedId && !emails.some((e) => e.id === selectedId)) setSelectedId(null);
+  }, [emails, selectedId]);
 
   // Quote-send tools appear ONLY on the specific deep-linked email, and only
-  // when its passed quotation is resolvable and scoped to the same customer.
+  // when its passed quotation really belongs to that email's own record.
   const isQuoteSend = !!quoteSend && !!selected && selected.id === quoteSend.emailId;
   const quoteSendQuotation = useMemo(() => {
     if (!isQuoteSend || !quoteSend) return null;
     const q = quotations.find((x) => x.id === quoteSend.qtnId) ?? null;
+    if (!q) return null;
     // Guard §4: never let a quotation belonging to another customer be opened.
-    if (q && selected?.partyId && q.partyId !== selected.partyId) return null;
+    if (selected?.partyId && q.partyId !== selected.partyId) return null;
+    // …and never a quotation from a DIFFERENT inquiry of the same customer:
+    // ?email=em-002&qtn=qtn-032 would otherwise put one inquiry's email beside
+    // another inquiry's quotation. The email's own inquiry always wins.
+    if (inquiryScopeId && q.id !== inquiryScopeId) return null;
     return q;
-  }, [isQuoteSend, quoteSend, quotations, selected]);
+  }, [isQuoteSend, quoteSend, quotations, selected, inquiryScopeId]);
 
   const showQuoteTools = isQuoteSend && !!quoteSendQuotation;
+
+  // A ?mode=quote-send whose quotation was rejected above is not carried around
+  // as dead context — it is dropped, and the route is rewritten without it.
+  useEffect(() => {
+    if (isQuoteSend && !quoteSendQuotation) setQuoteSend(null);
+  }, [isQuoteSend, quoteSendQuotation]);
 
   // Business context for the revision and PO-verification workflows is derived
   // directly from the selected email's own workflow ids, so it survives reloads
@@ -326,39 +316,50 @@ export default function GlobalInbox() {
   // Any dedicated business workflow occupying the right panel.
   const isWorkflowMode = showQuoteTools || isRevision || isPoVerify || isSoRevision || isPoAssociate;
 
-  // Entering contextual mode: opening a quotation / PO / SO workflow scopes the
-  // left panel to that email's company. Keyed on the email whose workflow did
-  // it, so "Back to All Companies" is not immediately undone while the same
-  // conversation stays open, and so browsing the company's other (non-workflow)
-  // emails keeps the scope until the user leaves it deliberately.
-  const workflowCustomerRef = useRef<string | null>(null);
+  // Keep the URL describing the current conversation + its workflow so a reload
+  // restores exactly what the user is looking at. Every param is derived from
+  // the SAME email — the same context object the "Open" buttons build (see
+  // src/lib/inboxContext.ts) — so the route can never mix two records' ids.
+  const urlFor = (e: InboxEmail): Record<string, string> => {
+    const ctx = { emailId: e.id, customerId: e.partyId ?? null, inquiryId: inquiryIdOf(e) };
+    if (quoteSend && e.id === quoteSend.emailId)
+      return inboxParams({ ...ctx, mode: 'quote-send', qtn: quoteSend.qtnId });
+    if (e.revisionSendId) return inboxParams({ ...ctx, mode: 'quote-revision', qtn: e.revisionSendId });
+    if (e.poVerifyId) {
+      const so = salesOrders.find((s) => s.id === e.poVerifyId);
+      return inboxParams({ ...ctx, mode: 'po-verification', po: so?.poNumber, qtn: so?.quotationNumber });
+    }
+    if (e.soRevisionId) {
+      const so = salesOrders.find((s) => s.id === e.soRevisionId);
+      return inboxParams({ ...ctx, mode: 'so-revision', so: so?.number });
+    }
+    return inboxParams(ctx);
+  };
+
+  // Normalise the WHOLE route to the OPEN EMAIL's own context, so every param
+  // — customer, inquiry, mode and business document — describes the one record
+  // in the centre. A deep link that paired one record's ids with another's
+  // (?email=em-002&inquiryId=qtn-032) is corrected here on arrival: the inbox
+  // never adopts the wrong inquiry, so it never silently switches away from one.
   useEffect(() => {
     if (!selected) return;
-    if (isWorkflowMode) {
-      if (workflowCustomerRef.current !== selected.id) {
-        workflowCustomerRef.current = selected.id;
-        if (selected.partyId) setCustomerId(selected.partyId);
-      }
-    } else {
-      workflowCustomerRef.current = null;
+    const want = urlFor(selected);
+    const cur: Record<string, string> = {};
+    params.forEach((v, k) => { cur[k] = v; });
+    const keys = new Set([...Object.keys(cur), ...Object.keys(want)]);
+    const drift = [...keys].filter((k) => cur[k] !== want[k]);
+    if (!drift.length) return;
+    const wrong = drift.filter((k) => cur[k] !== undefined && want[k] !== undefined);
+    if (wrong.length) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[inbox] link context does not match ${selected.id}: ` +
+          wrong.map((k) => `${k}=${cur[k]} → ${want[k]}`).join(', ')
+      );
     }
-  }, [selected, isWorkflowMode]);
-
-  // Keep ?customerId and ?inquiryId in the route so a reload — or a link shared
-  // with a colleague — lands back in the same company scope and inquiry, even
-  // when the context was entered from a workflow that only linked ?email.
-  useEffect(() => {
-    const curCustomer = params.get('customerId') ?? null;
-    const curInquiry = params.get('inquiryId') ?? null;
-    if (curCustomer === customerScopeId && curInquiry === inquiryScopeId) return;
-    const next = new URLSearchParams(params);
-    if (customerScopeId) next.set('customerId', customerScopeId);
-    else next.delete('customerId');
-    if (inquiryScopeId) next.set('inquiryId', inquiryScopeId);
-    else next.delete('inquiryId');
-    next.delete('inq');
-    setParams(next, { replace: true });
-  }, [customerScopeId, inquiryScopeId, params, setParams]);
+    setParams(want, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, customerScopeId, inquiryScopeId, quoteSend, salesOrders, params, setParams]);
 
   // LAYOUT ONLY: a workflow conversation that belongs to NO inquiry opens with
   // the email list collapsed to its icon rail, giving the saved width to the
@@ -379,7 +380,7 @@ export default function GlobalInbox() {
         // Read the inquiry off the SELECTED email, not off the grouping state:
         // the state lands one render later, and by then the list would already
         // have been collapsed for an email that does belong to an inquiry.
-        if (!selectedInquiryId) {
+        if (!inquiryScopeId) {
           autoCollapsedRef.current = true;
           setListCollapsed(true);
         }
@@ -391,7 +392,7 @@ export default function GlobalInbox() {
         setListCollapsed(false);
       }
     }
-  }, [selected, isWorkflowMode, selectedInquiryId]);
+  }, [selected, isWorkflowMode, inquiryScopeId]);
 
   const toggleList = () => {
     autoCollapsedRef.current = false;
@@ -433,47 +434,14 @@ export default function GlobalInbox() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, quotations, salesOrders]);
 
-  // Keep the URL describing the current conversation + its workflow so a reload
-  // restores exactly what the user is looking at.
-  const urlFor = (e: InboxEmail, opts?: { inquiry?: boolean; customer?: boolean }): Record<string, string> => {
-    // ?inquiryId keeps the inquiry context in the route rather than depending on
-    // ?email alone, so a reload restores the bundle even when the next message
-    // came in through a completely different email thread. ?customerId is the
-    // company scope of the left panel — together they are the contextual mode.
-    const id = (opts?.inquiry ?? true) ? inquiryIdOf(e) : null;
-    const inq: Record<string, string> = id ? { inquiryId: id } : {};
-    if ((opts?.customer ?? true) && customerScopeId) inq.customerId = customerScopeId;
-    if (quoteSend && e.id === quoteSend.emailId) return { ...inq, mode: 'quote-send', email: e.id, qtn: quoteSend.qtnId };
-    if (e.revisionSendId) return { ...inq, mode: 'quote-revision', email: e.id, qtn: e.revisionSendId };
-    if (e.poVerifyId) {
-      const so = salesOrders.find((s) => s.id === e.poVerifyId);
-      return { ...inq, mode: 'po-verification', email: e.id, po: so?.poNumber ?? '', qtn: so?.quotationNumber ?? '' };
-    }
-    if (e.soRevisionId) {
-      const so = salesOrders.find((s) => s.id === e.soRevisionId);
-      return { ...inq, mode: 'so-revision', email: e.id, so: so?.number ?? '' };
-    }
-    return { ...inq, email: e.id };
-  };
-
-  // "Back to All Emails" — drop the inquiry grouping. The full list on the left
-  // never moved, so this only removes the bundle and its route context; the
-  // conversation stays open and its workflow panel is unchanged (those are
-  // derived from the email itself, never from the query).
-  const exitInquiry = () => {
-    setInquiryId(null);
-    setParams(selected ? urlFor(selected, { inquiry: false }) : {}, { replace: true });
-  };
-
-  // "Back to All Companies" — leave contextual mode for the direct Global
-  // Inbox: the left panel widens back to every company and the inquiry grouping
-  // goes with it. The conversation stays open and every workflow action on it
-  // is untouched (they are derived from the email, never from the query).
-  const exitCustomer = () => {
-    setCustomerId(null);
-    setInquiryId(null);
-    workflowCustomerRef.current = selected?.id ?? null;
-    setParams(selected ? urlFor(selected, { inquiry: false, customer: false }) : {}, { replace: true });
+  // "Back to All Emails" — leave the workspace for the direct Global Inbox:
+  // no conversation, no company scope, no workspace, just the Gmail-style list
+  // of every classified email again.
+  const exitToInbox = () => {
+    setSelectedId(null);
+    setQuoteSend(null);
+    setMobileView('list');
+    setParams({}, { replace: true });
   };
 
   const onSelect = (id: string) => {
@@ -573,12 +541,15 @@ export default function GlobalInbox() {
         </div>
       </div>
 
-      {/* Connected three-panel workspace — one surface, vertical dividers, no
-          gaps. The fr ratios (0.55 / 0.95 / 1 ≈ 22% / 38% / 40%) make the right
-          business-workspace panel — the primary task area — widest: narrow
-          list · read+compose · widest quote/action tools. Enabled at ≥1180px;
-          below that we fall back to progressive list → detail navigation so the
-          panels never squeeze or scroll sideways. */}
+      {/* MODE 1 — direct /inbox: one full-width column, the Gmail-style list of
+          every classified email and nothing else.
+          MODE 2 — an email is open: the connected three-panel workspace — one
+          surface, vertical dividers, no gaps. The fr ratios (0.55 / 0.95 / 1 ≈
+          22% / 38% / 40%) make the right business-workspace panel — the primary
+          task area — widest: narrow list · read+compose · widest quote/action
+          tools. Enabled at ≥1180px; below that we fall back to progressive
+          list → detail navigation so the panels never squeeze or scroll
+          sideways. */}
       <div
         className={classNames(
           'grid grid-cols-1 gap-4',
@@ -586,7 +557,9 @@ export default function GlobalInbox() {
           'min-[1180px]:overflow-hidden min-[1180px]:rounded-xl min-[1180px]:border min-[1180px]:border-surface-200 min-[1180px]:bg-white min-[1180px]:shadow-card',
           // Collapsed → the left column shrinks to a 56px icon rail so the
           // thread + workspace keep maximum width beside the SO drawer.
-          listCollapsed
+          !selected
+            ? 'min-[1180px]:grid-cols-1'
+            : listCollapsed
             ? 'min-[1180px]:grid-cols-[56px_minmax(320px,0.95fr)_minmax(340px,1fr)]'
             : 'min-[1180px]:grid-cols-[minmax(220px,0.55fr)_minmax(320px,0.95fr)_minmax(340px,1fr)]'
         )}
@@ -598,13 +571,17 @@ export default function GlobalInbox() {
         <div
           className={classNames(
             'card overflow-hidden min-[1180px]:flex min-[1180px]:flex-col',
-            'min-[1180px]:rounded-none min-[1180px]:border-0 min-[1180px]:border-r min-[1180px]:border-surface-200 min-[1180px]:bg-surface-50/40 min-[1180px]:shadow-none',
+            'min-[1180px]:rounded-none min-[1180px]:border-0 min-[1180px]:shadow-none',
+            selected
+              ? 'min-[1180px]:border-r min-[1180px]:border-surface-200 min-[1180px]:bg-surface-50/40'
+              : 'min-[1180px]:bg-white',
             mobileView === 'detail' && 'hidden min-[1180px]:flex'
           )}
         >
           <div
             className={classNames(
-              'hidden flex-none items-center border-b border-surface-100 px-2 py-1.5 min-[1180px]:flex',
+              'hidden flex-none items-center border-b border-surface-100 px-2 py-1.5',
+              selected ? 'min-[1180px]:flex' : 'min-[1180px]:hidden',
               listCollapsed ? 'justify-center' : 'justify-between'
             )}
           >
@@ -649,21 +626,24 @@ export default function GlobalInbox() {
               </>
             )}
           </div>
-          {/* Contextual mode — the way back to the direct Global Inbox. Kept on
-              every width (the header above is desktop-only), so the company
-              scope is never a one-way door. */}
-          {customer && (
+          {/* Contextual mode — the way back to the direct Global Inbox: it
+              closes the conversation and its workspace and widens the list back
+              to every company. Kept on every width (the header above is
+              desktop-only), so opening an email is never a one-way door. */}
+          {selected && (
             <div className="flex-none border-b border-brand-100 bg-brand-50/60">
-              <div className="flex items-center gap-1.5 px-3 pt-1.5 min-[1180px]:hidden">
-                <Building2 className="h-3.5 w-3.5 flex-none text-brand-600" />
-                <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-surface-800">
-                  {customer.companyName} — {filtered.length} Email{filtered.length === 1 ? '' : 's'}
-                </span>
-              </div>
+              {customer && (
+                <div className="flex items-center gap-1.5 px-3 pt-1.5 min-[1180px]:hidden">
+                  <Building2 className="h-3.5 w-3.5 flex-none text-brand-600" />
+                  <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-surface-800">
+                    {customer.companyName} — {filtered.length} Email{filtered.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+              )}
               <button
-                onClick={exitCustomer}
-                title="Back to All Companies — the full Global Inbox"
-                aria-label="Back to All Companies"
+                onClick={exitToInbox}
+                title="Back to All Emails — the full Global Inbox"
+                aria-label="Back to All Emails"
                 className={classNames(
                   'flex w-full items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-700 transition-colors hover:bg-brand-100/60',
                   listCollapsed && 'min-[1180px]:justify-center min-[1180px]:px-0'
@@ -671,7 +651,7 @@ export default function GlobalInbox() {
               >
                 <ArrowLeft className="h-3.5 w-3.5 flex-none" />
                 <span className={classNames('truncate', listCollapsed && 'min-[1180px]:hidden')}>
-                  Back to All Companies
+                  Back to All Emails
                 </span>
               </button>
             </div>
@@ -709,17 +689,10 @@ export default function GlobalInbox() {
               >
                 <ArrowLeft className="h-4 w-4" /> Back to list
               </button>
-              {/* Inquiry bundle — compact header + this inquiry's own emails,
-                  grouped across every thread they arrived in. */}
-              {inquiry && inquiryEmails.length > 0 && (
-                <InquiryBundle
-                  inquiry={inquiry}
-                  emails={inquiryEmails}
-                  selectedId={selectedId}
-                  onSelect={onSelect}
-                  onExit={exitInquiry}
-                />
-              )}
+              {/* Which inquiry this conversation belongs to — identity only.
+                  Its other emails are already in the left panel (this
+                  customer's mail), so they are never listed again here. */}
+              {inquiry && <InquiryHeader inquiry={inquiry} />}
               {showQuoteTools && (
                 <div className="flex flex-none items-center gap-1.5 border-b border-brand-100 bg-brand-50/70 px-4 py-2 text-[12px] font-medium text-brand-700">
                   <FileText className="h-3.5 w-3.5" /> Quote-send mode — {quoteSendQuotation!.number}
@@ -784,11 +757,7 @@ export default function GlobalInbox() {
               </div>
             </div>
           </>
-        ) : (
-          <div className="card hidden items-center justify-center min-[1180px]:col-span-2 min-[1180px]:flex min-[1180px]:rounded-none min-[1180px]:border-0 min-[1180px]:shadow-none">
-            <EmptyState icon={<MailOpen className="h-7 w-7" />} title="No email selected" message="Select an email from the list to view its details, AI extraction and the reply composer." />
-          </div>
-        )}
+        ) : null}
       </div>
 
       {/* SO Generation drawer — full-height right drawer (~65% on desktop,
