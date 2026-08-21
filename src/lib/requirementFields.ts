@@ -2,10 +2,16 @@
 // The requirement datasheet — what a single enquiry line has to state before it
 // can be quoted
 // ---------------------------------------------------------------------------
-// One schema, three groups, shared by the extraction (which decides what is
-// missing) and the line-item detail drawer (which lets a human fill it in). The
-// groups follow the instrument datasheet an enquiry is answered against:
-// identity, the process the tag sits in, and how the instrument is built.
+// One schema, shared by the extraction (which decides what is missing), the
+// line-item detail drawer (which lets a human fill it in) and the comparison
+// matrix (which reads every line side by side). The groups follow the
+// instrument datasheet an enquiry is answered against: identity, the process
+// the tag sits in, and how the instrument is built.
+//
+// The drawer edits one line at a time and wants broad sections; the matrix
+// scans one row per parameter across every line and wants narrower bands, so
+// the same fields are also banded five ways further down. Both views walk the
+// SAME field list, so a field added once shows up in both.
 //
 // Not every field applies to every line — an MCCB has no fluid viscosity — so a
 // handful of labels and option lists are domain-aware, and only the fields in
@@ -351,3 +357,89 @@ export function validateFields(fields: Record<string, string>, domain: Domain): 
 export function missingKeysOf(fields: Record<string, string>, domain: Domain): string[] {
   return REQUIRED_FIELDS[domain].filter((key) => !(fields[key] ?? '').trim());
 }
+
+// ---------------------------------------------------------------------------
+// The comparison matrix — the same fields, banded for reading across lines
+// ---------------------------------------------------------------------------
+// The drawer's three sections are the right size for editing one datasheet.
+// Scanning forty parameters down the side of a matrix is a different job: the
+// process duty and the measuring element are read separately, so "Application
+// and Process Conditions" splits into what the fluid IS and what it DOES, and
+// the measuring element leaves Construction to stand on its own.
+
+export type MatrixBandId = 'identity' | 'application' | 'process' | 'flow' | 'construction';
+
+export interface MatrixBand {
+  id: MatrixBandId;
+  title: string;
+  fields: FieldSpec[];
+}
+
+const BAND_TITLES: Record<MatrixBandId, string> = {
+  identity: 'Identity',
+  application: 'Application',
+  process: 'Process Conditions',
+  flow: 'Flow / Level',
+  construction: 'Construction',
+};
+
+/** Where a section's fields land unless the field is named below. */
+const SECTION_BAND: Record<string, MatrixBandId> = {
+  identity: 'identity',
+  process: 'process',
+  construction: 'construction',
+};
+
+/** Fields that read better under a band other than their section's. */
+const FIELD_BAND: Record<string, MatrixBandId> = {
+  // What the fluid is, as opposed to the duty it is held at.
+  applicationName: 'application',
+  phase: 'application',
+  fluidDensity: 'application',
+  fluidViscosity: 'application',
+  specificGravity: 'application',
+  corrosionRate: 'application',
+  fluidCorrosive: 'application',
+  fluidAbrasive: 'application',
+  fluidToxic: 'application',
+  fluidFlammable: 'application',
+  fluidScaling: 'application',
+  // The measured quantity and the wetted element that measures it — read
+  // together when comparing lines, whichever section they are edited under.
+  // Accuracy and output signal deliberately stay under Construction: they are
+  // what is being SUPPLIED, and leaving them here would put an MCCB's coil
+  // voltage under a band called Flow / Level on an all-electrical enquiry.
+  flowUnit: 'flow',
+  flowMin: 'flow',
+  flowNormal: 'flow',
+  flowMax: 'flow',
+  floatMoc: 'flow',
+  linerMaterial: 'flow',
+  electrodeMaterial: 'flow',
+  flowTubeMoc: 'flow',
+  measuringTubeMaterial: 'flow',
+  conductiveFluid: 'flow',
+};
+
+const BAND_ORDER: MatrixBandId[] = ['identity', 'application', 'process', 'flow', 'construction'];
+
+/**
+ * Every datasheet field, banded for the matrix. Built by walking the sections
+ * rather than by listing keys, so a field can never be added to the datasheet
+ * and quietly go missing from the comparison view.
+ */
+export const MATRIX_BANDS: MatrixBand[] = (() => {
+  const byBand: Record<MatrixBandId, FieldSpec[]> = {
+    identity: [],
+    application: [],
+    process: [],
+    flow: [],
+    construction: [],
+  };
+  for (const section of REQUIREMENT_SECTIONS) {
+    for (const spec of section.fields) {
+      byBand[FIELD_BAND[spec.key] ?? SECTION_BAND[section.id] ?? 'construction'].push(spec);
+    }
+  }
+  return BAND_ORDER.map((id) => ({ id, title: BAND_TITLES[id], fields: byBand[id] }));
+})();

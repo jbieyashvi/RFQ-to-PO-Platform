@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { AlertTriangle, CheckCircle2, ChevronRight, ListChecks, OctagonAlert, Tag } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronRight, Columns3, ListChecks, OctagonAlert, Tag } from 'lucide-react';
 import type { InboxEmail } from '@/types';
 import type { RequirementItem, RequirementStatus } from '@/lib/requirementExtraction';
 import { requirementExtraction } from '@/lib/requirementExtraction';
 import { RequirementDetailDrawer } from '@/pages/inbox/RequirementDetailDrawer';
+import { RequirementMatrixModal } from '@/pages/inbox/RequirementMatrixModal';
 import { StatusBadge } from '@/components/ui';
 import { classNames } from '@/lib/format';
 import { useApp } from '@/context/AppContext';
@@ -16,6 +17,12 @@ import type { BadgeTone } from '@/lib/labels';
  * The header answers "can I trust this reading at all" with one Overall Accuracy
  * score; the scrollable cards below answer it per line, so an incomplete or
  * low-confidence instrument is visible without opening anything.
+ *
+ * Two ways deeper, because there are two questions. Clicking a card opens that
+ * line's datasheet in the detail drawer — the place a gap is actually filled in.
+ * View Details opens the comparison matrix, where every line of the enquiry is
+ * read side by side, which is the only way to see that one tag out of twelve
+ * was never given a flange rating.
  */
 
 const STATUS_META: Record<RequirementStatus, { label: string; tone: BadgeTone }> = {
@@ -57,12 +64,22 @@ function confidenceClass(confidence: number): string {
 export function RequirementExtractionPanel({ email }: { email: InboxEmail }) {
   const { quotations, salesOrders } = useApp();
   const [activeId, setActiveId] = useState<string | null>(null);
+  // The comparison matrix, and the line it was opened from. Held separately
+  // from `activeId` because the drawer opens ON TOP of the matrix: correcting a
+  // line found by comparison should hand you straight back to the comparison.
+  const [matrixOpen, setMatrixOpen] = useState(false);
+  const [matrixFocusId, setMatrixFocusId] = useState<string | null>(null);
 
   const extraction = requirementExtraction(email, quotations, salesOrders);
   // Looked up rather than held: the open line is re-derived on every render, so
   // a datasheet saved in the drawer is reflected by the drawer itself as well as
   // by the card behind it.
   const activeItem = extraction?.items.find((it) => it.id === activeId) ?? null;
+
+  const openMatrix = (focus: string | null) => {
+    setMatrixFocusId(focus);
+    setMatrixOpen(true);
+  };
 
   if (!extraction) {
     return (
@@ -90,11 +107,22 @@ export function RequirementExtractionPanel({ email }: { email: InboxEmail }) {
       {/* Overall accuracy — the one number that gates the whole reading. */}
       <div className="flex-none px-3 pt-3">
         <div className={classNames('rounded-xl border px-3 py-2.5', meta.ring)}>
-          <div className="flex items-baseline gap-2">
-            <span className={classNames('text-[26px] font-semibold leading-none tabular-nums', meta.text)}>
-              {extraction.accuracy}%
-            </span>
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-surface-500">Overall Accuracy</span>
+          <div className="flex items-baseline justify-between gap-2">
+            <div className="flex items-baseline gap-2">
+              <span className={classNames('text-[26px] font-semibold leading-none tabular-nums', meta.text)}>
+                {extraction.accuracy}%
+              </span>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-surface-500">
+                Overall Accuracy
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => openMatrix(null)}
+              className="inline-flex flex-none items-center gap-1 rounded-lg border border-surface-200 bg-white px-2 py-1 text-[11px] font-semibold text-brand-700 transition-colors hover:border-brand-200 hover:bg-brand-50"
+            >
+              <Columns3 className="h-3 w-3" /> View Details
+            </button>
           </div>
           <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/70">
             <div className={classNames('h-full rounded-full', meta.bar)} style={{ width: `${extraction.accuracy}%` }} />
@@ -134,12 +162,24 @@ export function RequirementExtractionPanel({ email }: { email: InboxEmail }) {
               item={item}
               active={activeId === item.id}
               onOpen={() => setActiveId(item.id)}
+              onCompare={() => openMatrix(item.id)}
             />
           ))}
         </div>
       </div>
 
-      {/* The detail drawer overlays the inbox — the mail behind it stays open. */}
+      {/* Both overlay the inbox — the mail behind them stays open. Edits live on
+          the email, so closing either keeps every correction and confirmation. */}
+      {matrixOpen && (
+        <RequirementMatrixModal
+          email={email}
+          extraction={extraction}
+          focusId={matrixFocusId}
+          blocked={activeId !== null}
+          onOpenItem={setActiveId}
+          onClose={() => setMatrixOpen(false)}
+        />
+      )}
       {activeItem && (
         <RequirementDetailDrawer
           key={activeItem.id}
@@ -165,10 +205,12 @@ function RequirementCard({
   item,
   active,
   onOpen,
+  onCompare,
 }: {
   item: RequirementItem;
   active: boolean;
   onOpen: () => void;
+  onCompare: () => void;
 }) {
   const status = STATUS_META[item.status];
   // Low confidence and unstated datasheet fields are the two things that stop a
@@ -247,9 +289,10 @@ function RequirementCard({
       <div className="mt-2 flex justify-end">
         <button
           type="button"
+          title="Compare every line of this enquiry, starting here"
           onClick={(e) => {
             e.stopPropagation();
-            onOpen();
+            onCompare();
           }}
           className="inline-flex items-center gap-0.5 rounded-lg border border-surface-200 bg-white px-2 py-1 text-[11px] font-semibold text-brand-700 transition-colors hover:border-brand-200 hover:bg-brand-50"
         >
