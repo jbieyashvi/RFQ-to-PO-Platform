@@ -67,13 +67,6 @@ export function dueStateFor(dueMs: number): { state: DueState; overdueLabel?: st
   return { state: 'upcoming' };
 }
 
-// Complete inquiry identifier, e.g. INQ/MUM/25-26/00500. Revisions start at 500
-// so they never collide with the pending-inquiry sequence.
-export function inquiryNumber(officeId: string, seq: number): string {
-  const prefix = OFFICE_PREFIX[officeId] ?? 'INQ';
-  return `INQ/${prefix}/25-26/${String(500 + seq).padStart(5, '0')}`;
-}
-
 // ---------------------------------------------------------------------------
 // Requested changes — derived deterministically from a quotation's real line
 // items and cycled commercial asks, so every record shows valid old → new data.

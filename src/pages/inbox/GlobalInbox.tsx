@@ -1,13 +1,15 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
-import { Inbox, ArrowLeft, MailOpen, FileText, RefreshCw, ClipboardCheck, FilePenLine, Link2, SlidersHorizontal, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Inbox, ArrowLeft, MailOpen, FileText, RefreshCw, ClipboardCheck, FilePenLine, Link2, Layers, SlidersHorizontal, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import { SearchInput, FilterSelect, FilterBar, EmptyState, type FilterChip } from '@/components/ui';
 import { Tabs } from '@/components/ui/misc';
 import { useApp, useOfficeScope, useNoOfficeAssigned } from '@/context/AppContext';
 import { NoOfficeAssigned } from '@/components/NoOfficeAssigned';
 import { OWNERS } from '@/data/users';
+import { officeName } from '@/data/offices';
+import { inquiryById, inquiryIdOfEmail } from '@/lib/inquiry';
 import { INBOX_CLASSIFICATION } from '@/lib/labels';
 import type { EmailClassification, InboxEmail } from '@/types';
 import { classNames } from '@/lib/format';
@@ -67,6 +69,31 @@ export default function GlobalInbox() {
     return mode === 'quote-send' && emailId && qtnId ? { emailId, qtnId } : null;
   });
 
+  // ---- Inquiry scoping ----------------------------------------------------
+  // The inbox has two modes:
+  //   • Direct /inbox — every classified business email the user can access.
+  //   • Workflow / deep-link — only the emails of ONE inquiry, however many
+  //     separate email threads they arrived in.
+  // The inquiry is keyed by the quotation behind the enquiry and carried in
+  // ?inq, so the scope survives a reload and every move between its messages.
+  // Merely clicking a workflow email while browsing /inbox never narrows the
+  // list — the scope is only ever entered through a deep link.
+  const inquiryIdOf = useMemo(
+    () => (e: InboxEmail) => inquiryIdOfEmail(e, quotations, salesOrders),
+    [quotations, salesOrders]
+  );
+
+  // Entered ONLY from a deep link: an explicit ?inq, or a workflow ?mode whose
+  // email resolves to an inquiry (how the Verification, Quote Revision and SO
+  // Revision queues open the inbox). Read at mount, when the deep link lands.
+  const [inquiryId, setInquiryId] = useState<string | null>(() => {
+    const inq = params.get('inq');
+    if (inq) return inq;
+    if (!params.get('mode')) return null;
+    const e = emails.find((x) => x.id === params.get('email'));
+    return e ? inquiryIdOfEmail(e, quotations, salesOrders) : null;
+  });
+
   // Bumped whenever a right-hand workspace PREPARES the centre composer (adds a
   // revised/corrected quote, drafts a PO-correction request). The centre panel
   // watches it to pull the freshly written draft in and scroll/focus itself.
@@ -118,10 +145,17 @@ export default function GlobalInbox() {
     [scoped]
   );
 
+  // The inquiry currently in scope. An id that no longer resolves to a
+  // quotation falls back to the full inbox rather than an empty list.
+  const inquiry = useMemo(() => (inquiryId ? inquiryById(inquiryId, quotations) : null), [inquiryId, quotations]);
+  const inquiryScopeId = inquiry?.id ?? null;
+
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
     return scoped
       .filter((e) => {
+        // Inquiry mode wins over everything: only this inquiry's messages.
+        if (inquiryScopeId && inquiryIdOf(e) !== inquiryScopeId) return false;
         if (tab === 'needs_review' && !(e.needsReview && !e.sent)) return false;
         if (tab === 'drafts' && !(e.draftSaved && !e.sent)) return false;
         if (classification && e.classification !== classification) return false;
@@ -141,7 +175,7 @@ export default function GlobalInbox() {
         return true;
       })
       .sort((a, b) => ((a.sent && a.sentAt ? a.sentAt : a.receivedAt) < (b.sent && b.sentAt ? b.sentAt : b.receivedAt) ? 1 : -1));
-  }, [scoped, tab, search, classification, owner, readState, dateFrom, dateTo]);
+  }, [scoped, tab, search, classification, owner, readState, dateFrom, dateTo, inquiryScopeId, inquiryIdOf]);
 
   // Deep-link: ?email=<id> (+ optional ?mode=quote-send|quote-revision|
   // po-verification & qtn/po params) — used by "Review & Send Email" from Quotes
@@ -173,6 +207,13 @@ export default function GlobalInbox() {
       const e = emails.find((x) => x.id === id);
       if (e && !e.read) updateEmail(id, { read: true });
     }
+    // Only an explicit ?inq enters the scope on an already-mounted inbox. A
+    // bare ?mode must not: selecting a workflow email while browsing the full
+    // inbox writes its mode into the URL, and that should never narrow the
+    // list. Leaving the scope is explicit too — see exitInquiry — so a missing
+    // param never silently drops it either (in-place escalations keep it).
+    const inq = params.get('inq');
+    if (inq) setInquiryId(inq);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
 
@@ -304,17 +345,28 @@ export default function GlobalInbox() {
   // Keep the URL describing the current conversation + its workflow so a reload
   // restores exactly what the user is looking at.
   const urlFor = (e: InboxEmail): Record<string, string> => {
-    if (quoteSend && e.id === quoteSend.emailId) return { mode: 'quote-send', email: e.id, qtn: quoteSend.qtnId };
-    if (e.revisionSendId) return { mode: 'quote-revision', email: e.id, qtn: e.revisionSendId };
+    // ?inq keeps the inquiry in scope while moving between its messages, even
+    // when the next message came in through a different email thread.
+    const inq: Record<string, string> = inquiryScopeId ? { inq: inquiryScopeId } : {};
+    if (quoteSend && e.id === quoteSend.emailId) return { ...inq, mode: 'quote-send', email: e.id, qtn: quoteSend.qtnId };
+    if (e.revisionSendId) return { ...inq, mode: 'quote-revision', email: e.id, qtn: e.revisionSendId };
     if (e.poVerifyId) {
       const so = salesOrders.find((s) => s.id === e.poVerifyId);
-      return { mode: 'po-verification', email: e.id, po: so?.poNumber ?? '', qtn: so?.quotationNumber ?? '' };
+      return { ...inq, mode: 'po-verification', email: e.id, po: so?.poNumber ?? '', qtn: so?.quotationNumber ?? '' };
     }
     if (e.soRevisionId) {
       const so = salesOrders.find((s) => s.id === e.soRevisionId);
-      return { mode: 'so-revision', email: e.id, so: so?.number ?? '' };
+      return { ...inq, mode: 'so-revision', email: e.id, so: so?.number ?? '' };
     }
-    return { email: e.id };
+    return { ...inq, email: e.id };
+  };
+
+  // Leave inquiry mode — back to the full classified inbox, keeping the current
+  // conversation open. The workflow panels are derived from the email itself, so
+  // dropping the mode params never changes what the right panel offers.
+  const exitInquiry = () => {
+    setInquiryId(null);
+    setParams(selectedId ? { email: selectedId } : {}, { replace: true });
   };
 
   const onSelect = (id: string) => {
@@ -366,6 +418,36 @@ export default function GlobalInbox() {
         crumbs={[{ label: 'Global Inbox' }]}
       />
 
+      {/* Inquiry mode — one compact header replaces the tabs + filter toolbar.
+          The list beneath is already scoped to this inquiry, so inbox-wide
+          tabs, classification and owner filters would only mislead. */}
+      {inquiry ? (
+        <div className="card mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2">
+          <button
+            onClick={exitInquiry}
+            className="inline-flex h-7 flex-none items-center gap-1 rounded-lg border border-surface-200 bg-white px-2 text-[12px] font-medium text-surface-600 transition-colors hover:bg-surface-50 hover:text-surface-800"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" /> All emails
+          </button>
+          <span className="hidden h-4 w-px flex-none bg-surface-200 sm:block" />
+          <Layers className="h-4 w-4 flex-none text-brand-600" />
+          <span className="text-[13px] font-semibold text-surface-900">{inquiry.number}</span>
+          <span className="chip !border-surface-200 !bg-surface-50 !py-0 !text-[11px] !text-surface-600">
+            {inquiry.quotationNumber}
+          </span>
+          <span className="truncate text-[13px] text-surface-700">{inquiry.customerName}</span>
+          <span className="text-[12px] text-surface-500">
+            Owner: <span className="font-medium text-surface-700">{inquiry.owner}</span>
+          </span>
+          <span className="text-[12px] text-surface-500">
+            Office: <span className="font-medium text-surface-700">{officeName(inquiry.officeId)}</span>
+          </span>
+          <span className="ml-auto flex-none text-[12px] text-surface-500">
+            <span className="font-semibold text-surface-800">{filtered.length}</span> message
+            {filtered.length === 1 ? '' : 's'} in this inquiry
+          </span>
+        </div>
+      ) : (
       <div className="card mb-4">
         {/* Tabs */}
         <div className="px-4 pt-2">
@@ -408,6 +490,7 @@ export default function GlobalInbox() {
           </FilterBar>
         </div>
       </div>
+      )}
 
       {/* Connected three-panel workspace — one surface, vertical dividers, no
           gaps. The fr ratios (0.55 / 0.95 / 1 ≈ 22% / 38% / 40%) make the right

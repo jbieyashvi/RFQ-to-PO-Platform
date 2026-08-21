@@ -15,6 +15,7 @@ import { useApp, useOfficeScope, useNoOfficeAssigned } from '@/context/AppContex
 import { officeName, officeCode } from '@/data/offices';
 import type { InboxEmail, Quotation } from '@/types';
 import { classNames, compactINR } from '@/lib/format';
+import { inquiryNumberFor } from '@/lib/inquiry';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 import {
   DAY,
@@ -26,7 +27,6 @@ import {
   fmtDate,
   fmtDateTime,
   fmtTime,
-  inquiryNumber,
   type DueState,
 } from '@/lib/revisionQueue';
 
@@ -100,7 +100,7 @@ export default function QuotesRevisions() {
       const { state, overdueLabel } = dueStateFor(dueMs);
       return {
         q,
-        inquiryNo: inquiryNumber(q.officeId, i),
+        inquiryNo: inquiryNumberFor(q),
         owner: i === REV_UNASSIGNED_AT ? '' : q.owner,
         requestedAt: requestedAt.toISOString(),
         dueAt: dueAt.toISOString(),

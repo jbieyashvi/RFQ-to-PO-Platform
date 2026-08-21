@@ -16,6 +16,7 @@ import { officeName, officeCode } from '@/data/offices';
 import { APP_NAME, emailSignature } from '@/lib/brand';
 import type { InboxEmail, Quotation } from '@/types';
 import { classNames } from '@/lib/format';
+import { inquiryNumberFor } from '@/lib/inquiry';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 
 // ---------------------------------------------------------------------------
@@ -33,14 +34,6 @@ const DUE_SOON_WINDOW = 4 * HOUR;
 const DUE_OFFSET_MINUTES = [-180, -2880, 150, 780, -480, 210, -7200, 1290, -60, 600];
 // One inquiry in the queue is intentionally left Unassigned to exercise that state.
 const UNASSIGNED_AT = 3;
-
-const OFFICE_PREFIX: Record<string, string> = {
-  'off-mum': 'MUM',
-  'off-del': 'DEL',
-  'off-blr': 'BLR',
-  'off-ahm': 'AHM',
-  'off-che': 'CHE',
-};
 
 type DueState = 'overdue' | 'due_soon' | 'upcoming';
 
@@ -122,11 +115,6 @@ function overdueLabel(ms: number): string {
   return `Overdue by ${Math.floor(hours / 24)}d`;
 }
 
-function inquiryNumber(q: Quotation, seq: number): string {
-  const prefix = OFFICE_PREFIX[q.officeId] ?? 'INQ';
-  return `INQ/${prefix}/25-26/${String(300 + seq).padStart(5, '0')}`;
-}
-
 function officeEmail(officeId: string) {
   const city = officeName(officeId).split(' ')[0].toLowerCase();
   return `sales.${city}@flowtech-instruments.com`;
@@ -165,7 +153,7 @@ export default function QuotesPending() {
       }
       return {
         q,
-        inquiryNo: inquiryNumber(q, i),
+        inquiryNo: inquiryNumberFor(q),
         owner: i === UNASSIGNED_AT ? '' : q.owner,
         queryCreatedAt: queryCreatedAt.toISOString(),
         dueAt: dueAt.toISOString(),
