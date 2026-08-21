@@ -750,6 +750,13 @@ export interface InboxEmail {
   attachedSalesOrder?: SalesOrderAttachment;
   extraction: ExtractionField[];
   extractionConfirmed: boolean;
+  // AI Requirement Extraction (inquiry workspace). The line-level requirement is
+  // DERIVED from `extraction` (see lib/requirementExtraction.ts) rather than
+  // stored, so only a human's own corrections live here: the datasheet edits
+  // saved from the line-item detail drawer, keyed by requirement-item id, and
+  // the ids of the lines a human has explicitly confirmed.
+  requirementEdits?: Record<string, Record<string, string>>;
+  requirementConfirmed?: string[];
   validationFailed?: boolean; // commercial validation failed (e.g. PO vs quote mismatch)
   draft?: OutgoingDraft;
   draftSaved: boolean;

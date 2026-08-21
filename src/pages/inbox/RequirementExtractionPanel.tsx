@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, ChevronRight, ListChecks, OctagonAlert, Ta
 import type { InboxEmail } from '@/types';
 import type { RequirementItem, RequirementStatus } from '@/lib/requirementExtraction';
 import { requirementExtraction } from '@/lib/requirementExtraction';
+import { RequirementDetailDrawer } from '@/pages/inbox/RequirementDetailDrawer';
 import { StatusBadge } from '@/components/ui';
 import { classNames } from '@/lib/format';
 import { useApp } from '@/context/AppContext';
@@ -54,21 +55,14 @@ function confidenceClass(confidence: number): string {
 }
 
 export function RequirementExtractionPanel({ email }: { email: InboxEmail }) {
-  const { quotations, salesOrders, addToast } = useApp();
+  const { quotations, salesOrders } = useApp();
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const extraction = requirementExtraction(email, quotations, salesOrders);
-
-  // Details are the next step of this workspace — the drawer does not exist yet,
-  // so the card says so instead of opening an empty surface.
-  const openDetails = (item: RequirementItem) => {
-    setActiveId(item.id);
-    addToast({
-      type: 'info',
-      title: `Line ${item.lineNo} · ${item.name}`,
-      message: 'The full requirement detail view is coming in the next step.',
-    });
-  };
+  // Looked up rather than held: the open line is re-derived on every render, so
+  // a datasheet saved in the drawer is reflected by the drawer itself as well as
+  // by the card behind it.
+  const activeItem = extraction?.items.find((it) => it.id === activeId) ?? null;
 
   if (!extraction) {
     return (
@@ -139,11 +133,21 @@ export function RequirementExtractionPanel({ email }: { email: InboxEmail }) {
               key={item.id}
               item={item}
               active={activeId === item.id}
-              onOpen={() => openDetails(item)}
+              onOpen={() => setActiveId(item.id)}
             />
           ))}
         </div>
       </div>
+
+      {/* The detail drawer overlays the inbox — the mail behind it stays open. */}
+      {activeItem && (
+        <RequirementDetailDrawer
+          key={activeItem.id}
+          email={email}
+          item={activeItem}
+          onClose={() => setActiveId(null)}
+        />
+      )}
     </div>
   );
 }

@@ -3,11 +3,12 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { classNames } from '@/lib/format';
 
-type Width = 'md' | 'lg' | 'xl';
+type Width = 'md' | 'lg' | 'xl' | '2xl';
 const widthClass: Record<Width, string> = {
   md: 'max-w-md',
   lg: 'max-w-xl',
   xl: 'max-w-3xl',
+  '2xl': 'max-w-5xl',
 };
 
 export function Drawer({
