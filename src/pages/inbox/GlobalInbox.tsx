@@ -23,6 +23,7 @@ import { RevisionQuotePanel } from './RevisionQuotePanel';
 import { PoVerificationPanel } from './PoVerificationPanel';
 import { PoAssociationPanel } from './PoAssociationPanel';
 import { SoRevisionPanel } from './SoRevisionPanel';
+import { RequirementExtractionPanel } from './RequirementExtractionPanel';
 import {
   associationEmailPatch,
   buildVerificationSalesOrder,
@@ -331,6 +332,11 @@ export default function GlobalInbox() {
 
   // Any dedicated business workflow occupying the right panel.
   const isWorkflowMode = showQuoteTools || isRevision || isPoVerify || isSoRevision || isPoAssociate;
+
+  // A plain Inquiry email — the right panel adds the AI Requirement Extraction
+  // reading above the usual Business Action, so the line-level gaps are visible
+  // before anyone starts a quotation from them.
+  const isInquiry = !isWorkflowMode && selected?.classification === 'inquiry';
 
   // Keep the URL describing the current conversation + its workflow so a reload
   // restores exactly what the user is looking at. Every param is derived from
@@ -814,6 +820,15 @@ export default function GlobalInbox() {
                   <SoRevisionPanel email={selected} salesOrder={soRevisionSalesOrder!} onPrepared={onPrepared} />
                 ) : isPoAssociate ? (
                   <PoAssociationPanel email={selected} />
+                ) : isInquiry ? (
+                  <div className={classNames('flex flex-col', connected ? 'h-full' : 'h-[560px]')}>
+                    <div className="min-h-0 flex-1">
+                      <RequirementExtractionPanel email={selected} />
+                    </div>
+                    <div className="max-h-[45%] flex-none overflow-y-auto border-t border-surface-200">
+                      <EmailActionPanel email={selected} />
+                    </div>
+                  </div>
                 ) : (
                   <EmailActionPanel email={selected} />
                 )}
