@@ -17,6 +17,7 @@ import type {
   Party,
   Quotation,
   Role,
+  RoleDefinition,
   SalesOffice,
   SalesOrder,
   TermCondition,
@@ -24,6 +25,8 @@ import type {
 } from '@/types';
 import { OFFICES } from '@/data/offices';
 import { USERS } from '@/data/users';
+import { ROLE_DEFINITIONS } from '@/data/roles';
+import { ROLE_LABELS } from '@/lib/labels';
 import { HSN, ITEMS, PARTIES, TERMS } from '@/data/masters';
 import { DEFAULT_COMMERCIAL_TERMS, cloneCommercialTerms } from '@/lib/commercialTerms';
 import { QUOTATIONS } from '@/data/quotations';
@@ -67,6 +70,8 @@ interface AppState {
   // data
   offices: SalesOffice[];
   users: User[];
+  roles: RoleDefinition[];
+  roleNameOf: (u: User) => string;
   items: Item[];
   parties: Party[];
   hsn: Hsn[];
@@ -80,6 +85,8 @@ interface AppState {
   upsertOffice: (o: SalesOffice) => void;
   upsertUser: (u: User) => void;
   removeUser: (id: string) => void;
+  upsertRole: (r: RoleDefinition) => void;
+  removeRole: (id: string) => void;
   upsertItem: (i: Item) => void;
   upsertParty: (p: Party) => void;
   upsertHsn: (h: Hsn) => void;
@@ -119,6 +126,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const [offices, setOffices] = useState<SalesOffice[]>(OFFICES);
   const [users, setUsers] = useState<User[]>(USERS);
+  const [roles, setRoles] = useState<RoleDefinition[]>(ROLE_DEFINITIONS);
   const [items, setItems] = useState<Item[]>(ITEMS);
   const [parties, setParties] = useState<Party[]>(PARTIES);
   const [hsn, setHsn] = useState<Hsn[]>(HSN);
@@ -208,6 +216,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setUsers((prev) => prev.filter((x) => x.id !== id));
   }, []);
 
+  const upsertRole = _useCallback((r: RoleDefinition) => {
+    setRoles((prev) => {
+      const exists = prev.some((x) => x.id === r.id);
+      return exists ? prev.map((x) => (x.id === r.id ? r : x)) : [...prev, r];
+    });
+  }, []);
+
+  // Deleting the system Super Admin role is refused unconditionally; callers
+  // additionally block deleting any role still assigned to employees.
+  const removeRole = _useCallback((id: string) => {
+    setRoles((prev) => prev.filter((x) => !(x.id === id && !(x.system && x.baseRole === 'super_admin'))));
+  }, []);
+
+  const roleNameOf = _useCallback(
+    (u: User) => roles.find((r) => r.id === u.roleId)?.name ?? ROLE_LABELS[u.role],
+    [roles]
+  );
+
   const upsertItem = _useCallback((i: Item) => {
     setItems((prev) => {
       const exists = prev.some((x) => x.id === i.id);
@@ -287,6 +313,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSidebarCollapsed,
     offices,
     users,
+    roles,
+    roleNameOf,
     items,
     parties,
     hsn,
@@ -298,6 +326,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     upsertOffice,
     upsertUser,
     removeUser,
+    upsertRole,
+    removeRole,
     upsertItem,
     upsertParty,
     upsertHsn,

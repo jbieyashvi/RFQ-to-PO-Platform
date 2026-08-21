@@ -1,5 +1,27 @@
 // ---------- Roles & Permissions ----------
+// Legacy scope archetype — drives office-visibility and approval gating across
+// the app (super_admin sees all offices; office_admin can approve; the rest are
+// office-scoped operators). Derived from the assigned RoleDefinition's baseRole,
+// never edited directly.
 export type Role = 'super_admin' | 'office_admin' | 'sales_user' | 'management_viewer';
+
+// Role categories. 'Stakeholder' is a CATEGORY grouping the operational roles —
+// it is never itself a selectable role.
+export type RoleCategory = 'admin' | 'stakeholder';
+
+// A managed role — the unit Super Admin creates, copies, renames and edits in
+// Employee Master → Manage Roles. System roles are the seeded defaults; the
+// system Super Admin role can never be deleted.
+export interface RoleDefinition {
+  id: string;
+  name: string;
+  category: RoleCategory;
+  description: string;
+  system: boolean; // seeded default role
+  baseRole: Role; // legacy scope archetype (office visibility / approval gates)
+  featurePermissions: FeaturePermissions; // the role's editable default template
+  copiedFrom?: string; // role id this was copied from (custom roles)
+}
 
 export type ModuleKey =
   | 'dashboard'
@@ -54,15 +76,13 @@ export interface User {
   id: string;
   employeeCode: string; // unique Employee Code / User ID
   fullName: string;
-  email: string; // work email (unique)
+  email: string; // WORK EMAIL — the unique login identity (no username/password)
   phone: string;
   department?: string;
   designation?: string;
   reportingManager?: string; // reporting manager's user id (optional)
-  role: Role;
-  // Login identity — prototype only, safe dummy credentials in local state.
-  username: string;
-  forcePasswordChange?: boolean; // force change on first login
+  roleId: string; // assigned RoleDefinition id
+  role: Role; // legacy scope archetype, derived from the role definition
   officeId: string; // '' when the employee has no office assigned
   assignmentDate?: string; // ISO date the current office was assigned
   transferHistory?: TransferRecord[];

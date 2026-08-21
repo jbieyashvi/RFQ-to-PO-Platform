@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { ShieldAlert } from 'lucide-react';
 import type { ModuleKey } from '@/types';
 import { useApp } from '@/context/AppContext';
-import { MODULE_LABELS, ROLE_LABELS } from '@/lib/labels';
+import { MODULE_LABELS } from '@/lib/labels';
 import { Button } from '@/components/ui';
 
 export function RequirePermission({
@@ -13,7 +13,7 @@ export function RequirePermission({
   module: ModuleKey;
   children: ReactNode;
 }) {
-  const { can, currentUser } = useApp();
+  const { can, currentUser, roleNameOf } = useApp();
   if (can(module, 'view')) return <>{children}</>;
 
   return (
@@ -25,7 +25,7 @@ export function RequirePermission({
         <h2 className="text-lg font-semibold text-surface-800">Access denied</h2>
         <p className="mt-2 text-sm text-surface-500">
           Your role{' '}
-          {currentUser && <span className="font-medium text-surface-700">{ROLE_LABELS[currentUser.role]}</span>}{' '}
+          {currentUser && <span className="font-medium text-surface-700">{roleNameOf(currentUser)}</span>}{' '}
           does not have permission to view{' '}
           <span className="font-medium text-surface-700">{MODULE_LABELS[module]}</span>. Ask an
           administrator to grant access in Employee Master.
@@ -41,7 +41,7 @@ export function RequirePermission({
 }
 
 export function RequireInbox({ children }: { children: ReactNode }) {
-  const { canInbox, currentUser } = useApp();
+  const { canInbox, currentUser, roleNameOf } = useApp();
   if (canInbox('view')) return <>{children}</>;
 
   return (
@@ -53,7 +53,7 @@ export function RequireInbox({ children }: { children: ReactNode }) {
         <h2 className="text-lg font-semibold text-surface-800">Access denied</h2>
         <p className="mt-2 text-sm text-surface-500">
           Your role{' '}
-          {currentUser && <span className="font-medium text-surface-700">{ROLE_LABELS[currentUser.role]}</span>}{' '}
+          {currentUser && <span className="font-medium text-surface-700">{roleNameOf(currentUser)}</span>}{' '}
           does not have permission to view the{' '}
           <span className="font-medium text-surface-700">Global Inbox</span>. Ask an administrator to
           grant access in Employee Master.

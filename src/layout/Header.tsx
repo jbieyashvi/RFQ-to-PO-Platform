@@ -13,7 +13,6 @@ import { useAuth } from '@/context/AuthContext';
 import { useApp } from '@/context/AppContext';
 import { ConfirmDialog, StatusBadge } from '@/components/ui';
 import { APP_NAME } from '@/lib/brand';
-import { ROLE_LABELS } from '@/lib/labels';
 import { officeName } from '@/data/offices';
 
 function useClickOutside<T extends HTMLElement>(onClose: () => void) {
@@ -41,7 +40,7 @@ export function Header({
   // role-preview switcher and the global office selector were removed from the
   // header UI only. The signed-in user's role is shown here as read-only text.
   const { profile, logout } = useAuth();
-  const { users, actingUserId, setActingUserId } = useApp();
+  const { users, actingUserId, setActingUserId, roleNameOf } = useApp();
   const navigate = useNavigate();
 
   const [userOpen, setUserOpen] = useState(false);
@@ -135,7 +134,7 @@ export function Header({
                         {selected && <Check className="h-3.5 w-3.5 flex-none text-brand-600" />}
                       </span>
                       <span className="flex items-center gap-1.5 text-[11px] text-surface-400">
-                        <span>{ROLE_LABELS[u.role]}</span>
+                        <span>{roleNameOf(u)}</span>
                         <span>·</span>
                         <span className="truncate">{u.officeId ? officeName(u.officeId) : 'Unassigned'}</span>
                       </span>

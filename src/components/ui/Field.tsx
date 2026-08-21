@@ -67,12 +67,18 @@ export function TextAreaField({ label, error, hint, required, wrapClassName, cla
   );
 }
 
+interface SelectOption {
+  value: string;
+  label: string;
+}
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;
   error?: string;
   hint?: string;
   wrapClassName?: string;
-  options: { value: string; label: string }[];
+  options?: SelectOption[];
+  // Grouped options (rendered as <optgroup>s). Takes precedence over `options`.
+  groups?: { label: string; options: SelectOption[] }[];
   placeholder?: string;
 }
 export function SelectField({
@@ -83,6 +89,7 @@ export function SelectField({
   wrapClassName,
   className,
   options,
+  groups,
   placeholder,
   ...rest
 }: SelectProps) {
@@ -97,11 +104,21 @@ export function SelectField({
         {...rest}
       >
         {placeholder && <option value="">{placeholder}</option>}
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
+        {groups
+          ? groups.map((g) => (
+              <optgroup key={g.label} label={g.label}>
+                {g.options.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </optgroup>
+            ))
+          : (options ?? []).map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
       </select>
     </FieldWrap>
   );

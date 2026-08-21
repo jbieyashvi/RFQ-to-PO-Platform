@@ -25,10 +25,12 @@ export type BadgeTone =
   | 'teal'
   | 'slate';
 
+// Legacy scope-archetype labels — display fallback only. Role NAMES now come
+// from the role register (AppContext roles / roleNameOf).
 export const ROLE_LABELS: Record<Role, string> = {
   super_admin: 'Super Admin',
-  office_admin: 'Office Admin',
-  sales_user: 'Sales User',
+  office_admin: 'Office Head',
+  sales_user: 'Sales Person',
   management_viewer: 'Management Viewer',
 };
 

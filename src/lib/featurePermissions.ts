@@ -146,66 +146,111 @@ export function actionLock(
   return { disabled: false };
 }
 
-// ---------- Role default templates ----------
-export function makeFeaturePermissions(role: Role): FeaturePermissions {
+// ---------- Default-role permission templates ----------
+// One builder per default role (see data/roles.ts). These are the FACTORY
+// defaults — the live, editable copy of each template is held on the
+// RoleDefinition in app state, so Super Admin edits never mutate these.
+
+// Super Admin — full access: every section, every action (manage employees,
+// roles and permissions included).
+export function templateSuperAdmin(): FeaturePermissions {
   const fp = emptyFeaturePermissions();
+  for (const s of ALL_SECTIONS) fill(fp, s.key, 'all');
+  return applyDependencies(fp);
+}
 
-  if (role === 'super_admin') {
-    for (const s of ALL_SECTIONS) fill(fp, s.key, 'all');
-    return applyDependencies(fp);
-  }
-
-  if (role === 'office_admin') {
-    fill(fp, 'dashboard', ['view']);
-    fill(fp, 'global_inbox', ['view', 'edit', 'approve', 'send']);
-    // Read-only on masters; can assign employees to their office (office edit).
-    ['item_master', 'party_master', 'hsn_master', 'tc_master'].forEach((k) => fill(fp, k, ['view']));
-    fill(fp, 'employee_master', ['view']); // cannot manage employee permissions by default
-    fill(fp, 'office_master', ['view', 'edit']);
-    // Transactions for the assigned office.
-    fill(fp, 'quotes_pending', ['view', 'edit', 'download', 'send']);
-    fill(fp, 'quotes_revision', ['view', 'edit', 'download', 'send']);
-    fill(fp, 'quotes_list', ['view', 'edit', 'download']);
-    fill(fp, 'po_verification', ['view', 'edit', 'send']);
-    fill(fp, 'so_list', ['view', 'download']);
-    fill(fp, 'so_revision', ['view', 'edit', 'approve', 'send']);
-    fill(fp, 'so_create', ['view', 'create', 'send']);
-    fill(fp, 'erp_handoff', ['view', 'edit', 'download']);
-    fill(fp, 'mis_reports', ['view', 'download']);
-    return applyDependencies(fp);
-  }
-
-  if (role === 'management_viewer') {
-    // View Dashboard + MIS, download reports, read-only lists. Nothing else.
-    fill(fp, 'dashboard', ['view']);
-    ['item_master', 'party_master', 'employee_master', 'office_master', 'hsn_master', 'tc_master'].forEach((k) =>
-      fill(fp, k, ['view'])
-    );
-    fill(fp, 'quotes_pending', ['view']);
-    fill(fp, 'quotes_revision', ['view']);
-    fill(fp, 'quotes_list', ['view', 'download']);
-    fill(fp, 'po_verification', ['view']);
-    fill(fp, 'so_list', ['view', 'download']);
-    fill(fp, 'so_revision', ['view']);
-    fill(fp, 'erp_handoff', ['view', 'download']);
-    fill(fp, 'mis_reports', ['view', 'download']);
-    return applyDependencies(fp);
-  }
-
-  // sales_user
+// Office Head — assigned-office view, edit, approve and send.
+export function templateOfficeHead(): FeaturePermissions {
+  const fp = emptyFeaturePermissions();
   fill(fp, 'dashboard', ['view']);
-  fill(fp, 'global_inbox', ['view', 'edit']); // triage/classify/extract/draft — no approve/send
+  fill(fp, 'global_inbox', ['view', 'edit', 'approve', 'send']);
+  // Read-only on masters; can assign employees to their office (office edit).
   ['item_master', 'party_master', 'hsn_master', 'tc_master'].forEach((k) => fill(fp, k, ['view']));
-  // No access to Employee Master or Sales Office Master.
+  fill(fp, 'employee_master', ['view']); // cannot manage employee permissions
+  fill(fp, 'office_master', ['view', 'edit']);
+  // Transactions for the assigned office.
   fill(fp, 'quotes_pending', ['view', 'edit', 'download', 'send']);
   fill(fp, 'quotes_revision', ['view', 'edit', 'download', 'send']);
+  fill(fp, 'quotes_list', ['view', 'edit', 'download']);
+  fill(fp, 'po_verification', ['view', 'edit', 'send']);
+  fill(fp, 'so_list', ['view', 'download']);
+  fill(fp, 'so_revision', ['view', 'edit', 'approve', 'send']);
+  fill(fp, 'so_create', ['view', 'create', 'send']);
+  fill(fp, 'erp_handoff', ['view', 'edit', 'download']);
+  fill(fp, 'mis_reports', ['view', 'download']);
+  return applyDependencies(fp);
+}
+
+// Office Staff — assigned-office operational create/edit access (no approve,
+// no send).
+export function templateOfficeStaff(): FeaturePermissions {
+  const fp = emptyFeaturePermissions();
+  fill(fp, 'dashboard', ['view']);
+  fill(fp, 'global_inbox', ['view', 'edit']);
+  ['item_master', 'party_master', 'hsn_master', 'tc_master'].forEach((k) => fill(fp, k, ['view']));
+  fill(fp, 'quotes_pending', ['view', 'edit', 'download']);
+  fill(fp, 'quotes_revision', ['view', 'edit', 'download']);
   fill(fp, 'quotes_list', ['view', 'edit', 'download']);
   fill(fp, 'po_verification', ['view', 'edit']);
   fill(fp, 'so_list', ['view', 'download']);
   fill(fp, 'so_revision', ['view', 'edit']);
   fill(fp, 'so_create', ['view', 'create']);
-  fill(fp, 'erp_handoff', ['view']);
+  fill(fp, 'erp_handoff', ['view', 'edit']);
   return applyDependencies(fp);
+}
+
+// Sales Person — manage assigned inquiries and quotations.
+export function templateSalesPerson(): FeaturePermissions {
+  const fp = emptyFeaturePermissions();
+  fill(fp, 'dashboard', ['view']);
+  fill(fp, 'global_inbox', ['view', 'edit']); // triage/classify/extract/draft
+  ['item_master', 'party_master', 'hsn_master', 'tc_master'].forEach((k) => fill(fp, k, ['view']));
+  fill(fp, 'quotes_pending', ['view', 'edit', 'download', 'send']);
+  fill(fp, 'quotes_revision', ['view', 'edit', 'download', 'send']);
+  fill(fp, 'quotes_list', ['view', 'edit', 'download']);
+  fill(fp, 'po_verification', ['view', 'edit']);
+  fill(fp, 'so_list', ['view']);
+  return applyDependencies(fp);
+}
+
+// Sales Executive — limited assigned sales-record create/edit access.
+export function templateSalesExecutive(): FeaturePermissions {
+  const fp = emptyFeaturePermissions();
+  fill(fp, 'dashboard', ['view']);
+  fill(fp, 'global_inbox', ['view', 'edit']);
+  ['item_master', 'party_master', 'hsn_master', 'tc_master'].forEach((k) => fill(fp, k, ['view']));
+  fill(fp, 'quotes_pending', ['view', 'edit']);
+  fill(fp, 'quotes_list', ['view']);
+  fill(fp, 'so_list', ['view']);
+  fill(fp, 'so_create', ['view', 'create']);
+  return applyDependencies(fp);
+}
+
+// Management Viewer — read-only dashboards + MIS (seeded CUSTOM role).
+export function templateManagementViewer(): FeaturePermissions {
+  const fp = emptyFeaturePermissions();
+  fill(fp, 'dashboard', ['view']);
+  ['item_master', 'party_master', 'employee_master', 'office_master', 'hsn_master', 'tc_master'].forEach((k) =>
+    fill(fp, k, ['view'])
+  );
+  fill(fp, 'quotes_pending', ['view']);
+  fill(fp, 'quotes_revision', ['view']);
+  fill(fp, 'quotes_list', ['view', 'download']);
+  fill(fp, 'po_verification', ['view']);
+  fill(fp, 'so_list', ['view', 'download']);
+  fill(fp, 'so_revision', ['view']);
+  fill(fp, 'erp_handoff', ['view', 'download']);
+  fill(fp, 'mis_reports', ['view', 'download']);
+  return applyDependencies(fp);
+}
+
+// Legacy adapter — maps the coarse Role archetype to the closest default
+// template. Only used as a fallback where no RoleDefinition is at hand.
+export function makeFeaturePermissions(role: Role): FeaturePermissions {
+  if (role === 'super_admin') return templateSuperAdmin();
+  if (role === 'office_admin') return templateOfficeHead();
+  if (role === 'management_viewer') return templateManagementViewer();
+  return templateSalesPerson();
 }
 
 // Deep equality vs a role's defaults — used to warn before a role change or save
@@ -219,8 +264,9 @@ export function equalsFeature(a: FeaturePermissions, b: FeaturePermissions): boo
   return true;
 }
 
-export function hasCustomOverrides(fp: FeaturePermissions, role: Role): boolean {
-  return !equalsFeature(fp, makeFeaturePermissions(role));
+// Does an employee's working matrix differ from their role's default template?
+export function hasCustomOverrides(fp: FeaturePermissions, template: FeaturePermissions): boolean {
+  return !equalsFeature(fp, template);
 }
 
 // ---------- Enabled-count helpers ----------

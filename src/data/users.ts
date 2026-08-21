@@ -1,25 +1,30 @@
-import type { Role, User } from '@/types';
-import { makeFeaturePermissions, deriveLegacyPermissions, deriveInbox } from '@/lib/featurePermissions';
+import type { User } from '@/types';
+import { cloneFeature, deriveLegacyPermissions, deriveInbox } from '@/lib/featurePermissions';
+import { ROLE_BY_ID } from './roles';
 
-// Build a seed user whose coarse permissions / inbox permissions are derived
-// from the granular role template — the single source of truth edited in
-// EMPLOYEE MASTER. Office assignment (officeId) is a separate data-scope concern
-// managed in Sales Office Master and never changes these permissions.
+// Build a seed employee from an assigned role definition. The granular feature
+// permissions start as the role's default template (the single source of truth
+// edited in EMPLOYEE MASTER); the coarse permissions / inbox permissions are
+// derived from it. Office assignment (officeId) is a separate data-scope
+// concern managed in Sales Office Master and never changes these permissions.
+//
+// Login identity is the WORK EMAIL — there are no usernames or passwords.
 function seed(
-  base: Omit<User, 'permissions' | 'inboxPermissions' | 'featurePermissions'> & { role: Role }
+  base: Omit<User, 'permissions' | 'inboxPermissions' | 'featurePermissions' | 'role'> & {
+    roleId: string;
+  }
 ): User {
-  const featurePermissions = makeFeaturePermissions(base.role);
+  const def = ROLE_BY_ID[base.roleId];
+  const featurePermissions = cloneFeature(def.featurePermissions);
   return {
     ...base,
+    role: def.baseRole,
     featurePermissions,
     permissions: deriveLegacyPermissions(featurePermissions),
     inboxPermissions: deriveInbox(featurePermissions),
   };
 }
 
-// Prototype login credentials are safe dummy values held in local state only.
-// A real password is never stored, displayed or migrated — Employee Master only
-// exposes a "Reset Password" action.
 export const USERS: User[] = [
   seed({
     id: 'usr-001',
@@ -29,8 +34,7 @@ export const USERS: User[] = [
     phone: '+91 98200 41122',
     department: 'Administration',
     designation: 'Platform Administrator',
-    role: 'super_admin',
-    username: 'aarav.mehta',
+    roleId: 'role-super-admin',
     officeId: 'off-mum',
     assignmentDate: '2023-04-01',
     active: true,
@@ -44,8 +48,7 @@ export const USERS: User[] = [
     department: 'Sales',
     designation: 'Office Manager',
     reportingManager: 'usr-001',
-    role: 'office_admin',
-    username: 'priya.nair',
+    roleId: 'role-office-head',
     officeId: 'off-mum',
     assignmentDate: '2023-05-15',
     active: true,
@@ -59,8 +62,7 @@ export const USERS: User[] = [
     department: 'Sales',
     designation: 'Sales Executive',
     reportingManager: 'usr-002',
-    role: 'sales_user',
-    username: 'rohan.deshpande',
+    roleId: 'role-sales-person',
     officeId: 'off-mum',
     assignmentDate: '2023-06-01',
     active: true,
@@ -74,8 +76,7 @@ export const USERS: User[] = [
     department: 'Sales',
     designation: 'Sales Executive',
     reportingManager: 'usr-002',
-    role: 'sales_user',
-    username: 'kavya.iyer',
+    roleId: 'role-sales-executive',
     officeId: 'off-mum',
     assignmentDate: '2023-07-20',
     active: false,
@@ -89,8 +90,7 @@ export const USERS: User[] = [
     department: 'Sales',
     designation: 'Office Manager',
     reportingManager: 'usr-001',
-    role: 'office_admin',
-    username: 'vikram.singh',
+    roleId: 'role-office-head',
     officeId: 'off-del',
     assignmentDate: '2023-05-18',
     active: true,
@@ -102,10 +102,9 @@ export const USERS: User[] = [
     email: 'neha.gupta@flowtech-instruments.com',
     phone: '+91 98110 90876',
     department: 'Sales',
-    designation: 'Sales Executive',
+    designation: 'Sales Coordinator',
     reportingManager: 'usr-005',
-    role: 'sales_user',
-    username: 'neha.gupta',
+    roleId: 'role-office-staff',
     officeId: 'off-del',
     assignmentDate: '2023-08-05',
     active: true,
@@ -119,8 +118,7 @@ export const USERS: User[] = [
     department: 'Sales',
     designation: 'Office Manager',
     reportingManager: 'usr-001',
-    role: 'office_admin',
-    username: 'arjun.reddy',
+    roleId: 'role-office-head',
     officeId: 'off-blr',
     assignmentDate: '2023-06-10',
     active: true,
@@ -134,8 +132,7 @@ export const USERS: User[] = [
     department: 'Sales',
     designation: 'Sales Executive',
     reportingManager: 'usr-007',
-    role: 'sales_user',
-    username: 'sneha.rao',
+    roleId: 'role-sales-person',
     officeId: 'off-blr',
     assignmentDate: '2023-09-12',
     active: true,
@@ -149,8 +146,7 @@ export const USERS: User[] = [
     department: 'Sales',
     designation: 'Office Manager',
     reportingManager: 'usr-001',
-    role: 'office_admin',
-    username: 'manish.patel',
+    roleId: 'role-office-head',
     officeId: 'off-ahm',
     assignmentDate: '2023-07-01',
     active: true,
@@ -164,8 +160,7 @@ export const USERS: User[] = [
     department: 'Sales',
     designation: 'Sales Executive',
     reportingManager: 'usr-009',
-    role: 'sales_user',
-    username: 'divya.shah',
+    roleId: 'role-sales-executive',
     officeId: 'off-ahm',
     assignmentDate: '2023-10-03',
     active: true,
@@ -178,13 +173,12 @@ export const USERS: User[] = [
     phone: '+91 94440 65432',
     department: 'Sales',
     designation: 'Sales Executive',
-    role: 'sales_user',
-    username: 'karthik.subramanian',
+    roleId: 'role-sales-executive',
     officeId: 'off-che',
     assignmentDate: '2023-11-15',
     active: false,
   }),
-  // Management Viewer — read-only dashboards + MIS reports, based at HQ (Mumbai).
+  // Management Viewer — seeded CUSTOM role, read-only dashboards + MIS, HQ (Mumbai).
   seed({
     id: 'usr-012',
     employeeCode: 'EMP-0012',
@@ -194,14 +188,13 @@ export const USERS: User[] = [
     department: 'Management',
     designation: 'Business Analyst',
     reportingManager: 'usr-001',
-    role: 'management_viewer',
-    username: 'ananya.krishnan',
+    roleId: 'role-management-viewer',
     officeId: 'off-mum',
     assignmentDate: '2024-01-08',
     active: true,
   }),
-  // Newly onboarded Sales User with NO office assignment yet — demonstrates the
-  // "no office assigned" empty-state across office-scoped screens.
+  // Newly onboarded Sales Executive with NO office assignment yet — demonstrates
+  // the "no office assigned" empty-state across office-scoped screens.
   seed({
     id: 'usr-013',
     employeeCode: 'EMP-0013',
@@ -211,8 +204,7 @@ export const USERS: User[] = [
     department: 'Sales',
     designation: 'Sales Executive',
     reportingManager: 'usr-001',
-    role: 'sales_user',
-    username: 'rahul.verma',
+    roleId: 'role-sales-executive',
     officeId: '',
     active: true,
   }),

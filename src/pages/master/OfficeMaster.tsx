@@ -35,7 +35,6 @@ import {
 import { IconBtn } from './ItemMaster';
 import { useApp } from '@/context/AppContext';
 import { classNames, formatDate, TODAY } from '@/lib/format';
-import { ROLE_LABELS } from '@/lib/labels';
 import type { SalesOffice, User } from '@/types';
 
 const todayISO = () => TODAY.toISOString().slice(0, 10);
@@ -290,7 +289,7 @@ function usePaginatedSafe<T>(rows: T[]) {
 
 // ---------- Office detail drawer with assigned employees ----------
 function OfficeDetailDrawer({ office, onClose }: { office: SalesOffice; onClose: () => void }) {
-  const { users, upsertUser, offices, can, addToast } = useApp();
+  const { users, upsertUser, offices, can, addToast, roleNameOf } = useApp();
   const officeUsers = users.filter((u) => u.officeId === office.id);
   const canEdit = can('office_master', 'edit');
 
@@ -367,7 +366,7 @@ function OfficeDetailDrawer({ office, onClose }: { office: SalesOffice; onClose:
                       {u.assignmentDate && <span>Assigned {formatDate(u.assignmentDate)}</span>}
                     </div>
                   </div>
-                  <StatusBadge tone="blue" dot={false} label={ROLE_LABELS[u.role]} />
+                  <StatusBadge tone="blue" dot={false} label={roleNameOf(u)} />
                   {canEdit && (
                     <div className="flex items-center gap-1">
                       <IconBtn title="Transfer to another office" onClick={() => setTransferUser(u)}>
@@ -452,7 +451,7 @@ function AddEmployeeModal({
   onClose: () => void;
   onAdd: (selected: User[]) => void;
 }) {
-  const { users, offices } = useApp();
+  const { users, offices, roleNameOf } = useApp();
   const [q, setQ] = useState('');
   const [picked, setPicked] = useState<Record<string, boolean>>({});
 
@@ -524,7 +523,7 @@ function AddEmployeeModal({
                         {u.department ?? '—'} · {u.email}
                       </p>
                     </div>
-                    <StatusBadge tone="blue" dot={false} label={ROLE_LABELS[u.role]} />
+                    <StatusBadge tone="blue" dot={false} label={roleNameOf(u)} />
                     {u.officeId ? (
                       <span className="ml-1 whitespace-nowrap text-[11px] text-amber-600" title="Currently assigned elsewhere — assigning here will transfer them">
                         {officeLabel(u.officeId)}
