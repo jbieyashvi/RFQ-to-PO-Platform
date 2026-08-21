@@ -169,9 +169,12 @@ function DashSection({
 // warnings elsewhere. Widths taper by position (not by value) so even the
 // smallest level stays readable.
 const FUNNEL_FILL: Record<string, string> = {
-  inquiries: 'bg-slate-700',
-  quotes_sent: 'bg-brand-700',
-  converted: 'bg-brand-600',
+  inquiries: 'bg-slate-800',
+  quotes_sent: 'bg-brand-900',
+  no_followups: 'bg-brand-800',
+  budgetary: 'bg-brand-700',
+  negotiation: 'bg-brand-600',
+  finalize: 'bg-brand-500',
   so_sent: 'bg-brand-400',
 };
 
@@ -195,21 +198,18 @@ function FunnelLayer({
       className="group relative mx-auto w-full sm:[max-width:var(--fw)]"
       style={{ '--fw': `${width}%` } as CSSProperties}
     >
-      {/* The level is a coloured shell; the main row and each sub-split are
-          separate sibling buttons (never nested) so all of them stay clickable. */}
+      {/* Each level is a single clickable row that deep-links to its list. */}
       <div className={classNames('rounded-[10px] text-white shadow-sm', FUNNEL_FILL[stage.key])}>
         <button
           type="button"
           onClick={() => onOpen(stage.to)}
-          aria-label={`${stage.label}: ${stage.count}. ${
-            stage.fromPrevPct !== null ? `${stage.fromPrevPct}% from previous stage, ` : ''
-          }${stage.overallPct}% of total inquiries. Open filtered list.`}
+          aria-label={`${stage.label}: ${stage.count}. ${stage.overallPct}% of total inquiries. Open filtered list.`}
           className="flex w-full items-center justify-between gap-3 rounded-[10px] px-4 py-2.5 text-left transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/70"
         >
           <span className="min-w-0">
             <span className="block truncate text-[13px] font-semibold leading-4">{stage.label}</span>
-            <span className="mt-0.5 block text-[11px] font-medium leading-4 text-white/75">
-              {stage.fromPrevPct === null ? 'Pipeline entry' : `${stage.fromPrevPct}% from previous`}
+            <span className="mt-0.5 block truncate text-[11px] font-medium leading-4 text-white/75">
+              {stage.hint}
             </span>
           </span>
           <span className="flex flex-none items-center gap-2">
@@ -220,28 +220,9 @@ function FunnelLayer({
             <ArrowRight className="h-4 w-4 flex-none text-white/50 transition group-hover:translate-x-0.5 group-hover:text-white" />
           </span>
         </button>
-
-        {/* Mutually-exclusive sub-splits (e.g. PO Received / Finalised — Awaiting
-            PO); each deep-links to the exact operational list it counts. */}
-        {stage.parts && (
-          <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2.5">
-            {stage.parts.map((part) => (
-              <button
-                key={part.key}
-                type="button"
-                onClick={() => onOpen(part.to)}
-                aria-label={`${part.label}: ${part.count}. ${part.hint}. Open filtered list.`}
-                className="inline-flex items-center gap-1.5 rounded-full bg-white/15 py-1 pl-2.5 pr-1.5 text-[11px] font-semibold leading-4 transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-              >
-                {part.label}
-                <span className="rounded-full bg-white/25 px-1.5 tabular-nums">{part.count}</span>
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
-      {/* Hover tooltip — level count, step conversion, overall conversion. */}
+      {/* Hover tooltip — level count and overall conversion. */}
       <div
         role="tooltip"
         className="pointer-events-none absolute left-1/2 top-full z-20 mt-1.5 w-56 -translate-x-1/2 rounded-lg border border-surface-200 bg-white p-2.5 text-[12px] text-surface-700 opacity-0 shadow-pop transition-opacity duration-150 group-hover:opacity-100"
@@ -253,21 +234,9 @@ function FunnelLayer({
             <dd className="font-semibold tabular-nums text-surface-800">{stage.count}</dd>
           </div>
           <div className="flex justify-between gap-3">
-            <dt className="text-surface-500">From previous</dt>
-            <dd className="font-semibold tabular-nums text-surface-800">
-              {stage.fromPrevPct === null ? '—' : `${stage.fromPrevPct}%`}
-            </dd>
-          </div>
-          <div className="flex justify-between gap-3">
             <dt className="text-surface-500">Overall conversion</dt>
             <dd className="font-semibold tabular-nums text-surface-800">{stage.overallPct}%</dd>
           </div>
-          {stage.parts?.map((part) => (
-            <div key={part.key} className="flex justify-between gap-3">
-              <dt className="text-surface-500">{part.label}</dt>
-              <dd className="font-semibold tabular-nums text-surface-800">{part.count}</dd>
-            </div>
-          ))}
         </dl>
       </div>
     </div>
@@ -297,29 +266,48 @@ const ACTION_TONE: Record<ActionRow['tone'], { edge: string; count: string }> = 
 function ActionRowItem({ row, onOpen }: { row: ActionRow; onOpen: (to: string) => void }) {
   const tone = ACTION_TONE[row.tone];
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(row.to)}
-      aria-label={`${row.label}: ${row.count}. ${row.description}`}
-      className={classNames(
-        'group flex min-h-[64px] w-full items-center gap-3 border-l-[3px] px-3 py-2.5 text-left transition-colors',
-        'hover:bg-surface-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/40',
-        tone.edge
+    // The tone edge lives on a wrapper so the main row and each sub-split are
+    // separate sibling buttons (never nested) and all of them stay clickable.
+    <div className={classNames('border-l-[3px]', tone.edge)}>
+      <button
+        type="button"
+        onClick={() => onOpen(row.to)}
+        aria-label={`${row.label}: ${row.count}. ${row.description}`}
+        className="group flex min-h-[64px] w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-surface-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/40"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-semibold leading-[18px] text-surface-800">
+            {row.label}
+          </span>
+          <span className="mt-0.5 block truncate text-[12px] leading-4 text-surface-500">
+            {row.description}
+          </span>
+        </span>
+        <span className={classNames('flex-none text-[20px] font-bold leading-6 tabular-nums', tone.count)}>
+          {row.count}
+        </span>
+        <ChevronRight className="h-4 w-4 flex-none text-surface-300 transition group-hover:translate-x-0.5 group-hover:text-surface-500" />
+      </button>
+      {/* Clickable sub-splits — each chip deep-links to its own filtered list. */}
+      {row.parts && (
+        <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2.5">
+          {row.parts.map((part) => (
+            <button
+              key={part.key}
+              type="button"
+              onClick={() => onOpen(part.to)}
+              aria-label={`${part.label}: ${part.count}. Open filtered list.`}
+              className="inline-flex items-center gap-1.5 rounded-full bg-surface-100 py-1 pl-2.5 pr-1.5 text-left text-[11px] font-semibold leading-4 text-surface-600 transition hover:bg-surface-200 hover:text-surface-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+            >
+              {part.label}
+              <span className="rounded-full bg-white px-1.5 tabular-nums text-surface-700 ring-1 ring-inset ring-surface-200">
+                {part.count}
+              </span>
+            </button>
+          ))}
+        </div>
       )}
-    >
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] font-semibold leading-[18px] text-surface-800">
-          {row.label}
-        </span>
-        <span className="mt-0.5 block truncate text-[12px] leading-4 text-surface-500">
-          {row.description}
-        </span>
-      </span>
-      <span className={classNames('flex-none text-[20px] font-bold leading-6 tabular-nums', tone.count)}>
-        {row.count}
-      </span>
-      <ChevronRight className="h-4 w-4 flex-none text-surface-300 transition group-hover:translate-x-0.5 group-hover:text-surface-500" />
-    </button>
+    </div>
   );
 }
 
@@ -435,22 +423,11 @@ export default function Dashboard() {
 
   const qBy = (q: (typeof baseQuotations)[number]) => ({ officeId: q.officeId, date: q.createdDate });
   const soBy = (s: (typeof baseSalesOrders)[number]) => ({ officeId: s.officeId, date: s.createdDate });
-  // The funnel date-scopes SOs by receivedDate (when the customer PO arrived) —
-  // the same event date MIS Reports uses (SALES_ORDER_DATE in lib/mis.ts) — so
-  // Dashboard and MIS report identical PO/SO counts for any Branch + range.
-  const soFunnelBy = (s: (typeof baseSalesOrders)[number]) => ({ officeId: s.officeId, date: s.receivedDate });
 
-  const funnel = useMemo(() => {
-    const q = scopeRecords(baseQuotations, pipelineF.filter, qBy);
-    const so = scopeRecords(baseSalesOrders, pipelineF.filter, soFunnelBy);
-    return conversionFunnel(q, so);
-  }, [baseQuotations, baseSalesOrders, pipelineF.filter]);
-
-  const actions = useMemo(() => {
-    const q = scopeRecords(baseQuotations, actionF.filter, qBy);
-    const so = scopeRecords(baseSalesOrders, actionF.filter, soBy);
-    return actionRequired(q, so);
-  }, [baseQuotations, baseSalesOrders, actionF.filter]);
+  // Funnel + Action Required show the client-approved counts (fixed sample
+  // numbers, not derived from the seed dataset).
+  const funnel = useMemo(() => conversionFunnel(), []);
+  const actions = useMemo(() => actionRequired(), []);
 
   const overdue = useMemo(() => {
     const q = scopeRecords(baseQuotations, overdueF.filter, qBy);
