@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  FileText,
   Eye,
   CalendarClock,
   CheckCircle2,
@@ -19,57 +18,27 @@ import {
   Save,
   ArrowLeft,
   Wand2,
-  User2,
-  Boxes,
-  Receipt,
-  Calculator,
-  Phone,
-  MessageSquare,
   Pencil,
 } from 'lucide-react';
 import type {
-  CommercialTerms,
   InboxEmail,
   LineItem,
-  Party,
-  PaymentTerms,
-  PoProofType,
   Quotation,
   SalesOrder,
-  SalesOrderAttachment,
   VerificationField,
 } from '@/types';
-import {
-  Button,
-  Modal,
-  StatusBadge,
-  TextField,
-  SelectField,
-  TextAreaField,
-  Toggle,
-  ItemLineEditor,
-  InfoRow,
-} from '@/components/ui';
+import { Button, Modal, StatusBadge } from '@/components/ui';
 import { useApp } from '@/context/AppContext';
-import { OFFICES, officeName } from '@/data/offices';
+import { officeName } from '@/data/offices';
 import { emailSignature } from '@/lib/brand';
-import { OWNERS, USERS } from '@/data/users';
 import { ITEMS } from '@/data/masters';
-import { classNames, computeTotals, formatDate, formatDateTime, formatINR, lineTotal } from '@/lib/format';
+import { classNames, formatDate, formatDateTime, formatINR, lineTotal } from '@/lib/format';
 import { poReceivedAtOf, slaDueAt, verificationSla } from '@/lib/sla';
-import {
-  activeDeliveryOptions,
-  defaultDeliveryOption,
-  formatPaymentTerms,
-  formatWarranty,
-  paymentTotal,
-  PAYMENT_FIELDS,
-} from '@/lib/commercialTerms';
 import { VERIFICATION_STATUS } from '@/lib/labels';
-import { resolveSalesOrder, type ResolvedSalesOrder } from '@/lib/salesOrder';
-import { SalesOrderDocument } from '@/components/sales-order/SalesOrderDocument';
+import { resolveSalesOrder } from '@/lib/salesOrder';
 import { buildVersions, grandTotalOf } from '@/lib/revisionQueue';
-import { quoteSignature } from './helpers';
+import { quoteSignature, soSendEmailPatch } from './helpers';
+import { SoPreviewModal } from './SoGenerationDrawer';
 import {
   FIELD_RESOLUTION_META,
   actionableFields,
@@ -99,9 +68,12 @@ const clone = (it: LineItem): LineItem => ({ ...it });
 export function PoVerificationPanel({
   email,
   onPrepared,
+  onGenerateSo,
 }: {
   email: InboxEmail;
   onPrepared?: () => void;
+  /** Opens the full-width SO Generation drawer (owned by GlobalInbox). */
+  onGenerateSo?: () => void;
 }) {
   const {
     salesOrders,
@@ -390,7 +362,7 @@ export function PoVerificationPanel({
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-4 py-3">
         {tab === 'generate' ? (
-          <GenerateTab email={email} so={so} quote={quote} onPrepared={onPrepared} />
+          <GenerateTab email={email} so={so} quote={quote} onPrepared={onPrepared} onOpenDrawer={onGenerateSo} />
         ) : correcting ? (
           <CorrectQuoteEditor
             quote={quote}
@@ -859,284 +831,41 @@ function CorrectQuoteEditor({
 
 // ---------------------------------------------------------------------------
 
-// Clearer, spec-aligned labels for the four payment buckets (shared
-// PAYMENT_FIELDS keys/order are reused; only display labels differ).
-const SO_PAYMENT_LABEL: Record<keyof PaymentTerms, string> = {
-  advance: 'Advance %',
-  beforeDispatch: 'Before Dispatch %',
-  creditDays: 'Credit %',
-  afterInstall: 'After Installation %',
-};
-
-const SO_PO_PROOF_OPTIONS: { value: PoProofType; label: string; icon: typeof Phone }[] = [
-  { value: 'uploaded', label: 'PO Document', icon: FileText },
-  { value: 'phone_call', label: 'Phone Call', icon: Phone },
-  { value: 'message', label: 'Message / WhatsApp', icon: MessageSquare },
-];
-
-// The SO Generation form mirrors "Create Sales Order Manually" but is scoped to
-// the already-verified PO record: the customer is fixed (it came from the
-// verified PO/quotation), so there is no new-customer toggle here.
-interface SoForm {
-  billingAddress: string;
-  shippingAddress: string;
-  sameAsBilling: boolean;
-  phone: string;
-  email: string;
-  pincode: string;
-  gstin: string;
-  kindAttentionName: string;
-  kindAttentionEmail: string;
-  poNumber: string;
-  poDate: string;
-  officeId: string;
-  owner: string;
-  officeAdmin: string;
-  poProofType: PoProofType;
-  poProofNotes: string;
-  packingPct: number;
-  deliveryTerms: string;
-  deliveryTimeline: string;
-  warrantyYears: number;
-  creditDays: number;
-  payment: PaymentTerms;
-  expectedDelivery: string;
-  freight: string;
-  inspection: string;
-  additionalTerms: string;
-}
-
-// Prefill from the verified Sales Order, its accepted quotation and the Party
-// Master. Commercial terms use the SO's structured snapshot when present and
-// fall back to the T&C Master defaults for older seed records.
-function initSoForm(so: SalesOrder, party: Party | undefined, ct: CommercialTerms): SoForm {
-  const taxable = computeTotals(so.items, 0).taxable;
-  const derivedPacking = taxable > 0 ? Math.round((so.packingCharges / taxable) * 100) : ct.packingPct;
-  return {
-    billingAddress: so.billingAddress ?? party?.billingAddress ?? '',
-    shippingAddress: so.shippingAddress ?? party?.shippingAddress ?? '',
-    sameAsBilling: false,
-    phone: so.customerPhone ?? party?.phone ?? '',
-    email: so.customerEmail ?? party?.email ?? '',
-    pincode: so.pincode ?? '',
-    gstin: party?.gstin ?? '',
-    kindAttentionName: so.kindAttentionName ?? party?.contactPerson ?? '',
-    kindAttentionEmail: so.kindAttentionEmail ?? party?.email ?? '',
-    poNumber: so.poNumber,
-    poDate: so.poDate,
-    officeId: so.officeId,
-    owner: so.owner,
-    officeAdmin: so.officeAdmin ?? '',
-    poProofType: so.poProofType ?? 'uploaded',
-    poProofNotes:
-      so.poProofNotes ??
-      `PO ${so.poNumber} verified against accepted quotation ${so.quotationNumber ?? ''}.`.trim(),
-    packingPct: so.commercials?.packingPct ?? derivedPacking,
-    deliveryTerms: so.deliveryTerms || defaultDeliveryOption(ct)?.name || '',
-    deliveryTimeline: so.deliveryTimeline ?? '',
-    warrantyYears: parseInt(so.warranty, 10) || ct.warrantyYears,
-    creditDays: so.commercials?.creditDays ?? 0,
-    payment: so.commercials?.payment ? { ...so.commercials.payment } : { ...ct.payment },
-    expectedDelivery: so.deliveryDate ?? '',
-    freight: so.freight ?? '',
-    inspection: so.inspection ?? '',
-    additionalTerms: so.additionalTerms ?? '',
-  };
-}
-
 /**
- * SO Generation tab — the full editable Sales Order form (the same five
- * sections as "Create Sales Order Manually"), prefilled from the verified PO,
- * accepted quotation and customer masters. Everything happens INSIDE the Global
- * Inbox: generating the SO flips it live + links a Pending ERP Handoff record,
- * then the panel switches to a read-only generated-document view whose only send
- * path is the middle composer ("Add Sales Order to Email").
+ * SO Generation tab — entry point into the full-width SO Generation drawer.
+ * Before generation it shows a verified summary card with the single "Generate
+ * Sales Order" action (which opens the drawer over the inbox); after generation
+ * it shows the read-only generated-document view whose only send path is the
+ * middle composer ("Add Sales Order to Email"). The SO is submitted to ERP
+ * Handoff only once that email is actually sent.
  */
 function GenerateTab({
   email,
   so,
   quote,
   onPrepared,
+  onOpenDrawer,
 }: {
   email: InboxEmail;
   so: SalesOrder;
   quote: Quotation | null;
   onPrepared?: () => void;
+  onOpenDrawer?: () => void;
 }) {
-  const {
-    parties,
-    items: catalog,
-    commercialTerms,
-    role,
-    updateSalesOrder,
-    updateEmail,
-    addToast,
-    currentUser,
-    can,
-  } = useApp();
+  const { parties, items: catalog, updateSalesOrder, updateEmail, addToast, currentUser, can } = useApp();
   const navigate = useNavigate();
   const canGenerate = can('sales_orders', 'create');
 
-  const party = parties.find((p) => p.id === so.partyId);
   const generated = so.soGenerated || !!so.erpHandoff;
   const soEmailed = !!so.sentAt; // SO Sent Date populated → the SO email has gone out
-  const handoffMissing = generated && !so.erpHandoff;
+  // Handoff now happens at send time — only an EMAILED SO without a handoff
+  // record (seed/legacy data) is broken and needs repair.
+  const handoffMissing = soEmailed && !so.erpHandoff;
 
-  // Start in the generated-document view once the SO exists; otherwise open the
-  // editable form.
-  const [editing, setEditing] = useState(!generated);
-  const [form, setForm] = useState<SoForm>(() => initSoForm(so, party, commercialTerms));
-  const [lines, setLines] = useState<LineItem[]>(() => so.items.map(clone));
-  const [errors, setErrors] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState(false);
+  const previewResolved = useMemo(() => resolveSalesOrder(so, { parties, catalog }), [so, parties, catalog]);
 
-  const set = <K extends keyof SoForm>(k: K, v: SoForm[K]) => setForm((f) => ({ ...f, [k]: v }));
-
-  const deliveryChoices = useMemo(() => activeDeliveryOptions(commercialTerms), [commercialTerms]);
-  const officeAdmins = useMemo(() => {
-    const inOffice = USERS.filter((u) => u.role === 'office_admin' && u.officeId === form.officeId && u.active);
-    const list = inOffice.length ? inOffice : USERS.filter((u) => u.role === 'office_admin' && u.active);
-    return list.map((u) => u.fullName);
-  }, [form.officeId]);
-
-  const effectiveShipping = form.sameAsBilling ? form.billingAddress : form.shippingAddress;
-  const packingAmount = Math.round((computeTotals(lines, 0).taxable * form.packingPct) / 100);
-  const totals = computeTotals(lines, packingAmount);
-  const paymentSum = paymentTotal(form.payment);
-  const contact = (so.customerName.split(' ')[0] || 'Sir/Madam').trim();
-
-  const validate = () => {
-    const e: Record<string, string> = {};
-    if (!form.billingAddress.trim()) e.billingAddress = 'Billing address is required';
-    if (!form.phone.trim() && !form.email.trim()) e.phone = 'Provide a phone number or email';
-    if (!form.gstin.trim()) e.gstin = 'GSTIN is required';
-    if (!form.kindAttentionName.trim()) e.kindAttentionName = 'Kind attention name is required';
-    if (!form.poNumber.trim()) e.poNumber = 'PO number is required';
-    if (!form.poDate) e.poDate = 'PO date is required';
-    if (!form.officeId) e.officeId = 'Sales office is required';
-    if (!form.owner) e.owner = 'Owner is required';
-    if (!form.poProofNotes.trim()) e.poProof = 'Add the PO document reference and details';
-    if (!form.expectedDelivery) e.expectedDelivery = 'Expected delivery date is required';
-    if (paymentSum !== 100) e.payment = 'Payment terms must total 100%.';
-    if (lines.length === 0) e.lines = 'Add at least one line item';
-    else if (lines.some((l) => !l.itemId)) e.lines = 'Every line must have an item selected';
-    else if (lines.some((l) => l.quantity <= 0)) e.lines = 'Quantities must be greater than 0';
-    else if (lines.some((l) => l.unitPrice <= 0)) e.lines = 'Unit price must be greater than 0';
-    setErrors(e);
-    if (Object.keys(e).length) {
-      addToast({ type: 'error', title: 'Please fix the highlighted fields', message: `${Object.keys(e).length} field(s) need attention.` });
-    }
-    return Object.keys(e).length === 0;
-  };
-
-  // The edited SO fields, ready to merge onto the existing record. Never mints a
-  // new SO number — the verified record already owns one.
-  const buildPatch = (): Partial<SalesOrder> => {
-    const paymentTermsText =
-      formatPaymentTerms(form.payment) + (form.creditDays > 0 ? `, ${form.creditDays} Credit Days` : '');
-    return {
-      poNumber: form.poNumber,
-      poDate: form.poDate,
-      officeId: form.officeId,
-      owner: form.owner,
-      officeAdmin: form.officeAdmin || undefined,
-      billingAddress: form.billingAddress,
-      shippingAddress: effectiveShipping,
-      customerPhone: form.phone || undefined,
-      customerEmail: form.email || undefined,
-      pincode: form.pincode || undefined,
-      kindAttentionName: form.kindAttentionName || undefined,
-      kindAttentionEmail: form.kindAttentionEmail || undefined,
-      poProofType: form.poProofType,
-      poProofNotes: form.poProofNotes || undefined,
-      deliveryDate: form.expectedDelivery,
-      items: lines.map(clone),
-      paymentTerms: paymentTermsText,
-      deliveryTerms: form.deliveryTerms,
-      warranty: formatWarranty(form.warrantyYears),
-      packingCharges: packingAmount,
-      value: totals.grandTotal,
-      poValue: totals.grandTotal,
-      commercials: { packingPct: form.packingPct, payment: { ...form.payment }, creditDays: form.creditDays },
-      // Structured shared-model sections (prefilled from the verified PO / party).
-      buyer: {
-        name: so.customerName,
-        code: so.customerCode,
-        address: form.billingAddress,
-        pincode: form.pincode || undefined,
-        country: 'India',
-        phone: form.phone || undefined,
-        email: form.email || undefined,
-        gstin: form.gstin || undefined,
-      },
-      consignee: {
-        name: so.customerName,
-        address: effectiveShipping,
-        country: 'India',
-        gstin: form.gstin || undefined,
-      },
-      consigneeSameAsBuyer: form.sameAsBilling || effectiveShipping.trim() === form.billingAddress.trim(),
-      kindAttention:
-        form.kindAttentionName || form.kindAttentionEmail
-          ? { name: form.kindAttentionName || undefined, email: form.kindAttentionEmail || undefined }
-          : undefined,
-      salesperson: { name: form.owner, officeId: form.officeId, owner: form.owner },
-      deliveryTimeline: form.deliveryTimeline || undefined,
-      expectedDeliveryDate: form.expectedDelivery || undefined,
-      freight: form.freight || undefined,
-      inspection: form.inspection || undefined,
-      additionalTerms: form.additionalTerms || undefined,
-    };
-  };
-
-  // Live document preview — resolved from the current (possibly edited) form
-  // merged onto the SO record, so the preview matches exactly what Save writes.
-  const previewResolved = useMemo(
-    () => resolveSalesOrder({ ...so, ...buildPatch() }, { parties, catalog }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [so, form, lines]
-  );
-
-  // Generate the Sales Order: persist the (possibly edited) fields, flip it live
-  // and, in the SAME update, link a Pending ERP Handoff record. Guarded so a
-  // second click never mints another SO or a duplicate handoff. Stays in inbox.
-  const doGenerate = () => {
-    if (!validate()) return;
-    if (so.erpHandoff) return; // already generated — Save is used instead
-    const now = `${TODAY_ISO}T12:30:00`;
-    updateSalesOrder(so.id, {
-      ...buildPatch(),
-      soGenerated: true,
-      status: 'so_sent',
-      verifiedBy: so.verifiedBy ?? currentUser.fullName,
-      verifiedAt: so.verifiedAt ?? now,
-      erpHandoff: { state: 'pending', source: 'po_verification', submittedAt: now, submittedBy: currentUser.fullName, updatedAt: now, revisionNumber: so.revisionNumber },
-      activity: [
-        ...so.activity,
-        { id: `act-${so.id}-sogen-${Date.now()}`, date: now, actor: currentUser.fullName, action: 'Sales Order generated', detail: `${so.number} generated from verified PO & quotation — added to ERP Handoff (Pending)` },
-      ],
-    });
-    addToast({ type: 'success', title: 'Sales Order generated', message: 'Sales Order generated successfully. Preview it and add it to the email before sending.' });
-    setEditing(false);
-  };
-
-  // Edit an already-generated SO: save changes to the SAME record — no new SO
-  // number and no additional ERP Handoff record.
-  const doSave = () => {
-    if (!validate()) return;
-    const now = `${TODAY_ISO}T12:35:00`;
-    updateSalesOrder(so.id, {
-      ...buildPatch(),
-      activity: [
-        ...so.activity,
-        { id: `act-${so.id}-soedit-${Date.now()}`, date: now, actor: currentUser.fullName, action: 'Sales Order updated', detail: `${so.number} edited before sending` },
-      ],
-    });
-    addToast({ type: 'success', title: 'Sales Order updated', message: `${so.number} saved. Preview it and add it to the email before sending.` });
-    setEditing(false);
-  };
-
-  // Repair a broken link: a Sales Order marked generated (seed/legacy) but with
+  // Repair a broken link: a Sales Order already emailed (seed/legacy) but with
   // no ERP Handoff record. Creates the missing Pending handoff.
   const repairHandoff = () => {
     if (so.erpHandoff) return;
@@ -1155,41 +884,15 @@ function GenerateTab({
   // email. Only the system-generated SO document can be attached — there is no
   // generic file upload. The final send happens from the centre panel.
   const addSoToEmail = () => {
-    const attach: SalesOrderAttachment = {
-      fileName: `${so.number.replace(/\//g, '-')}.pdf`,
-      soNumber: so.number,
-      fileType: 'PDF',
-      value: so.value,
-      addedBy: 'system',
-      addedAt: ATTACH_TS,
-      sizeLabel: `${140 + so.items.length * 8} KB`,
-    };
-    updateEmail(email.id, {
-      composeIntent: 'so-send',
-      attachedQuote: undefined,
-      attachedSalesOrder: attach,
-      draft: {
-        from: email.recipient,
-        to: email.senderEmail,
-        cc: email.cc.join(', '),
-        subject: `Sales Order ${so.number} against PO ${so.poNumber}`,
-        body:
-          `Dear ${contact},\n\nThank you for Purchase Order ${so.poNumber}.\n\n` +
-          `Please find attached our Sales Order ${so.number} raised against your PO, for a total value of ${formatINR(so.value)}. ` +
-          `Kindly review and confirm so we may proceed with processing.\n\n` +
-          emailSignature(so.owner, officeName(so.officeId)),
-        relatedDoc: so.number,
-        aiGenerated: true,
-      },
-    });
+    updateEmail(email.id, soSendEmailPatch(email, so));
     addToast({ type: 'success', title: 'Added to email', message: 'Sales Order attached. Review the email in the centre panel and send it.' });
     onPrepared?.();
   };
 
   const soAttached = email.attachedSalesOrder?.soNumber === so.number && email.composeIntent === 'so-send';
 
-  // ---- Editable form -------------------------------------------------------
-  if (editing) {
+  // ---- Not yet generated: entry card that opens the SO Generation drawer ----
+  if (!generated) {
     return (
       <div className="space-y-3">
         <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-700">
@@ -1197,187 +900,51 @@ function GenerateTab({
           <span>
             PO verified against the accepted quotation
             {so.verifiedBy ? ` by ${so.verifiedBy}` : ''}
-            {so.verifiedAt ? ` on ${formatDate(so.verifiedAt.slice(0, 10), { short: true })}` : ''}. Review the prefilled Sales Order and generate it.
+            {so.verifiedAt ? ` on ${formatDate(so.verifiedAt.slice(0, 10), { short: true })}` : ''}. The Sales Order is ready to be generated.
           </span>
         </div>
 
-        {/* 1. Client Details */}
-        <FormSection icon={<User2 className="h-3.5 w-3.5" />} n={1} label="Client Details">
-          <div className="rounded-lg bg-surface-50 px-2.5 py-2 text-[12px]">
-            <span className="text-surface-400">Customer / Party:</span>{' '}
-            <span className="font-semibold text-surface-800">{so.customerName}</span>
-            <span className="text-surface-400"> · {so.customerCode}</span>
+        <div className="overflow-hidden rounded-xl border border-surface-200">
+          <div className="flex items-center justify-between border-b border-surface-100 bg-surface-50/70 px-3 py-2">
+            <span className="flex items-center gap-1.5 text-[12px] font-semibold text-surface-700">
+              <FileSpreadsheet className="h-3.5 w-3.5 text-brand-600" /> {so.number}
+            </span>
+            <StatusBadge tone="blue" label="Ready to Generate" dot />
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <TextField label="Phone" value={form.phone} error={errors.phone} onChange={(e) => set('phone', e.target.value)} className="py-1.5 text-[13px]" placeholder="+91 …" />
-            <TextField label="Email" type="email" value={form.email} onChange={(e) => set('email', e.target.value)} className="py-1.5 text-[13px]" placeholder="orders@customer.com" />
-            <TextField label="GSTIN" required value={form.gstin} error={errors.gstin} onChange={(e) => set('gstin', e.target.value.toUpperCase())} className="py-1.5 text-[13px]" placeholder="27AAACR…" />
-            <TextField label="Pincode" value={form.pincode} onChange={(e) => set('pincode', e.target.value)} className="py-1.5 text-[13px]" placeholder="400001" />
+          <div className="grid grid-cols-1 gap-x-5 gap-y-1 px-3 py-2.5 text-[12px]">
+            <p><span className="text-surface-400">Customer:</span> <span className="font-medium text-surface-800">{so.customerName}</span></p>
+            <p><span className="text-surface-400">PO Number:</span> <span className="font-medium text-surface-800">{so.poNumber}</span></p>
+            <p><span className="text-surface-400">Quotation:</span> <span className="font-medium text-surface-800">{so.quotationNumber ?? quote?.number ?? '—'}</span></p>
+            <p><span className="text-surface-400">Sales Office:</span> <span className="font-medium text-surface-800">{officeName(so.officeId)}</span></p>
+            <p><span className="text-surface-400">Owner:</span> <span className="font-medium text-surface-800">{so.owner}</span></p>
           </div>
-          <TextAreaField label="Billing Address" required rows={2} value={form.billingAddress} error={errors.billingAddress} onChange={(e) => set('billingAddress', e.target.value)} className="text-[13px]" />
-          <div>
-            <div className="mb-1 flex items-center justify-between">
-              <label className="label mb-0">Shipping Address</label>
-              <label className="flex items-center gap-1.5 text-[11px] text-surface-500">
-                <Toggle checked={form.sameAsBilling} onChange={(v) => set('sameAsBilling', v)} />
-                Same as billing
-              </label>
-            </div>
-            <TextAreaField label="" rows={2} value={effectiveShipping} disabled={form.sameAsBilling} onChange={(e) => set('shippingAddress', e.target.value)} className="text-[13px]" placeholder={form.sameAsBilling ? 'Same as billing address' : 'Shipping address'} />
+          <div className="flex items-center justify-between border-t border-surface-200 px-3 py-2">
+            <span className="text-[12px] font-medium text-surface-600">Order Value</span>
+            <span className="text-[15px] font-bold text-surface-900">{formatINR(so.value)}</span>
           </div>
-          <div className="grid grid-cols-1 gap-2">
-            <TextField label="Kind Attention — Name" required value={form.kindAttentionName} error={errors.kindAttentionName} onChange={(e) => set('kindAttentionName', e.target.value)} className="py-1.5 text-[13px]" placeholder="Contact person" />
-            <TextField label="Kind Attention — Email" type="email" value={form.kindAttentionEmail} onChange={(e) => set('kindAttentionEmail', e.target.value)} className="py-1.5 text-[13px]" placeholder="contact@customer.com" />
-          </div>
-        </FormSection>
-
-        {/* 2. Order Details */}
-        <FormSection icon={<FileText className="h-3.5 w-3.5" />} n={2} label="Order Details">
-          <div className="grid grid-cols-2 gap-2">
-            <TextField label="PO Number" required value={form.poNumber} error={errors.poNumber} onChange={(e) => set('poNumber', e.target.value)} className="py-1.5 text-[13px]" />
-            <TextField label="PO Date" required type="date" value={form.poDate} error={errors.poDate} onChange={(e) => set('poDate', e.target.value)} className="py-1.5 text-[13px]" />
-          </div>
-          <div className="rounded-lg bg-surface-50 px-2.5 py-2 text-[12px]">
-            <span className="text-surface-400">Linked Quotation:</span>{' '}
-            <span className="font-semibold text-surface-800">{so.quotationNumber ?? quote?.number ?? '—'}</span>
-          </div>
-          <SelectField label="Sales Office" required value={form.officeId} error={errors.officeId} onChange={(e) => set('officeId', e.target.value)} options={(role === 'super_admin' ? OFFICES : OFFICES.filter((o) => o.id === so.officeId)).map((o) => ({ value: o.id, label: o.name }))} className="py-1.5 text-[13px]" />
-          <div className="grid grid-cols-1 gap-2">
-            <SelectField label="Owner / Sales Person" required value={form.owner} error={errors.owner} onChange={(e) => set('owner', e.target.value)} options={OWNERS.map((o) => ({ value: o, label: o }))} className="py-1.5 text-[13px]" />
-            <SelectField label="Office Admin" value={form.officeAdmin} onChange={(e) => set('officeAdmin', e.target.value)} options={officeAdmins.map((o) => ({ value: o, label: o }))} placeholder="Select office admin" className="py-1.5 text-[13px]" />
-          </div>
-          <div>
-            <label className="label">PO Proof Type</label>
-            <div className="grid grid-cols-1 gap-1.5">
-              {SO_PO_PROOF_OPTIONS.map((opt) => {
-                const OptIcon = opt.icon;
-                const active = form.poProofType === opt.value;
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => set('poProofType', opt.value)}
-                    className={classNames(
-                      'flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[12px] font-medium transition',
-                      active ? 'border-brand-500 bg-brand-50 text-brand-700 ring-1 ring-brand-500/30' : 'border-surface-200 text-surface-600 hover:border-surface-300 hover:bg-surface-50'
-                    )}
-                  >
-                    <OptIcon className="h-3.5 w-3.5 flex-none" />
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <TextAreaField
-            label={form.poProofType === 'uploaded' ? 'PO Document Reference & Notes' : 'Proof Notes'}
-            required
-            rows={2}
-            value={form.poProofNotes}
-            error={errors.poProof}
-            onChange={(e) => set('poProofNotes', e.target.value)}
-            className="text-[13px]"
-            placeholder="PO document number, reference and key details…"
-          />
-        </FormSection>
-
-        {/* 3. Catalogue Items */}
-        <FormSection
-          icon={<Boxes className="h-3.5 w-3.5" />}
-          n={3}
-          label="Catalogue Items"
-          action={<span className="text-[11px] text-surface-400">{lines.length} line(s)</span>}
-        >
-          <ItemLineEditor items={lines} catalog={catalog} onChange={setLines} />
-          {errors.lines && <p className="mt-1.5 text-[11px] font-medium text-rose-600">{errors.lines}</p>}
-        </FormSection>
-
-        {/* 4. Commercial Terms */}
-        <FormSection icon={<Receipt className="h-3.5 w-3.5" />} n={4} label="Commercial Terms">
-          <div className="grid grid-cols-2 gap-2">
-            <TextField label="Packing (%)" type="number" min={0} max={100} value={form.packingPct} onChange={(e) => set('packingPct', Math.max(0, Math.min(100, Number(e.target.value))))} className="py-1.5 text-[13px]" hint={`≈ ${formatINR(packingAmount)}`} />
-            <TextField label="Warranty (Years)" type="number" min={1} value={form.warrantyYears} onChange={(e) => set('warrantyYears', Math.max(1, Number(e.target.value)))} className="py-1.5 text-[13px]" />
-            <SelectField label="Delivery Terms" value={form.deliveryTerms} onChange={(e) => set('deliveryTerms', e.target.value)} options={deliveryChoices.map((o) => ({ value: o.name, label: o.name }))} placeholder="Select delivery option" className="py-1.5 text-[13px]" wrapClassName="col-span-2" />
-            <TextField label="Expected Delivery Date" required type="date" value={form.expectedDelivery} error={errors.expectedDelivery} onChange={(e) => set('expectedDelivery', e.target.value)} className="py-1.5 text-[13px]" wrapClassName="col-span-2" />
-          </div>
-          <div>
-            <label className="label">Payment Terms</label>
-            <div className="grid grid-cols-2 gap-2">
-              {PAYMENT_FIELDS.map((f) => (
-                <div key={f.key}>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      className="input py-1.5 pr-7 text-[13px]"
-                      value={form.payment[f.key]}
-                      onChange={(e) => set('payment', { ...form.payment, [f.key]: Math.max(0, Math.min(100, Number(e.target.value))) })}
-                    />
-                    <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[12px] text-surface-400">%</span>
-                  </div>
-                  <p className="mt-0.5 text-[11px] text-surface-500">{SO_PAYMENT_LABEL[f.key]}</p>
-                </div>
-              ))}
-            </div>
-            <div className={classNames('mt-1.5 text-[11px] font-medium', paymentSum === 100 ? 'text-emerald-600' : 'text-rose-600')}>
-              Total: {paymentSum}%{paymentSum !== 100 && ' — must total 100%.'}
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <TextField label="Credit Days" type="number" min={0} value={form.creditDays} onChange={(e) => set('creditDays', Math.max(0, Number(e.target.value)))} className="py-1.5 text-[13px]" />
-            <TextField label="Delivery Timeline" value={form.deliveryTimeline} onChange={(e) => set('deliveryTimeline', e.target.value)} className="py-1.5 text-[13px]" placeholder="e.g. 4–6 weeks" />
-            <TextField label="Freight / Transportation" value={form.freight} onChange={(e) => set('freight', e.target.value)} className="py-1.5 text-[13px]" placeholder="e.g. Extra at actuals" />
-            <TextField label="Inspection" value={form.inspection} onChange={(e) => set('inspection', e.target.value)} className="py-1.5 text-[13px]" placeholder="e.g. At works" />
-          </div>
-          <TextAreaField label="Additional Commercial Terms" rows={2} value={form.additionalTerms} onChange={(e) => set('additionalTerms', e.target.value)} className="text-[13px]" placeholder="Any additional terms…" />
-        </FormSection>
-
-        {/* 5. Amount Summary */}
-        <FormSection icon={<Calculator className="h-3.5 w-3.5" />} n={5} label="Amount Summary">
-          <InfoRow label="Subtotal" value={formatINR(totals.subtotal)} />
-          <InfoRow label="Discount" value={`- ${formatINR(totals.discount)}`} />
-          <InfoRow label="Taxable Value" value={formatINR(totals.taxable)} />
-          <InfoRow label="GST" value={formatINR(totals.tax)} />
-          <InfoRow label={`Packing & Forwarding (${form.packingPct}%)`} value={formatINR(packingAmount)} />
-          <div className="mt-1.5 flex items-center justify-between border-t border-surface-200 pt-2">
-            <span className="text-[13px] font-semibold text-surface-800">Grand Total</span>
-            <span className="text-[15px] font-bold text-brand-700">{formatINR(totals.grandTotal)}</span>
-          </div>
-        </FormSection>
-
-        {/* Actions */}
-        <div className="space-y-2 pt-1">
-          <Button variant="secondary" size="sm" className="w-full" leftIcon={<Eye className="h-4 w-4" />} onClick={() => setPreview(true)}>
-            Preview Sales Order
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            className="w-full"
-            leftIcon={<FileSpreadsheet className="h-4 w-4" />}
-            onClick={generated ? doSave : doGenerate}
-            disabled={!canGenerate}
-            title={!canGenerate ? 'You do not have permission to generate Sales Orders' : undefined}
-          >
-            {generated ? 'Save Sales Order' : 'Generate Sales Order'}
-          </Button>
-          {generated && (
-            <Button variant="ghost" size="sm" className="w-full" leftIcon={<ArrowLeft className="h-4 w-4" />} onClick={() => setEditing(false)}>
-              Cancel — back to generated SO
-            </Button>
-          )}
-          {!canGenerate && <p className="text-center text-[11px] font-medium text-rose-600">Create permission required.</p>}
         </div>
 
-        <SoPreviewModal open={preview} onClose={() => setPreview(false)} resolved={previewResolved} />
+        <Button
+          variant="primary"
+          size="sm"
+          className="w-full"
+          leftIcon={<FileSpreadsheet className="h-4 w-4" />}
+          onClick={onOpenDrawer}
+          disabled={!canGenerate}
+          title={!canGenerate ? 'You do not have permission to generate Sales Orders' : 'Open the Sales Order form'}
+        >
+          Generate Sales Order
+        </Button>
+        <p className="text-center text-[11px] text-surface-400">
+          Opens the prefilled Sales Order form. Once generated, it is attached to the email and submitted to ERP Handoff after the email is sent.
+        </p>
+        {!canGenerate && <p className="text-center text-[11px] font-medium text-rose-600">Create permission required.</p>}
       </div>
     );
   }
 
   // ---- Generated document view (read-only) ---------------------------------
-  const paymentTermsText =
-    formatPaymentTerms(form.payment) + (form.creditDays > 0 ? `, ${form.creditDays} Credit Days` : '');
+  const paymentTermsText = so.paymentTerms || '—';
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-700">
@@ -1385,7 +952,8 @@ function GenerateTab({
         <span>
           <span className="font-semibold">{so.number}</span> generated from the verified PO &amp; quotation
           {so.erpHandoff ? ' and added to ERP Handoff (Pending).' : '.'}
-          {!soEmailed && ' Preview it and add it to the email before sending.'}
+          {!so.erpHandoff && !soEmailed && ' It will be submitted to ERP Handoff once the email is sent.'}
+          {!soEmailed && ' Review the email in the centre panel and send it.'}
         </span>
       </div>
 
@@ -1440,7 +1008,7 @@ function GenerateTab({
         {!soEmailed && (
           <>
             <div className="grid grid-cols-2 gap-2">
-              <Button variant="secondary" size="sm" leftIcon={<Pencil className="h-4 w-4" />} onClick={() => setEditing(true)} disabled={!canGenerate}>Edit Sales Order</Button>
+              <Button variant="secondary" size="sm" leftIcon={<Pencil className="h-4 w-4" />} onClick={onOpenDrawer} disabled={!canGenerate}>Edit Sales Order</Button>
               <Button variant="secondary" size="sm" leftIcon={<Eye className="h-4 w-4" />} onClick={() => setPreview(true)}>Preview</Button>
             </div>
             <Button variant="primary" size="sm" className="w-full" leftIcon={<Mail className="h-4 w-4" />} onClick={addSoToEmail}>
@@ -1458,60 +1026,6 @@ function GenerateTab({
 
       <SoPreviewModal open={preview} onClose={() => setPreview(false)} resolved={previewResolved} />
     </div>
-  );
-}
-
-// Compact section wrapper for the SO Generation form (narrower than the page's
-// full SectionCard, tuned for the inbox right panel).
-function FormSection({
-  icon,
-  n,
-  label,
-  action,
-  children,
-}: {
-  icon: React.ReactNode;
-  n: number;
-  label: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-xl border border-surface-200">
-      <div className="flex items-center justify-between gap-2 border-b border-surface-100 px-3 py-2">
-        <h4 className="flex items-center gap-1.5 text-[12px] font-semibold text-surface-700">
-          <span className="flex h-5 w-5 items-center justify-center rounded bg-brand-50 text-brand-600">{icon}</span>
-          <span className="text-surface-400">{n}.</span> {label}
-        </h4>
-        {action}
-      </div>
-      <div className="space-y-2.5 p-3">{children}</div>
-    </section>
-  );
-}
-
-// Professional Sales Order document preview — the shared SO Acknowledgement
-// renderer, resolved from the current form so it always matches what is saved.
-function SoPreviewModal({
-  open,
-  onClose,
-  resolved,
-}: {
-  open: boolean;
-  onClose: () => void;
-  resolved: ResolvedSalesOrder;
-}) {
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      size="xl"
-      title="Sales Order Preview"
-      subtitle={`${resolved.soNumber} · ${resolved.buyer.name ?? ''}`}
-      footer={<Button variant="primary" onClick={onClose}>Close</Button>}
-    >
-      <SalesOrderDocument resolved={resolved} showLetterhead />
-    </Modal>
   );
 }
 

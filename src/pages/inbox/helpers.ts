@@ -1,7 +1,50 @@
-import type { ExtractionField, InboxEmail, Quotation } from '@/types';
+import type { ExtractionField, InboxEmail, Quotation, SalesOrder } from '@/types';
+import { emailSignature } from '@/lib/brand';
+import { officeName } from '@/data/offices';
+import { formatINR } from '@/lib/format';
 
 export function isValidEmail(s: string): boolean {
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test((s ?? '').trim());
+}
+
+// Prototype attach timestamp — kept consistent with the app's seeded clock.
+export const SO_ATTACH_TS = '2026-08-13T12:40:00';
+
+/**
+ * The email patch that attaches the generated Sales Order PDF to the middle
+ * composer and prefills the customer email (compose intent `so-send`). Shared
+ * by the SO Generation drawer ("Generate & Add to Email") and the generated-SO
+ * panel ("Add Sales Order to Email") so both produce the identical payload.
+ * Pass the SO with any just-saved edits merged in, so value/items are current.
+ */
+export function soSendEmailPatch(email: InboxEmail, so: SalesOrder): Partial<InboxEmail> {
+  const contact = (so.customerName.split(' ')[0] || 'Sir/Madam').trim();
+  return {
+    composeIntent: 'so-send',
+    attachedQuote: undefined,
+    attachedSalesOrder: {
+      fileName: `${so.number.replace(/\//g, '-')}.pdf`,
+      soNumber: so.number,
+      fileType: 'PDF',
+      value: so.value,
+      addedBy: 'system',
+      addedAt: SO_ATTACH_TS,
+      sizeLabel: `${140 + so.items.length * 8} KB`,
+    },
+    draft: {
+      from: email.recipient,
+      to: email.senderEmail,
+      cc: email.cc.join(', '),
+      subject: `Sales Order ${so.number} against PO ${so.poNumber}`,
+      body:
+        `Dear ${contact},\n\nThank you for Purchase Order ${so.poNumber}.\n\n` +
+        `Please find attached our Sales Order ${so.number} raised against your PO, for a total value of ${formatINR(so.value)}. ` +
+        `Kindly review and confirm so we may proceed with processing.\n\n` +
+        emailSignature(so.owner, officeName(so.officeId)),
+      relatedDoc: so.number,
+      aiGenerated: true,
+    },
+  };
 }
 
 /**

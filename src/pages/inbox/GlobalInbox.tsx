@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
-import { Inbox, ArrowLeft, MailOpen, FileText, RefreshCw, ClipboardCheck, FilePenLine, SlidersHorizontal } from 'lucide-react';
+import { Inbox, ArrowLeft, MailOpen, FileText, RefreshCw, ClipboardCheck, FilePenLine, SlidersHorizontal, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import { SearchInput, FilterSelect, FilterBar, EmptyState, type FilterChip } from '@/components/ui';
 import { Tabs } from '@/components/ui/misc';
@@ -11,7 +11,8 @@ import { OWNERS } from '@/data/users';
 import { INBOX_CLASSIFICATION } from '@/lib/labels';
 import type { EmailClassification, InboxEmail } from '@/types';
 import { classNames } from '@/lib/format';
-import { EmailList } from './EmailList';
+import { EmailList, EmailIconRail } from './EmailList';
+import { SoGenerationDrawer } from './SoGenerationDrawer';
 import { EmailActionPanel } from './EmailActionPanel';
 import { InboxCenterPanel } from './InboxCenterPanel';
 import { QuoteToolsPanel } from './QuoteToolsPanel';
@@ -63,6 +64,29 @@ export default function GlobalInbox() {
   // watches it to pull the freshly written draft in and scroll/focus itself.
   const [focusTick, setFocusTick] = useState(0);
   const onPrepared = () => setFocusTick((t) => t + 1);
+
+  // SO Generation drawer + the manual/automatic email-list minimise. Opening
+  // the drawer collapses the list to its icon rail so the selected thread stays
+  // visible beside the drawer; closing restores whatever the user had before.
+  const [soDrawerOpen, setSoDrawerOpen] = useState(false);
+  const [listCollapsed, setListCollapsed] = useState(false);
+  const prevListCollapsedRef = useRef(false);
+  const openSoDrawer = () => {
+    prevListCollapsedRef.current = listCollapsed;
+    setListCollapsed(true);
+    setSoDrawerOpen(true);
+  };
+  const closeSoDrawer = () => {
+    setSoDrawerOpen(false);
+    setListCollapsed(prevListCollapsedRef.current);
+  };
+
+  // Changing conversation while the drawer is open closes it (its form state
+  // belongs to the previous email's Sales Order) and restores the list.
+  useEffect(() => {
+    if (soDrawerOpen) closeSoDrawer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
 
   // Auto-optimise the workspace: collapse the app sidebar to its icon rail while
   // the inbox is open, then restore the user's previous state on leaving.
@@ -316,10 +340,17 @@ export default function GlobalInbox() {
           'grid grid-cols-1 gap-4',
           'min-[1180px]:h-[calc(100vh-250px)] min-[1180px]:min-h-[520px] min-[1180px]:gap-0',
           'min-[1180px]:overflow-hidden min-[1180px]:rounded-xl min-[1180px]:border min-[1180px]:border-surface-200 min-[1180px]:bg-white min-[1180px]:shadow-card',
-          'min-[1180px]:grid-cols-[minmax(220px,0.55fr)_minmax(320px,0.95fr)_minmax(340px,1fr)]'
+          // Collapsed → the left column shrinks to a 56px icon rail so the
+          // thread + workspace keep maximum width beside the SO drawer.
+          listCollapsed
+            ? 'min-[1180px]:grid-cols-[56px_minmax(320px,0.95fr)_minmax(340px,1fr)]'
+            : 'min-[1180px]:grid-cols-[minmax(220px,0.55fr)_minmax(320px,0.95fr)_minmax(340px,1fr)]'
         )}
       >
-        {/* Left: email list — narrowest, compact, subtly muted, divider on right */}
+        {/* Left: email list — narrowest, compact, subtly muted, divider on right.
+            Collapsible to a compact icon rail (auto while the SO Generation
+            drawer is open; manually via the toggle). Collapse only exists at
+            desktop widths — mobile always gets the full list. */}
         <div
           className={classNames(
             'card overflow-hidden min-[1180px]:flex min-[1180px]:flex-col',
@@ -327,8 +358,39 @@ export default function GlobalInbox() {
             mobileView === 'detail' && 'hidden min-[1180px]:flex'
           )}
         >
+          <div
+            className={classNames(
+              'hidden flex-none items-center border-b border-surface-100 px-2 py-1.5 min-[1180px]:flex',
+              listCollapsed ? 'justify-center' : 'justify-between'
+            )}
+          >
+            {!listCollapsed && (
+              <span className="pl-2 text-[11px] font-semibold uppercase tracking-wide text-surface-400">
+                {filtered.length} email{filtered.length === 1 ? '' : 's'}
+              </span>
+            )}
+            <button
+              onClick={() => setListCollapsed((v) => !v)}
+              title={listCollapsed ? 'Expand email list' : 'Minimise email list'}
+              aria-label={listCollapsed ? 'Expand email list' : 'Minimise email list'}
+              className="rounded-lg p-1.5 text-surface-400 transition-colors hover:bg-surface-100 hover:text-surface-600"
+            >
+              {listCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+            </button>
+          </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <EmailList emails={filtered} selectedId={selectedId} onSelect={onSelect} />
+            {listCollapsed ? (
+              <>
+                <div className="hidden min-[1180px]:block">
+                  <EmailIconRail emails={filtered} selectedId={selectedId} onSelect={onSelect} />
+                </div>
+                <div className="min-[1180px]:hidden">
+                  <EmailList emails={filtered} selectedId={selectedId} onSelect={onSelect} />
+                </div>
+              </>
+            ) : (
+              <EmailList emails={filtered} selectedId={selectedId} onSelect={onSelect} />
+            )}
           </div>
         </div>
 
@@ -397,7 +459,7 @@ export default function GlobalInbox() {
                 ) : isRevision ? (
                   <RevisionQuotePanel email={selected} onPrepared={onPrepared} />
                 ) : isPoVerify ? (
-                  <PoVerificationPanel email={selected} onPrepared={onPrepared} />
+                  <PoVerificationPanel email={selected} onPrepared={onPrepared} onGenerateSo={openSoDrawer} />
                 ) : isSoRevision ? (
                   <SoRevisionPanel email={selected} salesOrder={soRevisionSalesOrder!} onPrepared={onPrepared} />
                 ) : (
@@ -412,6 +474,19 @@ export default function GlobalInbox() {
           </div>
         )}
       </div>
+
+      {/* SO Generation drawer — full-height right drawer (~65% on desktop,
+          full-screen on tablet/mobile) over the inbox. Conditionally mounted so
+          its form state initialises fresh from the selected Sales Order. */}
+      {soDrawerOpen && isPoVerify && poSalesOrder && selected && (
+        <SoGenerationDrawer
+          email={selected}
+          so={poSalesOrder}
+          quote={poQuote}
+          onPrepared={onPrepared}
+          onClose={closeSoDrawer}
+        />
+      )}
 
       {/* subtle icon reference so Inbox import is used when list is empty on mobile */}
       {filtered.length === 0 && mobileView === 'list' && (

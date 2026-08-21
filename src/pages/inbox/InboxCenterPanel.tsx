@@ -495,22 +495,49 @@ export function InboxCenterPanel({
   };
 
   // ---- PO verification — Path 3: send the generated Sales Order. The SO was
-  // already generated + linked to a Pending ERP Handoff by the right panel; here
-  // we email it and stamp the SO Sent Date. ERP Handoff stays Pending (no
-  // duplicate is created). ----
+  // generated + attached by the SO Generation drawer; here we email it, stamp
+  // the SO Sent Date and — now that the customer email has actually gone out —
+  // submit the SO to ERP Handoff (Pending). Legacy records that already carry a
+  // handoff keep it untouched (no duplicate is ever created). ----
   const sendSalesOrder = () => {
     if (!canFinalSend || !salesOrder) return;
     const so = salesOrder;
+    const newHandoff = !so.erpHandoff;
+    const erpHandoff: ErpHandoff = so.erpHandoff ?? {
+      state: 'pending',
+      source: 'po_verification',
+      submittedAt: SENT_TS,
+      submittedBy: currentUser.fullName,
+      updatedAt: SENT_TS,
+      revisionNumber: so.revisionNumber,
+    };
+    const activity = [
+      ...so.activity,
+      { id: `act-${so.id}-sosend-${Date.now()}`, date: SENT_TS, actor: currentUser.fullName, action: 'Sales Order emailed to customer', detail: `${email.attachedSalesOrder?.soNumber ?? so.number} → ${draft.to}` },
+    ];
+    if (newHandoff) {
+      activity.push({
+        id: `act-${so.id}-handoff-${Date.now()}`,
+        date: SENT_TS,
+        actor: currentUser.fullName,
+        action: 'Submitted to ERP Handoff',
+        detail: `${so.number} added to ERP Handoff (Pending) after the SO email was sent`,
+      });
+    }
     updateEmail(email.id, { draft, draftSaved: true, sent: true, sentAt: SENT_TS, needsReview: false });
     updateSalesOrder(so.id, {
       sentAt: SENT_TS,
       status: 'so_sent',
-      activity: [
-        ...so.activity,
-        { id: `act-${so.id}-sosend-${Date.now()}`, date: SENT_TS, actor: currentUser.fullName, action: 'Sales Order emailed to customer', detail: `${email.attachedSalesOrder?.soNumber ?? so.number} → ${draft.to}` },
-      ],
+      erpHandoff,
+      activity,
     });
-    addToast({ type: 'success', title: 'Sales Order sent successfully.', message: `${so.number} emailed to ${draft.to}. ERP Handoff remains Pending.` });
+    addToast({
+      type: 'success',
+      title: 'Sales Order sent successfully.',
+      message: newHandoff
+        ? `${so.number} emailed to ${draft.to} and submitted to ERP Handoff (Pending).`
+        : `${so.number} emailed to ${draft.to}. ERP Handoff remains Pending.`,
+    });
   };
 
   // ---- Sales Order Revision send (Send Email): the SO was already revised,

@@ -87,3 +87,54 @@ export function EmailList({
     </ul>
   );
 }
+
+/**
+ * Compact icon rail — the minimized form of the email list, shown while the SO
+ * Generation drawer is open (or when the user collapses the list manually).
+ * One initials circle per email; the selected one is filled with the brand
+ * colour, unread ones carry a dot. Hover shows sender + subject.
+ */
+export function EmailIconRail({
+  emails,
+  selectedId,
+  onSelect,
+}: {
+  emails: InboxEmail[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  const initialsOf = (e: InboxEmail) => {
+    const name = (e.customerName ?? e.senderName).trim();
+    const words = name.split(/\s+/).filter(Boolean);
+    return ((words[0]?.[0] ?? '') + (words[1]?.[0] ?? '')).toUpperCase() || '?';
+  };
+
+  return (
+    <ul className="flex flex-col items-center gap-1.5 py-2">
+      {emails.map((e) => {
+        const active = e.id === selectedId;
+        const unread = !e.read && !e.sent;
+        return (
+          <li key={e.id} className="relative">
+            <button
+              onClick={() => onSelect(e.id)}
+              title={`${e.senderName} — ${e.subject}`}
+              aria-label={`${e.senderName} — ${e.subject}`}
+              className={classNames(
+                'flex h-9 w-9 items-center justify-center rounded-full text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
+                active
+                  ? 'bg-brand-600 text-white shadow-sm'
+                  : 'bg-surface-100 text-surface-600 hover:bg-surface-200'
+              )}
+            >
+              {initialsOf(e)}
+            </button>
+            {unread && (
+              <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-brand-600 ring-2 ring-white" title="Unread" />
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
