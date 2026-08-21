@@ -895,6 +895,7 @@ export default function GlobalInbox() {
                     <div className="max-h-[45%] flex-none overflow-y-auto border-t border-surface-200">
                       <EmailActionPanel
                         email={selected}
+                        extraction={inquiryExtraction}
                         onGenerateQuote={openQuoteBuilder}
                         onCompose={() => setComposeOpen(true)}
                       />

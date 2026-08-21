@@ -1,4 +1,4 @@
-import type { ExtractionField, InboxEmail, Quotation, SalesOrder } from '@/types';
+import type { InboxEmail, Quotation, SalesOrder } from '@/types';
 import { emailSignature } from '@/lib/brand';
 import { officeName } from '@/data/offices';
 import { formatINR } from '@/lib/format';
@@ -121,30 +121,6 @@ export function composerBlockers(s: ComposerState): string[] {
 export function extractionRelevant(email: InboxEmail): boolean {
   if (email.classification === 'finance_other' || email.classification === 'unclassified') return false;
   return email.extraction.length > 0;
-}
-
-/**
- * The extraction fields that need a human's attention — missing, low-confidence
- * (uncertain) or a required field left empty. These are the only ones surfaced
- * in the "needs review" state so the user sees the gaps, not the whole grid.
- */
-export function affectedFields(email: InboxEmail): ExtractionField[] {
-  return email.extraction.filter(
-    (f) => f.confidence === 'missing' || f.confidence === 'low' || (!!f.required && !f.value.trim())
-  );
-}
-
-export type ExtractionState = 'confirmed' | 'needs_review' | 'hidden';
-
-/**
- * The single source of truth for which of the three extraction states an email
- * is in. `hidden` → State C (generic mail). `confirmed` → State A (all required
- * fields resolved AND a human has confirmed). Everything else → State B.
- */
-export function extractionState(email: InboxEmail): ExtractionState {
-  if (!extractionRelevant(email)) return 'hidden';
-  if (email.extractionConfirmed && unresolvedMandatory(email).length === 0) return 'confirmed';
-  return 'needs_review';
 }
 
 /** Required extraction fields that are still missing or low-confidence & unresolved. */

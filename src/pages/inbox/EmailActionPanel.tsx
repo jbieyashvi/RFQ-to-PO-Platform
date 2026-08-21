@@ -9,10 +9,13 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import type { InboxEmail } from '@/types';
+import type { RequirementExtraction } from '@/lib/requirementExtraction';
 import { Button, SelectField } from '@/components/ui';
 import { useApp } from '@/context/AppContext';
 import { officeName } from '@/data/offices';
-import { extractionState } from './helpers';
+
+/** Why the business action is locked — the line items above are the only way out. */
+const LOCK_MESSAGE = 'Review and confirm every extracted line item to generate the quotation.';
 
 /**
  * The RIGHT panel for NORMAL inbox emails (no quote-send mode). It carries the
@@ -28,10 +31,18 @@ import { extractionState } from './helpers';
  */
 export function EmailActionPanel({
   email,
+  extraction,
   onGenerateQuote,
   onCompose,
 }: {
   email: InboxEmail;
+  /**
+   * The line-level reading of the enquiry, passed in whenever the AI
+   * Requirement Extraction panel sits above this one. Those line-item cards are
+   * the ONLY confirmation workflow — Generate Quote waits on them and on
+   * nothing else.
+   */
+  extraction?: RequirementExtraction | null;
   /** Open the quotation builder over the inbox (inquiries only). */
   onGenerateQuote?: () => void;
   /** Open the compose window for a reply / acknowledgement. */
@@ -51,10 +62,15 @@ export function EmailActionPanel({
 
   const actions = contextualActions(email, navigate, onGenerateQuote);
 
-  // The related business action (generate quote, start PO verification, SO
-  // revision, …) stays locked until the AI-extracted mandatory fields are
-  // confirmed. Generic mail (State C → 'hidden') is never gated.
-  const extractionLocked = extractionState(email) === 'needs_review';
+  // The related business action stays locked while the panel above still has a
+  // line in Error, a line that Needs Review, or a required field the enquiry
+  // never stated — a missing required field is what puts a line in Needs Review
+  // to begin with. Confirming the last line unlocks the action on the spot;
+  // there is no separate "Confirm Extraction" step. Mail with no line-level
+  // reading (every classification whose own workspace owns the right panel) is
+  // never gated here.
+  const pendingLines = extraction ? extraction.needsReview + extraction.errors : 0;
+  const extractionLocked = pendingLines > 0;
 
   const classified = email.classification !== 'unclassified';
   const composeLabel = email.classification === 'inquiry' ? 'Send Acknowledgement' : 'Reply to Sender';
@@ -82,7 +98,7 @@ export function EmailActionPanel({
                 leftIcon={a.icon}
                 onClick={a.onClick}
                 disabled={extractionLocked}
-                title={extractionLocked ? 'Confirm the extracted details before starting this action.' : undefined}
+                title={extractionLocked ? LOCK_MESSAGE : undefined}
               >
                 {a.label}
               </Button>
@@ -90,7 +106,7 @@ export function EmailActionPanel({
             {extractionLocked && actions.length > 0 && (
               <p className="flex items-start gap-1.5 pt-0.5 text-[11px] text-amber-700">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" />
-                Confirm the AI-extracted details in the centre panel to unlock this action.
+                {LOCK_MESSAGE}
               </p>
             )}
 

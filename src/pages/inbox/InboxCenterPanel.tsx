@@ -598,10 +598,10 @@ export function InboxCenterPanel({
     <div className="flex h-full flex-col">
       {/* Thread — independently scrollable above the pinned composer */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {/* Workflow modes keep the editable extracted fields in the right-hand
-            business workspace, so the centre shows only the compact status row
-            (no duplicate field cards). */}
-        <EmailCenter email={email} embedded compact={isWorkflow} />
+        {/* The centre panel is the conversation, nothing else: confirming what
+            the AI read happens on the right — line by line for an enquiry, in
+            its own workspace for every other workflow. */}
+        <EmailCenter email={email} embedded />
       </div>
 
       {/* Composer — WORKFLOW modes only.
