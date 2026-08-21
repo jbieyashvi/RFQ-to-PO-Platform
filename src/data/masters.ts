@@ -59,6 +59,10 @@ export const PARTIES: Party[] = [
   { id: 'pty-13', code: 'CUST-5001', companyName: 'Ashok Leyland Ltd', contactPerson: 'Ganesh Kumar', email: 'ganesh.kumar@ashokleyland.com', phone: '+91 94440 55001', billingAddress: '1 Sardar Patel Road, Guindy, Chennai 600032', shippingAddress: 'Ennore Plant, Chennai 600057', gstin: '33AAACA1111L1ZK', sector: 'Automotive', officeId: 'off-che', active: true },
   { id: 'pty-14', code: 'CUST-1004', companyName: 'JSW Steel Coated Products', contactPerson: 'Anil Kamble', email: 'anil.kamble@jsw.in', phone: '+91 98200 11004', billingAddress: 'JSW Centre, Bandra Kurla Complex, Mumbai 400051', shippingAddress: 'Vasind Works, Thane 421604', gstin: '27AAACJ2233N1Z0', sector: 'Manufacturing', officeId: 'off-mum', active: true },
   { id: 'pty-15', code: 'CUST-2004', companyName: 'Havells India Ltd', contactPerson: 'Ritu Aggarwal', email: 'ritu.a@havells.com', phone: '+91 98110 22004', billingAddress: 'QRG Towers, Sector 126, Noida 201304', shippingAddress: 'Alwar Plant, Rajasthan 301030', gstin: '09AAACH4455P1Z7', sector: 'Manufacturing', officeId: 'off-del', active: true },
+  // New customer with NO quotation history — first contact is a direct Purchase
+  // Order, so the inbox association flow has nothing to offer and falls back to
+  // "Create SO Manually". Excluded from the quotation seed generator.
+  { id: 'pty-16', code: 'CUST-5002', companyName: 'Sunrise Agrotech Industries Pvt Ltd', contactPerson: 'Kavitha Raman', email: 'kavitha.r@sunriseagrotech.in', phone: '+91 94440 55002', billingAddress: '12 Mount Poonamallee Road, Porur, Chennai 600116', shippingAddress: 'Unit 2, SIPCOT Industrial Park, Sriperumbudur 602105', gstin: '33AAACS8899R1ZM', sector: 'Agro Processing', officeId: 'off-che', active: true },
 ];
 
 export const TERMS: TermCondition[] = [

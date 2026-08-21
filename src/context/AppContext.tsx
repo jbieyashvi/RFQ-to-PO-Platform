@@ -30,6 +30,7 @@ import { QUOTATIONS } from '@/data/quotations';
 import { SALES_ORDERS } from '@/data/salesOrders';
 import { EMAILS } from '@/data/emails';
 import { PO_VERIFICATION_EMAILS } from '@/data/poEmails';
+import { INBOUND_PO_EMAILS } from '@/data/inboundPoEmails';
 import { SO_REVISION_EMAILS } from '@/data/soRevisionEmails';
 import { can as canCheck, canInboxDo } from '@/lib/permissions';
 
@@ -130,6 +131,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [emails, setEmails] = useState<InboxEmail[]>(() => [
     ...EMAILS,
     ...PO_VERIFICATION_EMAILS,
+    ...INBOUND_PO_EMAILS,
     ...SO_REVISION_EMAILS,
   ]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);

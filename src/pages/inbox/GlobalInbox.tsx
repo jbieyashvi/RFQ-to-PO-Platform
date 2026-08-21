@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
-import { Inbox, ArrowLeft, MailOpen, FileText, RefreshCw, ClipboardCheck, FilePenLine, SlidersHorizontal, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Inbox, ArrowLeft, MailOpen, FileText, RefreshCw, ClipboardCheck, FilePenLine, Link2, SlidersHorizontal, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import { SearchInput, FilterSelect, FilterBar, EmptyState, type FilterChip } from '@/components/ui';
 import { Tabs } from '@/components/ui/misc';
@@ -18,12 +18,20 @@ import { InboxCenterPanel } from './InboxCenterPanel';
 import { QuoteToolsPanel } from './QuoteToolsPanel';
 import { RevisionQuotePanel } from './RevisionQuotePanel';
 import { PoVerificationPanel } from './PoVerificationPanel';
+import { PoAssociationPanel } from './PoAssociationPanel';
 import { SoRevisionPanel } from './SoRevisionPanel';
+import {
+  associationEmailPatch,
+  buildVerificationSalesOrder,
+  findQuotationByNumber,
+  quotationRefOf,
+  verificationSoId,
+} from '@/lib/poAssociation';
 
 type Tab = 'all' | 'needs_review' | 'drafts';
 
 export default function GlobalInbox() {
-  const { emails, updateEmail, quotations, salesOrders, sidebarCollapsed, setSidebarCollapsed } = useApp();
+  const { emails, updateEmail, quotations, salesOrders, parties, addSalesOrder, addToast, sidebarCollapsed, setSidebarCollapsed } = useApp();
   // Office scope still applies in the background (a user only sees emails for
   // offices they may access) — but there is no office FILTER on this screen.
   const inScope = useOfficeScope();
@@ -220,6 +228,46 @@ export default function GlobalInbox() {
   const isRevision = !showQuoteTools && !!selected?.revisionSendId;
   const isPoVerify = !showQuoteTools && !isRevision && !!selected?.poVerifyId;
   const isSoRevision = !showQuoteTools && !isRevision && !isPoVerify && !!selected?.soRevisionId && !!soRevisionSalesOrder;
+  // A Purchase Order email with no verification SO yet — the quotation
+  // association workflow (auto-match by number below, manual pick otherwise).
+  const isPoAssociate =
+    !showQuoteTools && !isRevision && !isPoVerify && !isSoRevision &&
+    selected?.classification === 'purchase_order' && !selected?.poVerifyId;
+
+  // Automatic association by quotation number: if the number cited in the PO
+  // exists in the register (for the same customer), associate it and open the
+  // PO vs Quote verification thread directly. Customer name alone NEVER
+  // auto-associates — without an exact number match the manual panel shows.
+  const autoAssociatedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!selected || selected.classification !== 'purchase_order' || selected.poVerifyId) return;
+    const ref = quotationRefOf(selected);
+    if (!ref) return;
+    const quote = findQuotationByNumber(ref, quotations, selected.partyId);
+    if (!quote) return;
+    const soId = verificationSoId(selected.id);
+    // Guards the StrictMode double-run and re-selection of the same email.
+    if (autoAssociatedRef.current.has(soId)) return;
+    autoAssociatedRef.current.add(soId);
+    let so = salesOrders.find((s) => s.id === soId);
+    if (!so) {
+      so = buildVerificationSalesOrder({
+        email: selected,
+        quote,
+        parties,
+        salesOrders,
+        association: { kind: 'number_match', by: 'System (AI)' },
+      });
+      addSalesOrder(so);
+    }
+    updateEmail(selected.id, associationEmailPatch(selected, quote, so));
+    addToast({
+      type: 'info',
+      title: 'Quotation matched',
+      message: `${quote.number} matched by the quotation number cited in ${selected.linkedPO ?? 'the PO'} — verification opened.`,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, quotations, salesOrders]);
 
   // Keep the URL describing the current conversation + its workflow so a reload
   // restores exactly what the user is looking at.
@@ -431,6 +479,11 @@ export default function GlobalInbox() {
                   <FilePenLine className="h-3.5 w-3.5" /> Sales Order revision — {soRevisionSalesOrder?.number ?? selected.linkedSO ?? ''}
                 </div>
               )}
+              {isPoAssociate && (
+                <div className="flex flex-none items-center gap-1.5 border-b border-amber-200 bg-amber-50/70 px-4 py-2 text-[12px] font-medium text-amber-700">
+                  <Link2 className="h-3.5 w-3.5" /> Purchase Order received — quotation association required
+                </div>
+              )}
               <div className="min-h-0 flex-1">
                 {showQuoteTools ? (
                   <InboxCenterPanel email={selected} mode="quote-send" quotation={quoteSendQuotation} focusTick={focusTick} />
@@ -462,6 +515,8 @@ export default function GlobalInbox() {
                   <PoVerificationPanel email={selected} onPrepared={onPrepared} onGenerateSo={openSoDrawer} />
                 ) : isSoRevision ? (
                   <SoRevisionPanel email={selected} salesOrder={soRevisionSalesOrder!} onPrepared={onPrepared} />
+                ) : isPoAssociate ? (
+                  <PoAssociationPanel email={selected} />
                 ) : (
                   <EmailActionPanel email={selected} />
                 )}

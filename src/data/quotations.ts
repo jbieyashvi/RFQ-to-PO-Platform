@@ -73,13 +73,18 @@ const FAIL_REASONS = [
   'Bounced: recipient address on file is invalid',
 ];
 
+// pty-16 is a brand-new customer with deliberately NO quotation history (used to
+// demo the "no valid quotation → Create SO Manually" path). Pinning the cycle to
+// the original 15 parties also keeps the existing seed data stable.
+const QUOTE_PARTIES = PARTIES.filter((p) => p.id !== 'pty-16');
+
 function generate(): Quotation[] {
   const list: Quotation[] = [];
   const total = 34;
   let pendingSeen = 0;
   for (let i = 0; i < total; i++) {
     const rand = rng(1000 + i * 37);
-    const party = PARTIES[i % PARTIES.length];
+    const party = QUOTE_PARTIES[i % QUOTE_PARTIES.length];
     const officeUsers = USERS.filter((u) => u.officeId === party.officeId && u.active);
     const owner = (officeUsers[i % Math.max(1, officeUsers.length)] ?? USERS[0]).fullName;
     const lineCount = 2 + Math.floor(rand() * 4);
@@ -199,4 +204,85 @@ function generate(): Quotation[] {
   return list;
 }
 
-export const QUOTATIONS: Quotation[] = generate();
+// ---------------------------------------------------------------------------
+// One year of quotation history (75–360 days before 2026-08-13). These feed the
+// "Associate Quotation" drawer in the inbox (customer's quotations from the
+// last one year) and the historical sales-order seed. All were sent to the
+// customer; ids are prefixed `qtn-h-` so the current-period sales-order
+// generator can exclude them.
+// ---------------------------------------------------------------------------
+const HIST_STATUSES: QuotationStatus[] = ['closed', 'received', 'open', 'closed', 'received'];
+const HIST_STAGES: QuotationStage[] = ['finalised', 'negotiation', 'budgetary', 'finalised', 'finalised'];
+
+function generateHistorical(): Quotation[] {
+  const list: Quotation[] = [];
+  const total = 20;
+  let seq2025 = 0;
+  let seq2026 = 0;
+  for (let i = 0; i < total; i++) {
+    const rand = rng(9000 + i * 53);
+    const party = QUOTE_PARTIES[(i * 3 + 1) % QUOTE_PARTIES.length];
+    const officeUsers = USERS.filter((u) => u.officeId === party.officeId && u.active);
+    const owner = (officeUsers[i % Math.max(1, officeUsers.length)] ?? USERS[0]).fullName;
+    const items = buildLines(rand, 2 + Math.floor(rand() * 4));
+    const { grandTotal } = computeTotals(items, 0);
+
+    // created between 75 and ~341 days before today (2026-08-13)
+    const createdOffset = 75 + i * 14;
+    const createdDate = addDays('2026-08-13', -createdOffset);
+    const quoteDate = addDays(createdDate, 1);
+    const year = quoteDate.slice(0, 4);
+    const seq = year === '2025' ? ++seq2025 : ++seq2026;
+    const number = year === '2025' ? `QTN/2025/${pad(820 + seq, 4)}` : `QTN/2026/${pad(120 + seq, 4)}`;
+
+    const status = HIST_STATUSES[i % HIST_STATUSES.length];
+    const stage = HIST_STAGES[i % HIST_STAGES.length];
+    // A few quotes were revised and re-sent later, so Latest Sent Date differs
+    // from the quote date.
+    const resendGap = i % 3 === 0 ? 9 + Math.floor(rand() * 10) : 0;
+    const lastSentDate = addDays(quoteDate, resendGap);
+    const sentAt = `${lastSentDate}T15:20:00`;
+    const lastUpdated = lastSentDate;
+
+    list.push({
+      id: `qtn-h-${pad(i + 1, 3)}`,
+      number,
+      partyId: party.id,
+      customerName: party.companyName,
+      customerCode: party.code,
+      officeId: party.officeId,
+      owner,
+      status,
+      stage,
+      workState: 'sent',
+      deliveryState: 'sent',
+      sentAt,
+      sentBy: owner,
+      value: grandTotal,
+      quoteDate,
+      reviewDate: addDays(quoteDate, 30),
+      createdDate,
+      lastUpdated,
+      items,
+      paymentTerms: PAYMENT_TERMS[i % PAYMENT_TERMS.length],
+      deliveryTerms: DELIVERY_TERMS[i % DELIVERY_TERMS.length],
+      warranty: '12 months against manufacturing defects',
+      packingCharges: rand() > 0.5 ? Math.round(grandTotal * 0.02) : 0,
+      revisions:
+        resendGap > 0
+          ? [
+              { id: `rev-h-${i}-1`, version: 1, date: quoteDate, reason: 'Initial quotation issued', by: owner },
+              { id: `rev-h-${i}-2`, version: 2, date: lastSentDate, reason: 'Price revision as per negotiation', by: owner },
+            ]
+          : [{ id: `rev-h-${i}-1`, version: 1, date: quoteDate, reason: 'Initial quotation issued', by: owner }],
+      activity: [
+        { id: `act-h-${i}-1`, date: `${createdDate}T09:15:00`, actor: owner, action: 'Quotation created', detail: `From RFQ enquiry — ${party.companyName}` },
+        { id: `act-h-${i}-2`, date: `${quoteDate}T11:30:00`, actor: owner, action: 'Quote prepared', detail: `${items.length} line items added` },
+        { id: `act-h-${i}-3`, date: sentAt, actor: owner, action: 'Quotation sent to customer' },
+      ],
+    });
+  }
+  return list;
+}
+
+export const QUOTATIONS: Quotation[] = [...generate(), ...generateHistorical()];

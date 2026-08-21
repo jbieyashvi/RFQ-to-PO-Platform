@@ -146,9 +146,13 @@ function buildVerificationFields(
 
 function generate(): SalesOrder[] {
   const list: SalesOrder[] = [];
-  // Base SOs on quotations that are received/closed/finalised
+  // Base SOs on quotations that are received/closed/finalised. Historical
+  // quotations (qtn-h-*) are excluded — they feed generateHistoricalSos() —
+  // so the existing 18 current-period records stay byte-identical.
   const source = QUOTATIONS.filter(
-    (q) => q.status === 'received' || q.stage === 'finalised' || q.status === 'closed'
+    (q) =>
+      !q.id.startsWith('qtn-h-') &&
+      (q.status === 'received' || q.stage === 'finalised' || q.status === 'closed')
   ).slice(0, 18);
 
   // Cycle counters for the SLA hour spreads (only advanced for records that
@@ -443,4 +447,116 @@ function seedRevisionSubStates(list: SalesOrder[]) {
   }
 }
 
-export const SALES_ORDERS: SalesOrder[] = generate();
+/**
+ * One year of completed sales-order history, built from the historical
+ * quotation seed (qtn-h-*). All are verified, finalised and handed off — they
+ * exist so customer timelines show a realistic year of activity and so the
+ * inbox carries matching historical PO emails (generated in poEmails.ts).
+ */
+function generateHistoricalSos(): SalesOrder[] {
+  const list: SalesOrder[] = [];
+  const source = QUOTATIONS.filter((q) => q.id.startsWith('qtn-h-')).filter((_, idx) => idx % 2 === 0).slice(0, 8);
+
+  source.forEach((q, i) => {
+    const rand = rng(7000 + i * 61);
+    const items: LineItem[] = q.items.map((it) => ({ ...it, id: `so-h-${it.id}` }));
+    const { grandTotal: quoteValue } = computeTotals(items, q.packingCharges);
+
+    // Fully clean history: PO matched the quote, order verified and finalised.
+    const verificationFields = buildVerificationFields(rand, quoteValue, quoteValue, false);
+    const verificationStatus = deriveVerificationStatus(verificationFields);
+
+    const sentDate = (q.sentAt ?? `${q.quoteDate}T15:20:00`).slice(0, 10);
+    const receivedDate = addDays(sentDate, 4 + Math.floor(rand() * 6));
+    const poReceivedAt = `${receivedDate}T09:10:00`;
+    const poDate = addDays(receivedDate, -2);
+    const createdDate = addDays(receivedDate, 1);
+    const deliveryDate = addDays(createdDate, 30 + Math.floor(rand() * 20));
+    const soSentAt = `${addDays(createdDate, 1)}T16:45:00`;
+    const year = createdDate.slice(0, 4);
+    const number = `SO/${year}/${pad(400 + i + 1, 4)}`;
+
+    const party = PARTY_MAP.get(q.partyId);
+    const billingAddress = party?.billingAddress ?? 'Corporate Office, India';
+    const shippingAddress = party?.shippingAddress ?? 'Central Warehouse, India';
+
+    const baseSnapshot: SORevisionSnapshot = snap({
+      items,
+      paymentTerms: q.paymentTerms,
+      deliveryTerms: q.deliveryTerms,
+      deliveryDate,
+      billingAddress,
+      shippingAddress,
+    });
+
+    const verifiedAt = `${createdDate}T10:05:00`;
+    const erpHandoff: ErpHandoff = {
+      state: 'submitted',
+      source: 'po_verification',
+      submittedAt: soSentAt,
+      submittedBy: q.owner,
+      updatedAt: soSentAt,
+      revisionNumber: 0,
+      reference: `ERP-${year}-${pad(400 + i + 1, 4)}`,
+    };
+
+    list.push({
+      id: `so-h-${pad(i + 1, 3)}`,
+      number,
+      poNumber: `PO-${q.customerCode.replace('CUST-', '')}-H${pad(i + 1, 3)}`,
+      poDate,
+      quotationId: q.id,
+      quotationNumber: q.number,
+      partyId: q.partyId,
+      customerName: q.customerName,
+      customerCode: q.customerCode,
+      officeId: q.officeId,
+      owner: q.owner,
+      value: quoteValue,
+      poValue: quoteValue,
+      quoteValue,
+      status: 'finalised',
+      verificationStatus,
+      receivedDate,
+      poReceivedAt,
+      createdDate,
+      deliveryDate,
+      revisionNumber: 0,
+      verifiedBy: q.owner,
+      verifiedAt,
+      soGenerated: true,
+      erpHandoff,
+      sentAt: soSentAt,
+      billingAddress,
+      shippingAddress,
+      versions: [
+        {
+          id: `ver-h-${i}-0`,
+          label: 'Original',
+          version: 0,
+          createdAt: `${createdDate}T09:15:00`,
+          by: q.owner,
+          reason: 'Initial sales order',
+          snapshot: baseSnapshot,
+        },
+      ],
+      items,
+      paymentTerms: q.paymentTerms,
+      deliveryTerms: q.deliveryTerms,
+      warranty: q.warranty,
+      packingCharges: q.packingCharges,
+      internalNotes: [],
+      activity: [
+        { id: `act-h-${i}-created`, date: `${createdDate}T09:15:00`, actor: q.owner, action: 'Sales Order created', detail: `From accepted quotation ${q.number}` },
+        { id: `act-h-${i}-compared`, date: `${createdDate}T09:20:00`, actor: 'System (AI)', action: 'PO vs Quote comparison generated', detail: '0 field(s) flagged for review' },
+        { id: `act-h-${i}-verified`, date: verifiedAt, actor: q.owner, action: 'PO verified against quotation', detail: 'All fields matched — ready for Sales Order generation' },
+        { id: `act-h-${i}-sent`, date: soSentAt, actor: q.owner, action: 'Sales Order sent', detail: `${number} dispatched to customer` },
+      ],
+      verificationFields,
+    });
+  });
+
+  return list;
+}
+
+export const SALES_ORDERS: SalesOrder[] = [...generate(), ...generateHistoricalSos()];
