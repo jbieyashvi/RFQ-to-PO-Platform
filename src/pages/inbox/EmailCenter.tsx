@@ -141,7 +141,7 @@ export function EmailCenter({
     <div className={embedded ? '' : 'flex h-full flex-col'}>
       {/* Header — sticky so the subject + meta stay visible while the thread
           scrolls (embedded = inside the centre panel's shared scroll area). */}
-      <div className={classNames('border-b border-surface-100 bg-white px-4 py-3', embedded ? 'sticky top-0 z-10' : 'flex-none')}>
+      <div className={classNames('border-b border-surface-100 bg-white px-3.5 py-2.5', embedded ? 'sticky top-0 z-10' : 'flex-none')}>
         <div className="flex flex-wrap items-start justify-between gap-2">
           <h2 className="text-[15px] font-semibold leading-snug text-surface-900">{email.subject}</h2>
           <div className="flex items-center gap-2">
@@ -185,9 +185,9 @@ export function EmailCenter({
           Older thread messages first, then the selected email, then (once sent)
           our reply. Direction: the email owner / a company address = sent by us,
           everything else = from the client. */}
-      <div className={classNames('px-4 py-3', !embedded && 'flex-1 overflow-y-auto')}>
+      <div className={classNames('px-3.5 py-2.5', !embedded && 'flex-1 overflow-y-auto')}>
         <div className="space-y-3">
-          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-surface-400">
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-surface-400">
             <MessageSquare className="h-3.5 w-3.5" /> Conversation ({priorMessages.length + 1 + (sentReply ? 1 : 0)})
           </p>
 
@@ -211,7 +211,7 @@ export function EmailCenter({
                 <ChevronDown className={classNames('h-4 w-4 flex-none text-surface-400 transition-transform', prevOpen && 'rotate-180')} />
               </button>
               {prevOpen && (
-                <div className="space-y-3 border-t border-surface-100 bg-surface-50/40 px-3 py-3">
+                <div className="space-y-3 border-t border-surface-100 bg-surface-50/40 px-3 py-2.5">
                   {priorMessages.map((m) => {
                     const sent = fromCompany(m.from);
                     return (

@@ -102,7 +102,7 @@ export function RequirementExtractionPanel({ email }: { email: InboxEmail }) {
     return (
       <div className="flex h-full flex-col">
         <PanelHeader />
-        <div className="min-h-0 flex-1 px-4 py-6 text-center text-[12px] text-surface-500">
+        <div className="min-h-0 flex-1 px-4 py-5 text-center text-[12px] text-surface-500">
           No itemised requirement was extracted from this enquiry.
         </div>
       </div>
@@ -126,7 +126,7 @@ export function RequirementExtractionPanel({ email }: { email: InboxEmail }) {
         <div className={classNames('rounded-xl border px-3 py-2.5', meta.ring)}>
           <div className="flex items-baseline justify-between gap-2">
             <div className="flex items-baseline gap-2">
-              <span className={classNames('text-[26px] font-semibold leading-none tabular-nums', meta.text)}>
+              <span className={classNames('text-[22px] font-semibold leading-none tabular-nums', meta.text)}>
                 {extraction.accuracy}%
               </span>
               <span className="text-[11px] font-semibold uppercase tracking-wide text-surface-500">
@@ -181,7 +181,7 @@ export function RequirementExtractionPanel({ email }: { email: InboxEmail }) {
       </div>
 
       {/* Line items — compact cards, scrolled independently of the header. */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2.5">
         <div className="space-y-2">
           {extraction.items.map((item) => (
             <RequirementCard
@@ -234,9 +234,9 @@ export function RequirementExtractionPanel({ email }: { email: InboxEmail }) {
 
 function PanelHeader() {
   return (
-    <div className="flex flex-none items-center gap-1.5 border-b border-surface-100 px-4 py-3">
-      <ListChecks className="h-3.5 w-3.5 text-brand-600" />
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-surface-400">AI Requirement Extraction</p>
+    <div className="flex flex-none items-center gap-1.5 border-b border-surface-100 px-3.5 py-2">
+      <ListChecks className="h-4 w-4 flex-none text-brand-600" />
+      <h2 className="text-[14px] font-semibold text-surface-800">AI Requirement Extraction</h2>
     </div>
   );
 }

@@ -57,7 +57,7 @@ export function EmailList({
                 // only the selected row lights up the brand colour + background.
                 // A tight 3-line layout keeps rows in the 84–96px band so ~7–8
                 // fit on screen at desktop widths.
-                'flex min-h-[84px] w-full flex-col justify-center gap-1 border-l-[3px] px-4 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/50',
+                'flex min-h-[72px] w-full flex-col justify-center gap-1 border-l-[3px] px-3.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/50',
                 active ? 'border-brand-600 bg-brand-50' : 'border-transparent hover:bg-surface-50',
                 !active && !e.read && !e.sent && 'bg-brand-50/30'
               )}

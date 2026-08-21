@@ -8,7 +8,7 @@ import { Tabs } from '@/components/ui/misc';
 import { useApp, useOfficeScope, useNoOfficeAssigned } from '@/context/AppContext';
 import { NoOfficeAssigned } from '@/components/NoOfficeAssigned';
 import { OWNERS } from '@/data/users';
-import { inquiryById, inquiryEmailsOf, inquiryIdOfEmail } from '@/lib/inquiry';
+import { draftQuotationForEnquiry, inquiryById, inquiryEmailsOf, inquiryIdOfEmail } from '@/lib/inquiry';
 import { inboxParams, type InboxMode } from '@/lib/inboxContext';
 import { INBOX_CLASSIFICATION } from '@/lib/labels';
 import type { EmailClassification, InboxEmail } from '@/types';
@@ -16,6 +16,10 @@ import { classNames } from '@/lib/format';
 import { EmailList, EmailIconRail } from './EmailList';
 import { SoGenerationDrawer } from './SoGenerationDrawer';
 import { EmailActionPanel } from './EmailActionPanel';
+import { QuotationBuilderModal } from './QuotationBuilderModal';
+import { ComposePopup } from './ComposePopup';
+import { requirementExtraction } from '@/lib/requirementExtraction';
+import { TODAY_ISO } from '@/lib/quotationWorkflow';
 import { InboxCenterPanel } from './InboxCenterPanel';
 import { InquiryHeader } from './InquiryHeader';
 import { QuoteToolsPanel } from './QuoteToolsPanel';
@@ -35,7 +39,7 @@ import {
 type Tab = 'all' | 'needs_review' | 'drafts';
 
 export default function GlobalInbox() {
-  const { emails, updateEmail, quotations, salesOrders, parties, addSalesOrder, addToast, sidebarCollapsed, setSidebarCollapsed } = useApp();
+  const { emails, updateEmail, quotations, salesOrders, parties, addQuotation, addSalesOrder, addToast, currentUser, sidebarCollapsed, setSidebarCollapsed } = useApp();
   // Office scope still applies in the background (a user only sees emails for
   // offices they may access) — but there is no office FILTER on this screen.
   const inScope = useOfficeScope();
@@ -96,6 +100,12 @@ export default function GlobalInbox() {
   const [focusTick, setFocusTick] = useState(0);
   const onPrepared = () => setFocusTick((t) => t + 1);
 
+  // Quote builder + compose window. Both sit OVER the workspace rather than
+  // replacing it, so the company list, the selected thread and the inquiry
+  // context stay exactly where they were underneath.
+  const [builderQtnId, setBuilderQtnId] = useState<string | null>(null);
+  const [composeOpen, setComposeOpen] = useState(false);
+
   // SO Generation drawer + the manual/automatic email-list minimise. Opening
   // the drawer collapses the list to its icon rail so the selected thread stays
   // visible beside the drawer; closing restores whatever the user had before.
@@ -117,6 +127,13 @@ export default function GlobalInbox() {
   useEffect(() => {
     if (soDrawerOpen) closeSoDrawer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
+
+  // The builder and the compose window hold the previous email's quotation and
+  // draft, so changing conversation closes them rather than re-pointing them.
+  useEffect(() => {
+    setBuilderQtnId(null);
+    setComposeOpen(false);
   }, [selectedId]);
 
   // Auto-optimise the workspace: collapse the app sidebar to its icon rail while
@@ -168,6 +185,47 @@ export default function GlobalInbox() {
     () => (inquiryScopeId ? inquiryById(inquiryScopeId, quotations) : null),
     [inquiryScopeId, quotations]
   );
+
+  // The quotation the enquiry is quoted on — the inquiry id IS the quotation
+  // id, so Generate Quote never needs a lookup screen to find its record.
+  const inquiryQuotation = useMemo(
+    () => (inquiryScopeId ? quotations.find((q) => q.id === inquiryScopeId) ?? null : null),
+    [inquiryScopeId, quotations]
+  );
+
+  // The confirmed reading of the enquiry — the lines the quotation starts from.
+  const inquiryExtraction = useMemo(
+    () => (selected ? requirementExtraction(selected, quotations, salesOrders) : null),
+    [selected, quotations, salesOrders]
+  );
+
+  const builderQuotation = useMemo(
+    () => (builderQtnId ? quotations.find((q) => q.id === builderQtnId) ?? null : null),
+    [builderQtnId, quotations]
+  );
+
+  // Generate Quote. A brand-new enquiry has no quotation yet, so quoting it
+  // CREATES one and links the email to it — the enquiry keeps its identity and
+  // the draft shows up in Quotes Pending to be Sent from that moment.
+  const openQuoteBuilder = () => {
+    if (!selected) return;
+    if (inquiryQuotation) {
+      setBuilderQtnId(inquiryQuotation.id);
+      return;
+    }
+    const draft = draftQuotationForEnquiry(selected, quotations, currentUser.fullName, TODAY_ISO);
+    if (!draft) {
+      addToast({
+        type: 'error',
+        title: 'No customer on this email',
+        message: 'Associate a customer before a quotation can be raised against it.',
+      });
+      return;
+    }
+    addQuotation(draft);
+    updateEmail(selected.id, { inquiryId: draft.id, linkedQuotation: draft.number });
+    setBuilderQtnId(draft.id);
+  };
 
   // Everything the LEFT panel may show: all companies on direct /inbox, only
   // the selected customer's emails in contextual mode. The tabs, the filters
@@ -826,17 +884,49 @@ export default function GlobalInbox() {
                       <RequirementExtractionPanel email={selected} />
                     </div>
                     <div className="max-h-[45%] flex-none overflow-y-auto border-t border-surface-200">
-                      <EmailActionPanel email={selected} />
+                      <EmailActionPanel
+                        email={selected}
+                        onGenerateQuote={openQuoteBuilder}
+                        onCompose={() => setComposeOpen(true)}
+                      />
                     </div>
                   </div>
                 ) : (
-                  <EmailActionPanel email={selected} />
+                  <EmailActionPanel email={selected} onCompose={() => setComposeOpen(true)} />
                 )}
               </div>
             </div>
           </>
         ) : null}
       </div>
+
+      {/* Generate Quote — the editable quotation, opened OVER the inbox. Only
+          mounted while open so it seeds fresh from the confirmed extraction. */}
+      {builderQuotation && selected && (
+        <QuotationBuilderModal
+          email={selected}
+          quotation={builderQuotation}
+          extraction={inquiryExtraction}
+          onAddedToEmail={() => {
+            // The quote is attached; the builder's job is done and the mail it
+            // rides on is the next thing the user needs.
+            setBuilderQtnId(null);
+            setComposeOpen(true);
+          }}
+          onClose={() => setBuilderQtnId(null)}
+        />
+      )}
+
+      {/* The compose window — the only surface that sends. Non-modal by design:
+          the list and the thread behind it stay readable and clickable. */}
+      {composeOpen && selected && (
+        <ComposePopup
+          email={selected}
+          quotation={inquiryQuotation ?? builderQuotation}
+          inquiryId={inquiryScopeId}
+          onClose={() => setComposeOpen(false)}
+        />
+      )}
 
       {/* SO Generation drawer — full-height right drawer (~65% on desktop,
           full-screen on tablet/mobile) over the inbox. Conditionally mounted so

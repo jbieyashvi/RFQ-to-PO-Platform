@@ -16,11 +16,27 @@ import { extractionState } from './helpers';
 
 /**
  * The RIGHT panel for NORMAL inbox emails (no quote-send mode). It carries the
- * contextual Business Action for the email's classification plus the Reassign
- * control. The outgoing email is written and sent from the CENTRE panel
- * (InboxCenterPanel) — this panel never hosts the composer.
+ * contextual Business Action for the email's classification, the way into the
+ * compose window, and the Reassign control.
+ *
+ * The centre panel no longer holds an always-open outgoing form, so this panel
+ * is where a reply now STARTS: "Send Acknowledgement" / "Reply to Sender" opens
+ * the Gmail-style compose window over the inbox. That entry is deliberately not
+ * gated on the extraction — acknowledging an enquiry is not a business action,
+ * and telling a customer "received, we'll revert" should never wait on a
+ * datasheet being confirmed.
  */
-export function EmailActionPanel({ email }: { email: InboxEmail }) {
+export function EmailActionPanel({
+  email,
+  onGenerateQuote,
+  onCompose,
+}: {
+  email: InboxEmail;
+  /** Open the quotation builder over the inbox (inquiries only). */
+  onGenerateQuote?: () => void;
+  /** Open the compose window for a reply / acknowledgement. */
+  onCompose?: () => void;
+}) {
   const { updateEmail, canInbox, addToast, users } = useApp();
   const navigate = useNavigate();
 
@@ -33,22 +49,25 @@ export function EmailActionPanel({ email }: { email: InboxEmail }) {
     addToast({ type: 'success', title: 'Email reassigned', message: `Assigned to ${u.fullName}.` });
   };
 
-  const actions = contextualActions(email, navigate);
+  const actions = contextualActions(email, navigate, onGenerateQuote);
 
-  // The related business action (prepare quotation, start PO verification, SO
+  // The related business action (generate quote, start PO verification, SO
   // revision, …) stays locked until the AI-extracted mandatory fields are
   // confirmed. Generic mail (State C → 'hidden') is never gated.
   const extractionLocked = extractionState(email) === 'needs_review';
 
+  const classified = email.classification !== 'unclassified';
+  const composeLabel = email.classification === 'inquiry' ? 'Send Acknowledgement' : 'Reply to Sender';
+
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-none border-b border-surface-100 px-4 py-3">
-        <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-surface-400">Business Action</p>
+      <div className="flex-none border-b border-surface-100 px-3.5 py-2">
+        <h2 className="text-[14px] font-semibold text-surface-800">Business Action</h2>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        {email.classification === 'unclassified' ? (
-          <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3.5 py-2.5">
+        {!classified ? (
+          <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[12px] text-amber-800">
             <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
             <span>This email is <span className="font-semibold">Unclassified</span>. Classify it (use “Reclassify” in the centre panel) before any business action or reply can proceed.</span>
           </div>
@@ -69,17 +88,30 @@ export function EmailActionPanel({ email }: { email: InboxEmail }) {
               </Button>
             ))}
             {extractionLocked && actions.length > 0 && (
-              <p className="flex items-start gap-1.5 pt-1 text-[11px] text-amber-700">
+              <p className="flex items-start gap-1.5 pt-0.5 text-[11px] text-amber-700">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" />
                 Confirm the AI-extracted details in the centre panel to unlock this action.
               </p>
+            )}
+
+            {/* Replying is always available — it is a courtesy, not a workflow step. */}
+            {onCompose && (
+              <Button
+                variant={actions.length ? 'secondary' : 'primary'}
+                size="sm"
+                className="w-full justify-start"
+                leftIcon={<Reply className="h-4 w-4" />}
+                onClick={onCompose}
+              >
+                {composeLabel}
+              </Button>
             )}
           </div>
         )}
 
         {/* Reassign */}
         {canReassign && (
-          <div className="mt-4">
+          <div className="mt-3">
             <label className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-surface-500"><UserCog className="h-3.5 w-3.5" /> Reassign owner</label>
             <SelectField
               className="w-full py-1.5 text-[13px]"
@@ -97,13 +129,17 @@ export function EmailActionPanel({ email }: { email: InboxEmail }) {
 
 function contextualActions(
   email: InboxEmail,
-  navigate: (to: string) => void
+  navigate: (to: string) => void,
+  onGenerateQuote?: () => void
 ): { label: string; icon: React.ReactNode; onClick: () => void; primary?: boolean }[] {
   switch (email.classification) {
     case 'inquiry':
-      return [
-        { label: 'Prepare Quotation', icon: <FileText className="h-4 w-4" />, onClick: () => navigate('/quotations/pending'), primary: true },
-      ];
+      // Quoting happens OVER the conversation, not on another page: sending the
+      // user to Quotes Pending loses the thread, the company mail and the
+      // extraction they just confirmed.
+      return onGenerateQuote
+        ? [{ label: 'Generate Quote', icon: <FileText className="h-4 w-4" />, onClick: onGenerateQuote, primary: true }]
+        : [];
     case 'quotation_revision':
       return [
         { label: 'Open Quotation & Start Revision', icon: <RefreshCw className="h-4 w-4" />, onClick: () => navigate('/quotations/revisions'), primary: true },
@@ -117,10 +153,8 @@ function contextualActions(
         { label: 'Open Sales Order', icon: <FileSpreadsheet className="h-4 w-4" />, onClick: () => navigate('/sales-orders'), primary: true },
         { label: 'Create SO Revision', icon: <RefreshCw className="h-4 w-4" />, onClick: () => navigate('/sales-orders/revisions') },
       ];
-    case 'finance_other':
-      return [
-        { label: 'Reply to Sender', icon: <Reply className="h-4 w-4" />, onClick: () => {}, primary: true },
-      ];
+    // finance_other's only action was a reply, which is now the compose entry
+    // shared by every classification.
     default:
       return [];
   }

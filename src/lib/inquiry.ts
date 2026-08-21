@@ -136,3 +136,64 @@ export function inquiryById(id: string, quotations: Quotation[]): Inquiry | null
   const q = quotations.find((x) => x.id === id);
   return q ? inquiryOf(q) : null;
 }
+
+// ---------------------------------------------------------------------------
+// Quoting an enquiry that has no quotation yet
+// ---------------------------------------------------------------------------
+// Most inbox enquiries already point at a quotation record. A brand-new
+// enquiry does not — nobody has quoted it. Quoting one therefore CREATES the
+// quotation, which is exactly what "Generate Quote" means; it is not a reason
+// to send the user to a list to hunt for a record that does not exist.
+//
+// The draft starts empty and unsent (`pending_send`, so it lands in Quotes
+// Pending to be Sent) with no line items: the quotation builder fills them from
+// the confirmed extraction the moment it opens.
+// ---------------------------------------------------------------------------
+
+/** Next free sequence across every quotation id, so ids and inquiry numbers stay unique. */
+function nextQuotationSeq(quotations: Quotation[]): number {
+  return quotations.reduce((max, q) => Math.max(max, seqOf(q.id)), 0) + 1;
+}
+
+export function draftQuotationForEnquiry(
+  email: InboxEmail,
+  quotations: Quotation[],
+  actor: string,
+  today: string
+): Quotation | null {
+  if (!email.partyId) return null;
+  const seq = nextQuotationSeq(quotations);
+  return {
+    id: `qtn-${String(seq).padStart(3, '0')}`,
+    number: `QTN/2026/${String(1000 + seq).padStart(4, '0')}`,
+    partyId: email.partyId,
+    customerName: email.customerName ?? email.senderName,
+    customerCode: email.customerCode ?? '—',
+    officeId: email.officeId,
+    owner: email.owner,
+    status: 'open',
+    stage: 'no_followup',
+    workState: 'pending_send',
+    deliveryState: 'not_sent',
+    value: 0,
+    quoteDate: today,
+    reviewDate: '',
+    createdDate: today,
+    lastUpdated: today,
+    items: [],
+    paymentTerms: '100% advance along with purchase order',
+    deliveryTerms: 'Ex Works — Vadodara',
+    warranty: '12 months against manufacturing defects',
+    packingCharges: 0,
+    revisions: [],
+    activity: [
+      {
+        id: `act-qtn-${seq}-new`,
+        date: `${today}T12:30:00`,
+        actor,
+        action: 'Quotation created',
+        detail: `From enquiry — ${email.subject}`,
+      },
+    ],
+  };
+}
