@@ -570,20 +570,21 @@ export default function GlobalInbox() {
   //   1 panel  < 700px  — conversation above workspace; list still in the
   //                       drawer.
   const panels = !selected ? 1 : workspaceWidth >= 880 ? 3 : workspaceWidth >= 700 ? 2 : 1;
-  const roomy = workspaceWidth >= 1040;
   // The list is a column only in the full layout; otherwise it is the drawer,
   // reachable from a button that is always visible beside the conversation.
   const listAsColumn = !selected || panels === 3;
   const listAsDrawer = !!selected && panels < 3;
-  // A connected single surface (fixed height, shared dividers, no gaps) as soon
-  // as two panels sit side by side; below that they are separate stacked cards.
-  const connected = panels >= 2;
+  // A connected, edge-to-edge surface (viewport height, 1px dividers, no gaps):
+  // the full-height list on direct /inbox and every side-by-side workspace.
+  // Only the narrow stacked tier falls back to separate cards.
+  const connected = !selected || panels >= 2;
+  // Desktop split: Company Emails 22% · Email Thread 40% · Action Workspace 38%.
+  // The list keeps a 230px floor so the ratio never makes it unreadable at the
+  // bottom of the three-panel tier; above ~1050px the split is exactly 22/40/38.
   const gridColumns = !selected
     ? undefined
     : panels === 3
-    ? `${listCollapsed ? '56px' : roomy ? 'minmax(260px, 300px)' : '240px'} ${
-        roomy ? 'minmax(400px, 1fr)' : 'minmax(320px, 1fr)'
-      } ${roomy ? 'minmax(380px, 460px)' : 'minmax(300px, 344px)'}`
+    ? `${listCollapsed ? '56px' : 'minmax(230px, 22fr)'} minmax(0, 40fr) minmax(0, 38fr)`
     : panels === 2
     ? 'minmax(320px, 1fr) minmax(300px, 380px)'
     : undefined;
@@ -603,33 +604,39 @@ export default function GlobalInbox() {
 
   if (noOffice) {
     return (
-      <>
+      <div className="px-4 py-4 sm:px-6">
         <PageHeader
           title="Global Inbox"
           description="AI classifies, extracts and drafts. Every outgoing email is human-reviewed and approved before sending."
           crumbs={[{ label: 'Global Inbox' }]}
         />
         <NoOfficeAssigned />
-      </>
+      </div>
     );
   }
 
+  // The shell renders /inbox full-bleed, so the page owns its own gutters: a
+  // slim title block, the toolbar edge to edge, and a workspace that takes the
+  // rest of the viewport height (the app header is 56px tall).
   return (
-    <>
-      <PageHeader
-        title="Global Inbox"
-        description="AI classifies, extracts and drafts. Every outgoing email is human-reviewed and approved before sending."
-        crumbs={[{ label: 'Global Inbox' }]}
-      />
+    <div className="flex h-[calc(100vh-56px)] min-h-[560px] flex-col leading-[1.4]">
+      <div className="flex-none px-4 pt-3">
+        <PageHeader
+          dense
+          title="Global Inbox"
+          description="AI classifies, extracts and drafts. Every outgoing email is human-reviewed and approved before sending."
+          crumbs={[{ label: 'Global Inbox' }]}
+        />
+      </div>
 
       {/* The inbox toolbar is always present. Direct /inbox lists the
           classified emails of every company; contextual mode narrows the list
           to the selected customer (tabs, filters and counts follow it). The
           inquiry grouping stays additive on top — a bundle above the
           conversation, never a replacement for the list. */}
-      <div className="card mb-4">
+      <div className="flex-none border-y border-surface-200 bg-white">
         {/* Tabs */}
-        <div className="px-4 pt-2">
+        <div className="px-4">
           <Tabs
             active={tab}
             onChange={(k) => setTab(k as Tab)}
@@ -643,7 +650,7 @@ export default function GlobalInbox() {
         {/* Filters — default toolbar is Search · Classification · More Filters.
             Read/Unread, Owner and the date range live in the popover to keep the
             bar short; active filters surface as removable chips below. */}
-        <div className="border-t border-surface-100 px-3 py-2.5">
+        <div className="px-4 py-2">
           <FilterBar
             chips={chips}
             onClearAll={chips.length ? clearFilters : undefined}
@@ -681,10 +688,8 @@ export default function GlobalInbox() {
         ref={workspaceRef}
         style={gridColumns ? { gridTemplateColumns: gridColumns } : undefined}
         className={classNames(
-          'grid grid-cols-1',
-          connected
-            ? 'h-[calc(100vh-250px)] min-h-[520px] gap-0 overflow-hidden rounded-xl border border-surface-200 bg-white shadow-card'
-            : 'gap-4'
+          'grid min-h-0 flex-1 grid-cols-1 bg-white',
+          connected ? 'gap-0 overflow-hidden' : 'gap-3 overflow-y-auto p-3'
         )}
       >
         {/* Left: the email list — every company on direct /inbox, the selected
@@ -696,8 +701,8 @@ export default function GlobalInbox() {
         {listAsColumn && (
           <div
             className={classNames(
-              'card overflow-hidden',
-              connected && 'flex flex-col rounded-none border-0 shadow-none',
+              'card flex flex-col overflow-hidden',
+              connected && 'rounded-none border-0 shadow-none',
               connected && selected && 'border-r border-surface-200 bg-surface-50/40'
             )}
           >
@@ -770,7 +775,7 @@ export default function GlobalInbox() {
                 </button>
               </div>
             )}
-            <div className={classNames('overflow-y-auto', connected && 'min-h-0 flex-1')}>
+            <div className="min-h-0 flex-1 overflow-y-auto">
               {listCollapsed && selected ? (
                 <EmailIconRail emails={filtered} selectedId={selectedId} onSelect={onSelect} />
               ) : (
@@ -786,8 +791,12 @@ export default function GlobalInbox() {
             {/* Center: reading panel — comfortable width, divider on right */}
             <div
               className={classNames(
-                'card overflow-hidden',
-                connected && 'flex flex-col rounded-none border-0 border-r border-surface-200 bg-white shadow-none'
+                'card flex flex-col overflow-hidden',
+                connected
+                  ? 'rounded-none border-0 border-r border-surface-200 bg-white shadow-none'
+                  : // Stacked tier: the thread keeps a workable height of its
+                    // own and scrolls inside it, rather than being clipped.
+                    'h-[520px]'
               )}
             >
               {/* The list's stand-in whenever it is not a column. It sits at the
@@ -846,7 +855,7 @@ export default function GlobalInbox() {
                   <Link2 className="h-3.5 w-3.5" /> Purchase Order received — quotation association required
                 </div>
               )}
-              <div className={classNames(connected && 'min-h-0 flex-1')}>
+              <div className="min-h-0 flex-1">
                 {showQuoteTools ? (
                   <InboxCenterPanel email={selected} mode="quote-send" quotation={quoteSendQuotation} focusTick={focusTick} />
                 ) : isRevision ? (
@@ -863,11 +872,11 @@ export default function GlobalInbox() {
             {/* Right: quote tools / business action — dedicated workflow surface */}
             <div
               className={classNames(
-                'card overflow-hidden',
-                connected && 'flex flex-col rounded-none border-0 bg-white shadow-none'
+                'card flex flex-col overflow-hidden',
+                connected && 'rounded-none border-0 bg-white shadow-none'
               )}
             >
-              <div className={classNames(connected && 'min-h-0 flex-1')}>
+              <div className="min-h-0 flex-1">
                 {showQuoteTools ? (
                   <QuoteToolsPanel email={selected} quotation={quoteSendQuotation!} onPrepared={onPrepared} />
                 ) : isRevision ? (
@@ -983,11 +992,11 @@ export default function GlobalInbox() {
 
       {/* subtle icon reference so Inbox import is used when the list is empty */}
       {!selected && filtered.length === 0 && (
-        <div className="mt-4 flex justify-center text-surface-300">
+        <div className="flex flex-none justify-center py-3 text-surface-300">
           <Inbox className="h-6 w-6" />
         </div>
       )}
-    </>
+    </div>
   );
 }
 

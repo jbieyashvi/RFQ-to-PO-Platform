@@ -173,7 +173,10 @@ export function EmailCenter({
           </div>
         </div>
 
-        <div className="mt-2.5 grid grid-cols-1 gap-x-6 gap-y-1 text-[12px] sm:grid-cols-2">
+        {/* Two columns only while the panel itself is wide enough for them —
+            the centre column is narrower than the viewport, so the split is
+            driven by the container, never by a viewport breakpoint. */}
+        <div className="mt-2 grid gap-x-5 gap-y-0.5 text-[11px] [grid-template-columns:repeat(auto-fit,minmax(210px,1fr))] [&>p]:min-w-0 [&>p]:break-words">
           <p><span className="text-surface-400">From:</span> <span className="font-medium text-surface-700">{email.senderName}</span> &lt;{email.senderEmail}&gt;</p>
           <p><span className="text-surface-400">To:</span> <span className="text-surface-700">{email.recipient}</span></p>
           {email.cc.length > 0 && <p><span className="text-surface-400">Cc:</span> <span className="text-surface-700">{email.cc.join(', ')}</span></p>}

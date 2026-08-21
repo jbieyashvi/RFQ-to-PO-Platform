@@ -122,18 +122,20 @@ export function RequirementExtractionPanel({ email }: { email: InboxEmail }) {
       <PanelHeader />
 
       {/* Overall accuracy — the one number that gates the whole reading. */}
-      <div className="flex-none px-3 pt-3">
-        <div className={classNames('rounded-xl border px-3 py-2.5', meta.ring)}>
-          <div className="flex items-baseline justify-between gap-2">
+      <div className="flex-none px-3 pt-2.5">
+        <div className={classNames('rounded-xl border p-3', meta.ring)}>
+          {/* The two source controls wrap under the score rather than being
+              clipped when the workspace column is at its narrowest. */}
+          <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1.5">
             <div className="flex items-baseline gap-2">
-              <span className={classNames('text-[22px] font-semibold leading-none tabular-nums', meta.text)}>
+              <span className={classNames('text-[20px] font-semibold leading-none tabular-nums', meta.text)}>
                 {extraction.accuracy}%
               </span>
               <span className="text-[11px] font-semibold uppercase tracking-wide text-surface-500">
                 Overall Accuracy
               </span>
             </div>
-            <div className="flex flex-none items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => openCompare(null)}
@@ -234,7 +236,7 @@ export function RequirementExtractionPanel({ email }: { email: InboxEmail }) {
 
 function PanelHeader() {
   return (
-    <div className="flex flex-none items-center gap-1.5 border-b border-surface-100 px-3.5 py-2">
+    <div className="flex flex-none items-center gap-1.5 border-b border-surface-100 px-3 py-2">
       <ListChecks className="h-4 w-4 flex-none text-brand-600" />
       <h2 className="text-[14px] font-semibold text-surface-800">AI Requirement Extraction</h2>
     </div>
@@ -276,7 +278,7 @@ function RequirementCard({
         }
       }}
       className={classNames(
-        'cursor-pointer rounded-xl border px-2.5 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300',
+        'cursor-pointer rounded-xl border p-3 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300',
         tint,
         active && 'ring-2 ring-brand-300'
       )}

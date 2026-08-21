@@ -55,9 +55,9 @@ export function EmailList({
               className={classNames(
                 // 3px left indicator on every row keeps text alignment steady;
                 // only the selected row lights up the brand colour + background.
-                // A tight 3-line layout keeps rows in the 84–96px band so ~7–8
+                // A tight 3-line layout keeps rows in the 64–72px band so ~9–10
                 // fit on screen at desktop widths.
-                'flex min-h-[72px] w-full flex-col justify-center gap-1 border-l-[3px] px-3.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/50',
+                'flex min-h-[64px] w-full flex-col justify-center gap-0.5 border-l-[3px] px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/50',
                 active ? 'border-brand-600 bg-brand-50' : 'border-transparent hover:bg-surface-50',
                 !active && !e.read && !e.sent && 'bg-brand-50/30'
               )}
@@ -72,7 +72,7 @@ export function EmailList({
                 <span className={classNames('min-w-0 flex-1 truncate text-[13px]', !e.read && !e.sent ? 'font-semibold text-surface-900' : 'font-medium text-surface-700')}>
                   {e.senderName}
                 </span>
-                <span className="flex-none text-[12px] text-surface-400">
+                <span className="flex-none text-[11px] text-surface-400">
                   {formatDateTime(e.sent && e.sentAt ? e.sentAt : e.receivedAt).replace(/,/, '')}
                 </span>
               </div>
@@ -82,7 +82,7 @@ export function EmailList({
               {/* Customer/company and the single classification badge share one
                   line to keep the row compact (3 lines total). */}
               <div className="flex items-center gap-2">
-                <p className="min-w-0 flex-1 truncate text-[12px] text-surface-400">{e.customerName ?? e.senderEmail}</p>
+                <p className="min-w-0 flex-1 truncate text-[11px] text-surface-400">{e.customerName ?? e.senderEmail}</p>
                 <StatusBadge tone={cls.tone} label={cls.label} dot={false} className="!px-1.5 !py-0 !text-[11px] flex-none" />
                 {statusChip && (
                   <span className={classNames('flex-none rounded-full px-1.5 py-0 text-[11px] font-medium ring-1 ring-inset', statusChip.cls)}>

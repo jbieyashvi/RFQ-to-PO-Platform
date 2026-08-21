@@ -12,14 +12,17 @@ export function PageHeader({
   description,
   crumbs,
   actions,
+  dense,
 }: {
   title: string;
   description?: string;
   crumbs?: Crumb[];
   actions?: ReactNode;
+  // Full-bleed workspaces (the Global Inbox) sit tight under their title.
+  dense?: boolean;
 }) {
   return (
-    <div className="mb-4">
+    <div className={dense ? 'mb-2' : 'mb-4'}>
       {crumbs && crumbs.length > 0 && (
         <nav className="mb-1.5 flex items-center gap-1 text-[11px] leading-4 text-surface-400">
           <Link to="/dashboard" className="flex items-center hover:text-surface-600">
