@@ -11,6 +11,13 @@ import { isQuoteSent, isSOSent } from '@/lib/metrics';
 //   - Quotes Sent        : quotation dispatched -> workState 'sent' (isQuoteSent).
 //   - POs Received       : each Sales Order carries a received customer PO, so
 //                          one SalesOrder == one PO Received.
+//   - No Follow-ups /
+//     Budgetary /
+//     Negotiation /
+//     Finalised          : the four quotation Stages (Quotation.stage), counted
+//                          over the same inquiry set. Every quotation sits in
+//                          exactly one stage, so the four always sum to
+//                          Inquiries Received.
 //   - SOs Sent           : sales order dispatched -> status 'so_sent' (isSOSent,
 //                          exact; 'finalised' is deliberately NOT folded in).
 //
@@ -32,21 +39,41 @@ export function inRange(iso: string, from: string, to: string): boolean {
   return true;
 }
 
+// Field order mirrors the reported column order: the funnel first, then the
+// stage split of that funnel, then the dispatched SOs.
 export interface Metrics {
   inquiries: number;
   quotesSent: number;
   posReceived: number;
+  noFollowup: number;
+  budgetary: number;
+  negotiation: number;
+  finalised: number;
   sosSent: number;
 }
 
-export const EMPTY_METRICS: Metrics = { inquiries: 0, quotesSent: 0, posReceived: 0, sosSent: 0 };
+export const EMPTY_METRICS: Metrics = {
+  inquiries: 0,
+  quotesSent: 0,
+  posReceived: 0,
+  noFollowup: 0,
+  budgetary: 0,
+  negotiation: 0,
+  finalised: 0,
+  sosSent: 0,
+};
 
-/** The four core counts for an already-scoped quotation + sales-order slice. */
+/** The reported counts for an already-scoped quotation + sales-order slice. */
 export function computeMetrics(quotations: Quotation[], salesOrders: SalesOrder[]): Metrics {
+  const atStage = (stage: Quotation['stage']) => quotations.filter((q) => q.stage === stage).length;
   return {
     inquiries: quotations.length,
     quotesSent: quotations.filter(isQuoteSent).length,
     posReceived: salesOrders.length,
+    noFollowup: atStage('no_followup'),
+    budgetary: atStage('budgetary'),
+    negotiation: atStage('negotiation'),
+    finalised: atStage('finalised'),
     sosSent: salesOrders.filter(isSOSent).length,
   };
 }
@@ -74,17 +101,36 @@ export function officeBreakdown(
 }
 
 // ---------- Top performer per office ----------
+
+/**
+ * Sales performance weights. The three things a salesperson personally drives —
+ * inquiries handled, quotes sent, POs converted — with the hardest-won counting
+ * most. SOs are the back-office dispatch of a PO that is already won, so they
+ * are reported but deliberately score nothing: ranking on SOs credited the
+ * person who typed the order, not the person who sold it.
+ */
+export const PERFORMANCE_WEIGHTS = { inquiries: 1, quotesSent: 2, posReceived: 3 } as const;
+
+export function performanceScore(m: Pick<Metrics, 'inquiries' | 'quotesSent' | 'posReceived'>): number {
+  return (
+    m.inquiries * PERFORMANCE_WEIGHTS.inquiries +
+    m.quotesSent * PERFORMANCE_WEIGHTS.quotesSent +
+    m.posReceived * PERFORMANCE_WEIGHTS.posReceived
+  );
+}
+
 export interface PerformerMetrics extends Metrics {
   owner: string;
   officeId: string;
   officeName: string;
+  score: number;
 }
 
 /**
- * The single top-performing employee per office, ranked by SOs generated, then
- * Quotes Sent, then Inquiries handled. Offices with no owner activity in scope
- * are omitted. `owner` is the employee's display name (the field carried on both
- * quotations and sales orders).
+ * The single top-performing employee per office, ranked by the sales
+ * performance score above and then by its parts, hardest-won first. Offices
+ * with no owner activity in scope are omitted. `owner` is the employee's
+ * display name (the field carried on both quotations and sales orders).
  */
 export function topPerformers(
   offices: { id: string; name: string }[],
@@ -102,13 +148,16 @@ export function topPerformers(
 
     const ranked = Array.from(owners)
       .map((owner) => {
-        const oq = q.filter((x) => x.owner === owner);
-        const oso = so.filter((x) => x.owner === owner);
-        return { owner, officeId: o.id, officeName: o.name, ...computeMetrics(oq, oso) };
+        const metrics = computeMetrics(
+          q.filter((x) => x.owner === owner),
+          so.filter((x) => x.owner === owner)
+        );
+        return { owner, officeId: o.id, officeName: o.name, ...metrics, score: performanceScore(metrics) };
       })
       .sort(
         (a, b) =>
-          b.sosSent - a.sosSent ||
+          b.score - a.score ||
+          b.posReceived - a.posReceived ||
           b.quotesSent - a.quotesSent ||
           b.inquiries - a.inquiries ||
           a.owner.localeCompare(b.owner)
@@ -119,7 +168,7 @@ export function topPerformers(
   return out;
 }
 
-// ---------- Weekly / Monthly comparison periods ----------
+// ---------- Weekly / Monthly reporting period ----------
 export interface Period {
   key: string;
   label: string;
@@ -127,7 +176,7 @@ export interface Period {
   to: string; // yyyy-mm-dd inclusive
 }
 
-export type ComparisonMode = 'weekly' | 'monthly';
+export type PeriodMode = 'weekly' | 'monthly';
 
 /** Local-time yyyy-mm-dd (never use toISOString: it shifts to UTC). */
 export function toISO(d: Date): string {
@@ -144,38 +193,27 @@ function shiftDays(d: Date, days: number): Date {
 }
 
 /**
- * Current vs previous comparison windows anchored on the prototype's fixed
- * "today". Weekly = the last 7 days vs the 7 days before that. Monthly = the
- * current calendar month (to date) vs the whole previous calendar month.
+ * The Weekly / Monthly reporting window, anchored on the prototype's fixed
+ * "today". Weekly = the last 7 days; Monthly = the current calendar month to
+ * date. The MIS page offers these as the two one-click presets behind its
+ * Date Range filter, so the toggle and the range always agree.
  */
-export function comparisonPeriods(mode: ComparisonMode, today: Date = TODAY): {
-  current: Period;
-  previous: Period;
-} {
+export function reportPeriod(mode: PeriodMode, today: Date = TODAY): Period {
   if (mode === 'weekly') {
-    return {
-      current: { key: 'this_week', label: 'This Week', from: toISO(shiftDays(today, -6)), to: toISO(today) },
-      previous: { key: 'last_week', label: 'Last Week', from: toISO(shiftDays(today, -13)), to: toISO(shiftDays(today, -7)) },
-    };
+    return { key: 'this_week', label: 'This Week', from: toISO(shiftDays(today, -6)), to: toISO(today) };
   }
   const firstThis = new Date(today.getFullYear(), today.getMonth(), 1);
-  const firstPrev = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-  const lastPrev = new Date(today.getFullYear(), today.getMonth(), 0); // day 0 => last day of previous month
-  return {
-    current: { key: 'this_month', label: 'This Month', from: toISO(firstThis), to: toISO(today) },
-    previous: { key: 'last_month', label: 'Last Month', from: toISO(firstPrev), to: toISO(lastPrev) },
-  };
+  return { key: 'this_month', label: 'This Month', from: toISO(firstThis), to: toISO(today) };
 }
 
-/** Percentage change current vs previous, rounded; null when there is no base. */
-export function pctChange(current: number, previous: number): number | null {
-  if (previous === 0) return current === 0 ? 0 : null;
-  return Math.round(((current - previous) / previous) * 100);
-}
-
-export const METRIC_LABELS: { key: keyof Metrics; label: string; short: string }[] = [
-  { key: 'inquiries', label: 'Inquiries Received', short: 'Inquiries' },
-  { key: 'quotesSent', label: 'Quotes Sent', short: 'Quotes' },
-  { key: 'posReceived', label: 'POs Received', short: 'POs' },
-  { key: 'sosSent', label: 'SOs Sent', short: 'SOs' },
+// Reported column order, used verbatim by the office table and both exports.
+export const METRIC_LABELS: { key: keyof Metrics; label: string }[] = [
+  { key: 'inquiries', label: 'Inquiries Received' },
+  { key: 'quotesSent', label: 'Quotes Sent' },
+  { key: 'posReceived', label: 'POs Received' },
+  { key: 'noFollowup', label: 'No Follow-ups' },
+  { key: 'budgetary', label: 'Budgetary' },
+  { key: 'negotiation', label: 'Negotiation' },
+  { key: 'finalised', label: 'Finalised' },
+  { key: 'sosSent', label: 'SOs Sent' },
 ];

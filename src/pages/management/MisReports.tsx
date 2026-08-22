@@ -7,9 +7,6 @@ import {
   Download,
   Printer,
   RotateCcw,
-  TrendingDown,
-  TrendingUp,
-  Minus,
 } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import { Button, FilterSelect, KpiCard, SectionCard, EmptyState } from '@/components/ui';
@@ -23,22 +20,26 @@ import {
   computeMetrics,
   officeBreakdown,
   topPerformers,
-  comparisonPeriods,
-  pctChange,
+  reportPeriod,
   toISO,
   METRIC_LABELS,
-  type ComparisonMode,
+  PERFORMANCE_WEIGHTS,
   type Metrics,
+  type PeriodMode,
 } from '@/lib/mis';
 
-// Consistent bar colours for the four metrics — brand red for the headline
-// SO metric, muted neutrals elsewhere so the report stays calm.
-const METRIC_BAR: Record<keyof Metrics, string> = {
-  inquiries: 'bg-slate-400',
-  quotesSent: 'bg-blue-400',
-  posReceived: 'bg-amber-400',
-  sosSent: 'bg-brand-500',
+// The two reporting windows the Weekly / Monthly toggle applies, computed once
+// from the prototype's fixed "today".
+const PERIOD_PRESETS: Record<PeriodMode, ReturnType<typeof reportPeriod>> = {
+  weekly: reportPeriod('weekly'),
+  monthly: reportPeriod('monthly'),
 };
+
+// One phrasing of the ranking rule, derived from the weights themselves so the
+// on-screen note, the CSV and the PDF can never drift apart from the maths.
+const PERFORMANCE_SCORING =
+  `${PERFORMANCE_WEIGHTS.inquiries}× inquiries handled + ${PERFORMANCE_WEIGHTS.quotesSent}× quotes sent + ` +
+  `${PERFORMANCE_WEIGHTS.posReceived}× POs converted`;
 
 const DATE_INPUT =
   'h-full w-[112px] bg-transparent px-2 text-[12px] text-surface-700 focus:outline-none';
@@ -52,7 +53,28 @@ export default function MisReports() {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [office, setOffice] = useState(''); // '' = all in-scope offices
-  const [mode, setMode] = useState<ComparisonMode>('weekly');
+
+  // The Weekly / Monthly toggle drives the Date Range rather than a section of
+  // its own: a preset simply writes its window into from/to, so the toggle and
+  // the range can never disagree, and clicking the lit preset clears it again.
+  const periodMode =
+    (['weekly', 'monthly'] as const).find(
+      (m) => PERIOD_PRESETS[m].from === from && PERIOD_PRESETS[m].to === to
+    ) ?? null;
+  const applyPeriod = (m: PeriodMode) => {
+    if (periodMode === m) {
+      setFrom('');
+      setTo('');
+      return;
+    }
+    setFrom(PERIOD_PRESETS[m].from);
+    setTo(PERIOD_PRESETS[m].to);
+  };
+  const periodLabel = periodMode
+    ? PERIOD_PRESETS[periodMode].label
+    : from || to
+      ? 'Custom range'
+      : 'All dates';
 
   const rangeError = from && to && from > to ? 'From date must be on or before To date.' : '';
   const dirty = !!(from || to || office);
@@ -110,40 +132,23 @@ export default function MisReports() {
     () => officeBreakdown(reportOffices, rangedQuotations, rangedSalesOrders),
     [reportOffices, rangedQuotations, rangedSalesOrders]
   );
-  const officeMax = useMemo(
-    () =>
-      Math.max(
-        1,
-        ...offices.flatMap((o) => METRIC_LABELS.map((m) => o[m.key]))
-      ),
-    [offices]
-  );
+  // The per-column leader, so the strongest office in each metric reads at a
+  // glance without spending width on a bar in every one of the eight cells.
+  // Only an outright leader is marked — a shared top value tells the reader
+  // nothing, and highlighting every tied office would drown the real signal.
+  const officeLeaders = useMemo(() => {
+    const leaders = {} as Record<keyof Metrics, number | null>;
+    METRIC_LABELS.forEach((m) => {
+      const values = offices.map((o) => o[m.key]);
+      const top = Math.max(0, ...values);
+      const unique = top > 0 && values.filter((v) => v === top).length === 1;
+      leaders[m.key] = unique ? top : null;
+    });
+    return leaders;
+  }, [offices]);
+  const showLeaders = offices.length > 1;
 
-  // ---- Report 2: within-office weekly / monthly comparison -----------------
-  // Periods are fixed windows anchored on the prototype's "today" — the page's
-  // custom Date Range deliberately does not apply here (the period IS the range).
-  const periods = useMemo(() => comparisonPeriods(mode), [mode]);
-  const comparison = useMemo(() => {
-    const slice = (f: string, t: string) =>
-      computeMetrics(
-        baseQuotations.filter((q) => inRange(QUOTATION_DATE(q), f, t)),
-        baseSalesOrders.filter((s) => inRange(SALES_ORDER_DATE(s), f, t))
-      );
-    return {
-      current: slice(periods.current.from, periods.current.to),
-      previous: slice(periods.previous.from, periods.previous.to),
-    };
-  }, [baseQuotations, baseSalesOrders, periods]);
-  const comparisonMax = useMemo(
-    () =>
-      Math.max(
-        1,
-        ...METRIC_LABELS.map((m) => Math.max(comparison.current[m.key], comparison.previous[m.key]))
-      ),
-    [comparison]
-  );
-
-  // ---- Report 3: top performer per office ----------------------------------
+  // ---- Report 2: top performer per office ----------------------------------
   const performers = useMemo(
     () => topPerformers(reportOffices, rangedQuotations, rangedSalesOrders),
     [reportOffices, rangedQuotations, rangedSalesOrders]
@@ -168,7 +173,7 @@ export default function MisReports() {
       ['Generated', formatDate(toISO(TODAY))],
       ['Office', officeLabel],
       ['Date Range', range],
-      ['Comparison', mode === 'weekly' ? 'Weekly' : 'Monthly'],
+      ['Period', periodLabel],
       [],
       ['Summary'],
       ['Metric', 'Count'],
@@ -178,26 +183,18 @@ export default function MisReports() {
       ['Office', ...METRIC_LABELS.map((m) => m.label)],
       ...offices.map((o) => [o.officeName, ...METRIC_LABELS.map((m) => o[m.key])]),
       [],
-      [`${periods.current.label} vs ${periods.previous.label}`],
-      [
-        'Metric',
-        `${periods.current.label} (${formatDate(periods.current.from)} – ${formatDate(periods.current.to)})`,
-        `${periods.previous.label} (${formatDate(periods.previous.from)} – ${formatDate(periods.previous.to)})`,
-        'Change %',
-      ],
-      ...METRIC_LABELS.map((m) => {
-        const change = pctChange(comparison.current[m.key], comparison.previous[m.key]);
-        return [
-          m.label,
-          comparison.current[m.key],
-          comparison.previous[m.key],
-          change === null ? 'New' : `${change}%`,
-        ] as (string | number)[];
-      }),
-      [],
       ['Top Performer per Office'],
-      ['Office', 'Employee', 'Inquiries Handled', 'Quotes Sent', 'POs Received', 'SOs Generated'],
-      ...performers.map((p) => [p.officeName, p.owner, p.inquiries, p.quotesSent, p.posReceived, p.sosSent]),
+      [`Ranked by sales performance (${PERFORMANCE_SCORING})`],
+      ['Office', 'Employee', 'Inquiries Handled', 'Quotes Sent', 'POs Received', 'Performance Score', 'SOs Generated'],
+      ...performers.map((p) => [
+        p.officeName,
+        p.owner,
+        p.inquiries,
+        p.quotesSent,
+        p.posReceived,
+        p.score,
+        p.sosSent,
+      ]),
     ];
     const officeSlug = office ? officeLabel.replace(/\s+/g, '-') : 'All-Offices';
     downloadCSV(`MIS-Report_${officeSlug}_${toISO(TODAY)}.csv`, rows);
@@ -224,7 +221,7 @@ export default function MisReports() {
           <h1 style="font-size:18px;margin:0;color:#dc2626;">Flowtech — MIS Report</h1>
           <p style="font-size:12px;margin:4px 0 0;color:#64748b;">
             Office: <b>${officeLabel}</b> &nbsp;·&nbsp; Date Range: <b>${range}</b> &nbsp;·&nbsp;
-            Comparison: <b>${mode === 'weekly' ? 'Weekly' : 'Monthly'}</b> &nbsp;·&nbsp;
+            Period: <b>${periodLabel}</b> &nbsp;·&nbsp;
             Generated: <b>${formatDate(toISO(TODAY))}</b>
           </p>
         </div>
@@ -235,18 +232,19 @@ export default function MisReports() {
           ['Office', ...METRIC_LABELS.map((m) => m.label)],
           offices.map((o) => [o.officeName, ...METRIC_LABELS.map((m) => o[m.key])])
         )}
-        ${section(`${periods.current.label} vs ${periods.previous.label}`)}
-        ${table(
-          ['Metric', periods.current.label, periods.previous.label, 'Change'],
-          METRIC_LABELS.map((m) => {
-            const change = pctChange(comparison.current[m.key], comparison.previous[m.key]);
-            return [m.label, comparison.current[m.key], comparison.previous[m.key], change === null ? 'New' : `${change}%`];
-          })
-        )}
         ${section('Top Performer per Office')}
+        <p style="font-size:11px;margin:0 0 2px;color:#64748b;">Ranked by sales performance (${PERFORMANCE_SCORING}).</p>
         ${table(
-          ['Office', 'Employee', 'Inquiries Handled', 'Quotes Sent', 'POs Received', 'SOs Generated'],
-          performers.map((p) => [p.officeName, p.owner, p.inquiries, p.quotesSent, p.posReceived, p.sosSent]),
+          ['Office', 'Employee', 'Inquiries Handled', 'Quotes Sent', 'POs Received', 'Performance Score', 'SOs Generated'],
+          performers.map((p) => [
+            p.officeName,
+            p.owner,
+            p.inquiries,
+            p.quotesSent,
+            p.posReceived,
+            p.score,
+            p.sosSent,
+          ]),
           2
         )}
       </body></html>`;
@@ -276,7 +274,7 @@ export default function MisReports() {
       <>
         <PageHeader
           title="MIS Reports"
-          description="Office performance, period comparisons and top performers."
+          description="Office-to-office performance and top performers."
           crumbs={[{ label: 'Management' }, { label: 'MIS Reports' }]}
         />
         <NoOfficeAssigned />
@@ -293,7 +291,7 @@ export default function MisReports() {
     <>
       <PageHeader
         title="MIS Reports"
-        description="Office performance, period comparisons and top performers — same live data as the operational screens."
+        description="Office-to-office performance and top performers — same live data as the operational screens."
         crumbs={[{ label: 'Management' }, { label: 'MIS Reports' }]}
         actions={
           <>
@@ -362,17 +360,18 @@ export default function MisReports() {
             />
           )}
 
-          {/* Weekly / Monthly comparison toggle */}
+          {/* Weekly / Monthly — one-click presets for the Date Range above */}
           <div className="flex h-8 flex-none items-center rounded-lg border border-surface-200 bg-surface-50 p-0.5">
             {(['weekly', 'monthly'] as const).map((m) => (
               <button
                 key={m}
                 type="button"
-                onClick={() => setMode(m)}
-                aria-pressed={mode === m}
+                onClick={() => applyPeriod(m)}
+                aria-pressed={periodMode === m}
+                title={`${PERIOD_PRESETS[m].label}: ${formatDate(PERIOD_PRESETS[m].from)} – ${formatDate(PERIOD_PRESETS[m].to)}`}
                 className={classNames(
                   'h-7 rounded-md px-3 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
-                  mode === m ? 'bg-white text-brand-700 shadow-sm' : 'text-surface-500 hover:text-surface-700'
+                  periodMode === m ? 'bg-white text-brand-700 shadow-sm' : 'text-surface-500 hover:text-surface-700'
                 )}
               >
                 {m === 'weekly' ? 'Weekly' : 'Monthly'}
@@ -406,140 +405,56 @@ export default function MisReports() {
         <KpiCard label="SOs Sent" value={formatNumber(kpis.sosSent)} sub={kpiSub} accent="brand" icon={<FileSpreadsheet className="h-4 w-4" />} />
       </div>
 
-      {/* ---- Report 1 + 2 side by side -------------------------------------- */}
-      <div className="grid grid-cols-1 gap-4 min-[1180px]:grid-cols-12 min-[1180px]:gap-5">
-        {/* Office-to-office comparison */}
-        <SectionCard
-          title="Office-to-Office Comparison"
-          description="Inquiries, quotes, POs and SOs per sales office for the selected date range."
-          className="min-[1180px]:col-span-7"
-          bodyClassName="p-0"
-        >
-          {offices.length === 0 ? (
-            <EmptyState title="No offices in scope" message="Adjust the office filter to see the comparison." />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-[12px]">
-                <thead>
-                  <tr className="border-b border-surface-200 bg-surface-50 text-left text-[11px] uppercase tracking-wide text-surface-500">
-                    <th className="px-4 py-2.5 font-semibold">Office</th>
-                    {METRIC_LABELS.map((m) => (
-                      <th key={m.key} className="px-3 py-2.5 text-right font-semibold">{m.label}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {offices.map((o) => (
-                    <tr key={o.officeId} className="border-b border-surface-100 last:border-0">
-                      <td className="px-4 py-2.5 font-medium text-surface-800">{o.officeName}</td>
-                      {METRIC_LABELS.map((m) => (
-                        <td key={m.key} className="px-3 py-2.5">
-                          <div className="flex items-center justify-end gap-2">
-                            <span className="w-7 text-right font-medium tabular-nums text-surface-800">
-                              {formatNumber(o[m.key])}
-                            </span>
-                            <span className="h-1.5 w-14 flex-none overflow-hidden rounded-full bg-surface-100">
-                              <span
-                                className={classNames('block h-full rounded-full', METRIC_BAR[m.key])}
-                                style={{ width: `${Math.round((o[m.key] / officeMax) * 100)}%` }}
-                              />
-                            </span>
-                          </div>
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </SectionCard>
-
-        {/* Weekly / Monthly comparison */}
-        <SectionCard
-          title={`${periods.current.label} vs ${periods.previous.label}`}
-          description={`${formatDate(periods.current.from, { short: true })} – ${formatDate(periods.current.to, { short: true })} vs ${formatDate(periods.previous.from, { short: true })} – ${formatDate(periods.previous.to, { short: true })}${office ? ` · ${scopedOffices.find((o) => o.id === office)?.name}` : ''}`}
-          className="min-[1180px]:col-span-5"
-        >
-          <div className="space-y-4">
-            {METRIC_LABELS.map((m) => {
-              const cur = comparison.current[m.key];
-              const prev = comparison.previous[m.key];
-              const change = pctChange(cur, prev);
-              return (
-                <div key={m.key}>
-                  <div className="mb-1 flex items-center justify-between">
-                    <span className="text-[12px] font-medium text-surface-600">{m.label}</span>
-                    <span
-                      className={classNames(
-                        'inline-flex items-center gap-0.5 text-[11px] font-semibold',
-                        change === null || change > 0
-                          ? 'text-emerald-600'
-                          : change < 0
-                            ? 'text-rose-600'
-                            : 'text-surface-400'
-                      )}
-                    >
-                      {change === null ? (
-                        <>
-                          <TrendingUp className="h-3 w-3" /> New
-                        </>
-                      ) : change > 0 ? (
-                        <>
-                          <TrendingUp className="h-3 w-3" /> +{change}%
-                        </>
-                      ) : change < 0 ? (
-                        <>
-                          <TrendingDown className="h-3 w-3" /> {change}%
-                        </>
-                      ) : (
-                        <>
-                          <Minus className="h-3 w-3" /> 0%
-                        </>
-                      )}
-                    </span>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="w-16 flex-none text-[10px] uppercase tracking-wide text-surface-400">
-                        {periods.current.label}
-                      </span>
-                      <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-surface-100">
-                        <span
-                          className={classNames('block h-full rounded-full', METRIC_BAR[m.key])}
-                          style={{ width: `${Math.round((cur / comparisonMax) * 100)}%` }}
-                        />
-                      </span>
-                      <span className="w-6 flex-none text-right text-[12px] font-semibold tabular-nums text-surface-800">
-                        {cur}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="w-16 flex-none text-[10px] uppercase tracking-wide text-surface-400">
-                        {periods.previous.label}
-                      </span>
-                      <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-surface-100">
-                        <span
-                          className={classNames('block h-full rounded-full opacity-40', METRIC_BAR[m.key])}
-                          style={{ width: `${Math.round((prev / comparisonMax) * 100)}%` }}
-                        />
-                      </span>
-                      <span className="w-6 flex-none text-right text-[12px] tabular-nums text-surface-500">
-                        {prev}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </SectionCard>
-      </div>
+      {/* ---- Report 1: office-to-office comparison --------------------------- */}
+      <SectionCard
+        title="Office-to-Office Comparison"
+        description="Inquiries, quotes, POs, the quotation stage split and SOs per sales office for the selected date range."
+        bodyClassName="p-0"
+      >
+        {offices.length === 0 ? (
+          <EmptyState title="No offices in scope" message="Adjust the office filter to see the comparison." />
+        ) : (
+          <table className="w-full table-fixed text-[12px]">
+            <thead>
+              <tr className="border-b border-surface-200 bg-surface-50 text-left text-[10px] uppercase leading-tight tracking-wide text-surface-500">
+                <th className="w-[15%] px-3 py-2 align-bottom font-semibold">Office</th>
+                {METRIC_LABELS.map((m) => (
+                  <th key={m.key} className="px-2 py-2 text-right align-bottom font-semibold">
+                    {m.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {offices.map((o) => (
+                <tr key={o.officeId} className="border-b border-surface-100 last:border-0">
+                  <td className="truncate px-3 py-2 font-medium text-surface-800">{o.officeName}</td>
+                  {METRIC_LABELS.map((m) => {
+                    const leads = showLeaders && officeLeaders[m.key] !== null && o[m.key] === officeLeaders[m.key];
+                    return (
+                      <td
+                        key={m.key}
+                        title={leads ? `Highest ${m.label} of any office in scope` : undefined}
+                        className={classNames(
+                          'px-2 py-2 text-right tabular-nums',
+                          leads ? 'font-semibold text-brand-700' : 'text-surface-700'
+                        )}
+                      >
+                        {formatNumber(o[m.key])}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </SectionCard>
 
       {/* ---- Report 3: top performer per office ------------------------------ */}
       <SectionCard
         title="Top Performer per Office"
-        description="The leading employee per office for the selected date range, ranked by SOs generated."
+        description={`The leading employee per office for the selected date range, ranked on sales performance — ${PERFORMANCE_SCORING}. SOs are shown for reference and do not affect the ranking.`}
         className="mt-4 min-[1180px]:mt-5"
         bodyClassName="p-0"
       >
@@ -558,6 +473,7 @@ export default function MisReports() {
                   <th className="px-3 py-2.5 text-right font-semibold">Inquiries Handled</th>
                   <th className="px-3 py-2.5 text-right font-semibold">Quotes Sent</th>
                   <th className="px-3 py-2.5 text-right font-semibold">POs Received</th>
+                  <th className="px-3 py-2.5 text-right font-semibold">Performance Score</th>
                   <th className="px-3 py-2.5 text-right font-semibold">SOs Generated</th>
                 </tr>
               </thead>
@@ -570,13 +486,19 @@ export default function MisReports() {
                         <span className="flex h-6 w-6 flex-none items-center justify-center rounded-full bg-brand-50 text-[10px] font-bold text-brand-700">
                           {p.owner.split(' ').map((w) => w[0]).slice(0, 2).join('')}
                         </span>
-                        <span className="font-medium text-surface-800">{p.owner}</span>
+                        <span className="whitespace-nowrap font-medium text-surface-800">{p.owner}</span>
                       </span>
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-surface-700">{p.inquiries}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-surface-700">{p.quotesSent}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-surface-700">{p.posReceived}</td>
-                    <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-surface-800">{p.sosSent}</td>
+                    <td
+                      className="px-3 py-2.5 text-right font-semibold tabular-nums text-brand-700"
+                      title={`Sales performance score — ${PERFORMANCE_SCORING}`}
+                    >
+                      {p.score}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-surface-700">{p.sosSent}</td>
                   </tr>
                 ))}
               </tbody>
