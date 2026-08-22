@@ -130,6 +130,10 @@ export function InboxCenterPanel({
   // so-revision carries the revised Sales Order Acknowledgement PDF and, unlike
   // so-send, KEEPS the next-review-date gate — the client conversation continues.
   const isSoRevise = mode === 'so-revision';
+  // A verified PO has nothing left to correct, so the placeholder must not go
+  // on advertising "Request Updated PO" — the only reply left to prepare on a
+  // verified record is the Sales Order itself.
+  const poVerified = mode === 'po-verify' && salesOrder?.verificationStatus === 'verified';
 
   const [draft, setDraft] = useState<OutgoingDraft>(
     email.draft ?? (isWorkflow ? blankDraft(email) : templateFor(email))
@@ -359,7 +363,8 @@ export function InboxCenterPanel({
   };
 
   // ---- PO verification — Path 1: request an updated PO (no attachment). The
-  // workflow state moves to "Awaiting Corrected PO" ONLY now, on send. ----
+  // flagged fields move to "Updated PO awaited" ONLY now, on send — the record
+  // itself stays Mismatch Found until the re-run comparison clears them. ----
   const sendPoRequest = () => {
     if (!canFinalSend || !salesOrder) return;
     const so = salesOrder;
@@ -380,7 +385,7 @@ export function InboxCenterPanel({
     recordOutgoing(so, false);
     // Reset the composer — the PO conversation stays open for the correction.
     updateEmail(email.id, { reviewDate, needsReview: newStatus !== 'verified', draft: undefined, composeIntent: undefined, draftSaved: false });
-    addToast({ type: 'success', title: 'Updated PO requested', message: `Sent to ${draft.to}. Case moved to Awaiting Corrected PO.` });
+    addToast({ type: 'success', title: 'Updated PO requested', message: `Sent to ${draft.to}. Re-run the comparison once the updated PO arrives.` });
   };
 
   // ---- PO verification — Path 2: send the corrected quotation. The quote was
@@ -414,11 +419,11 @@ export function InboxCenterPanel({
     }
     recordOutgoing(so, true);
     updateEmail(email.id, { reviewDate, needsReview: newStatus !== 'verified', draft: undefined, composeIntent: undefined, attachedQuote: undefined, draftSaved: false });
-    addToast({ type: 'success', title: 'Corrected quotation sent', message: `Sent to ${draft.to}. Case moved to Updated Quote Sent.` });
+    addToast({ type: 'success', title: 'Corrected quotation sent', message: `Sent to ${draft.to}. Re-run the comparison once the customer accepts it.` });
   };
 
   // ---- PO verification — Path 3: send the generated Sales Order. The SO was
-  // generated + attached by the SO Generation drawer; here we email it, stamp
+  // generated + attached by the SO Generation modal; here we email it, stamp
   // the SO Sent Date and — now that the customer email has actually gone out —
   // submit the SO to ERP Handoff (Submitted). Legacy records that already carry
   // a handoff keep it untouched (no duplicate is ever created). ----
@@ -592,8 +597,10 @@ export function InboxCenterPanel({
                 Prepare this reply from the workspace on the right.{' '}
                 {isSoRevise
                   ? 'Edit the revised Sales Order, then use “Add Revised SO to Email”'
-                  : 'Use “Request Updated PO” or “Correct Quote”'}{' '}
-                — it will appear here to review, set the next review date, and send.
+                  : poVerified
+                    ? 'Generate the Sales Order, then use “Add Sales Order to Email”'
+                    : 'Use “Request Updated PO” or “Correct Quote”'}{' '}
+                — it will appear here to review{poVerified ? '' : ', set the next review date'} and send.
               </span>
             </div>
           ) : (

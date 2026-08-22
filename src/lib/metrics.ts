@@ -65,9 +65,7 @@ export interface SalesOrderMetrics {
 export function salesOrderMetrics(salesOrders: SalesOrder[]): SalesOrderMetrics {
   return {
     soSent: salesOrders.filter((s) => s.status === 'so_sent').length,
-    mismatches: salesOrders.filter(
-      (s) => s.verificationStatus === 'mismatch' || s.verificationStatus === 'corrected_awaited'
-    ).length,
+    mismatches: salesOrders.filter((s) => s.verificationStatus === 'mismatch').length,
   };
 }
 
@@ -100,8 +98,10 @@ export function salesOrderMetrics(salesOrders: SalesOrder[]): SalesOrderMetrics 
 //                     'needs_revision'.
 //  - Client SO      : client raised a concern on a sent SO -> an active SO
 //    Escalation       revision (isActiveRevision).
-//  - Mismatch       : PO vs Quote verification issue, corrected PO pending ->
-//                     verificationStatus 'mismatch' | 'corrected_awaited'.
+//  - Mismatch       : PO vs Quote verification issue — the PO does not yet
+//                     reconcile with its quotation, whether the correction is
+//                     still to be requested or already out with the customer ->
+//                     verificationStatus 'mismatch'.
 //  - Overdue        : the record's due/review/SLA date has PASSED, decided by
 //                     date comparison against TODAY — never a manual label.
 // ---------------------------------------------------------------------------
@@ -117,8 +117,7 @@ export const isQuotePending = (q: Quotation) => q.workState === 'pending_send';
 export const isQuoteNeedsRevision = (q: Quotation) => q.workState === 'needs_revision';
 export const isSOSent = (s: SalesOrder) => s.status === 'so_sent';
 export const isSODraft = (s: SalesOrder) => s.status === 'draft';
-export const isSOMismatch = (s: SalesOrder) =>
-  s.verificationStatus === 'mismatch' || s.verificationStatus === 'corrected_awaited';
+export const isSOMismatch = (s: SalesOrder) => s.verificationStatus === 'mismatch';
 
 // -- Per-section Branch + date-range scoping ---------------------------------
 export interface SectionFilter {

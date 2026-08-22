@@ -54,15 +54,15 @@ export function allResolved(fields: VerificationField[]): boolean {
 }
 
 // Derive the list-level verification status from the field resolutions.
+//
+// Verified means EVERY field reconciles; anything short of that — a live
+// mismatch, an updated PO still awaited, a corrected quote out with the
+// customer, a comparison that has not run at all — is Mismatch Found. Which of
+// those it is stays legible on the field rows themselves (FIELD_RESOLUTION_META
+// above), where it drives the next action, rather than fragmenting the record
+// status the list filters on.
 export function deriveVerificationStatus(
   fields: VerificationField[]
 ): VerificationStatus {
-  if (fields.length === 0) return 'pending';
-  if (fields.every(isFieldResolved)) return 'verified';
-  const res = fields.map(fieldResolution);
-  if (res.includes('awaiting_po')) return 'corrected_awaited';
-  if (res.includes('awaiting_quote')) return 'updated_quote_sent';
-  if (res.includes('mismatch')) return 'mismatch';
-  if (res.includes('pending_review')) return 'pending_review';
-  return 'pending';
+  return allResolved(fields) ? 'verified' : 'mismatch';
 }

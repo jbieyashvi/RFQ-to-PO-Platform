@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Boxes,
   Calculator,
@@ -161,11 +162,15 @@ const ERROR_SECTION: Record<string, SectionKey> = {
 };
 
 /**
- * SO Generation drawer — the full editable Sales Order form in a full-height
- * right-side drawer (~65% wide on desktop, full-screen on tablet/mobile),
- * opened from the PO-verification workspace once every mismatch is resolved.
- * The drawer is deliberately NON-modal: the selected email thread stays visible
- * (and the minimized email list stays clickable) to its left.
+ * SO Generation modal — the full editable Sales Order form on a large centred
+ * modal over the inbox, opened from the PO-verification workspace once every
+ * mismatch is resolved.
+ *
+ * A modal rather than a side drawer because generating a Sales Order is a
+ * committing act on a wide document: eleven prefilled fields, a line table and
+ * a tax summary all need to be read at once, and a 65%-wide drawer made the
+ * line table scroll horizontally against a thread nobody is reading at that
+ * moment. The full width buys the whole document at a glance.
  *
  * Footer actions:
  *   • Save Draft            → persist the edited fields onto the SO record
@@ -174,7 +179,7 @@ const ERROR_SECTION: Record<string, SectionKey> = {
  * ERP Handoff is NOT created here — the SO is submitted to ERP Handoff only
  * once the customer email is actually sent from the centre composer.
  */
-export function SoGenerationDrawer({
+export function SoGenerationModal({
   email,
   so,
   quote,
@@ -218,7 +223,14 @@ export function SoGenerationDrawer({
   const set = <K extends keyof SoForm>(k: K, v: SoForm[K]) => setForm((f) => ({ ...f, [k]: v }));
   const toggleSection = (k: SectionKey) => setOpen((o) => ({ ...o, [k]: !o[k] }));
 
-  // Escape closes the drawer — unless the preview modal is open (it owns Esc).
+  // Escape closes the modal — unless the preview modal is open (it owns Esc).
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !preview) onClose();
@@ -407,15 +419,17 @@ export function SoGenerationDrawer({
     onClose();
   };
 
-  return (
-    <>
-      {/* Full-height right drawer — non-modal so the email thread stays visible.
-          ~65% wide on desktop (≥1180px, matching the inbox's 3-panel breakpoint);
-          full-screen on tablet/mobile. */}
+  return createPortal(
+    <div className="fixed inset-0 z-40 flex items-stretch justify-center p-2 sm:p-4">
+      {/* Backdrop closes only via the header X / Escape — a stray click must not
+          discard a half-filled Sales Order form. */}
+      <div className="absolute inset-0 bg-surface-900/45 backdrop-blur-[1px] animate-fade-in" />
+
       <div
         role="dialog"
+        aria-modal="true"
         aria-label="SO Generation"
-        className="fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-surface-200 bg-white shadow-drawer animate-slide-in-right min-[1180px]:w-[65%]"
+        className="relative z-10 flex h-full w-full max-w-[1280px] flex-col overflow-hidden rounded-2xl bg-white shadow-pop animate-slide-up"
       >
         {/* Sticky header */}
         <div className="flex flex-none items-start justify-between gap-4 border-b border-surface-200 bg-white px-5 py-3.5">
@@ -455,7 +469,7 @@ export function SoGenerationDrawer({
 
           <div className="space-y-3">
             {/* 1. Client & PO Details */}
-            <DrawerSection
+            <SoSection
               icon={<FileText className="h-3.5 w-3.5" />}
               n={1}
               label="Client & PO Details"
@@ -522,10 +536,10 @@ export function SoGenerationDrawer({
                 className="text-[13px]"
                 placeholder="PO document number, reference and key details…"
               />
-            </DrawerSection>
+            </SoSection>
 
             {/* 2. Consignee */}
-            <DrawerSection
+            <SoSection
               icon={<Truck className="h-3.5 w-3.5" />}
               n={2}
               label="Consignee"
@@ -546,10 +560,10 @@ export function SoGenerationDrawer({
                 </div>
                 <TextAreaField label="" rows={2} value={effectiveShipping} disabled={form.sameAsBilling} onChange={(e) => set('shippingAddress', e.target.value)} className="text-[13px]" placeholder={form.sameAsBilling ? 'Same as billing address' : 'Shipping address'} />
               </div>
-            </DrawerSection>
+            </SoSection>
 
             {/* 3. Items */}
-            <DrawerSection
+            <SoSection
               icon={<Boxes className="h-3.5 w-3.5" />}
               n={3}
               label="Items"
@@ -559,10 +573,10 @@ export function SoGenerationDrawer({
             >
               <ItemLineEditor items={lines} catalog={catalog} onChange={setLines} />
               {errors.lines && <p className="mt-1.5 text-[11px] font-medium text-rose-600">{errors.lines}</p>}
-            </DrawerSection>
+            </SoSection>
 
             {/* 4. Commercial Terms */}
-            <DrawerSection
+            <SoSection
               icon={<Receipt className="h-3.5 w-3.5" />}
               n={4}
               label="Commercial Terms"
@@ -606,10 +620,10 @@ export function SoGenerationDrawer({
                 <TextField label="Inspection" value={form.inspection} onChange={(e) => set('inspection', e.target.value)} className="py-1.5 text-[13px]" placeholder="e.g. At works" />
               </div>
               <TextAreaField label="Additional Commercial Terms" rows={2} value={form.additionalTerms} onChange={(e) => set('additionalTerms', e.target.value)} className="text-[13px]" placeholder="Any additional terms…" />
-            </DrawerSection>
+            </SoSection>
 
             {/* 5. Summary */}
-            <DrawerSection
+            <SoSection
               icon={<Calculator className="h-3.5 w-3.5" />}
               n={5}
               label="Summary"
@@ -625,7 +639,7 @@ export function SoGenerationDrawer({
                 <span className="text-[13px] font-semibold text-surface-800">Grand Total</span>
                 <span className="text-[15px] font-bold text-brand-700">{formatINR(totals.grandTotal)}</span>
               </div>
-            </DrawerSection>
+            </SoSection>
           </div>
         </div>
 
@@ -661,14 +675,15 @@ export function SoGenerationDrawer({
       </div>
 
       <SoPreviewModal open={preview} onClose={() => setPreview(false)} resolved={previewResolved} />
-    </>
+    </div>,
+    document.body
   );
 }
 
-// Collapsible section wrapper for the SO Generation drawer — the same visual
+// Collapsible section wrapper for the SO Generation modal — the same visual
 // language as the inline FormSection it replaces, with a chevron toggle so long
 // forms can be folded down to the sections being worked on.
-function DrawerSection({
+function SoSection({
   icon,
   n,
   label,

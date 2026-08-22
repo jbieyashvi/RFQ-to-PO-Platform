@@ -599,8 +599,8 @@ export function SoRevisionPanel({
 
     // 2. Re-gate SO generation: the confirmed PO is now stale and must be
     //    re-issued against the revised quote. Reset every verification field to
-    //    "updated PO awaited" so allResolved() is false and the derived status is
-    //    'corrected_awaited' until a fresh PO-vs-Quote match is achieved.
+    //    "updated PO awaited" so allResolved() is false and the record reads
+    //    Mismatch Found until a fresh PO-vs-Quote match is achieved.
     const resetFields: VerificationField[] = (so.verificationFields ?? []).map((f) => ({
       ...f,
       resolution: 'awaiting_po' as const,
@@ -610,7 +610,7 @@ export function SoRevisionPanel({
       revisionDraft: undefined,
       revisionResolution: { kind: 'quote_revision', note: so.revisionReason, by: currentUser.fullName, at },
       soGenerated: false,
-      verificationStatus: 'corrected_awaited',
+      verificationStatus: 'mismatch',
       verificationFields: resetFields.length ? resetFields : so.verificationFields,
       status: so.status === 'revision_required' ? so.status : 'revision_required',
       activity: [

@@ -5,40 +5,30 @@ import {
   CalendarClock,
   CheckCircle2,
   AlertTriangle,
-  Ban,
   ClipboardCheck,
   FileSpreadsheet,
   Mail,
   Lock,
   Inbox,
+  RefreshCw,
   ShieldCheck,
   Paperclip,
-  Plus,
-  Trash2,
-  Save,
   ArrowLeft,
   Wand2,
   Pencil,
 } from 'lucide-react';
-import type {
-  InboxEmail,
-  LineItem,
-  Quotation,
-  SalesOrder,
-  VerificationField,
-} from '@/types';
-import { Button, IconButton, Modal, StatusBadge } from '@/components/ui';
+import type { InboxEmail, Quotation, SalesOrder, VerificationField } from '@/types';
+import { Button, IconButton, StatusBadge } from '@/components/ui';
 import { useApp } from '@/context/AppContext';
 import { officeName } from '@/data/offices';
 import { emailSignature } from '@/lib/brand';
-import { ITEMS } from '@/data/masters';
-import { classNames, formatDate, formatDateTime, formatINR, lineTotal } from '@/lib/format';
+import { classNames, formatDate, formatDateTime, formatINR } from '@/lib/format';
 import { poReceivedAtOf, slaDueAt, verificationSla } from '@/lib/sla';
-import { VERIFICATION_STATUS } from '@/lib/labels';
+import { SO_STATUS, VERIFICATION_STATUS } from '@/lib/labels';
 import { resolveSalesOrder } from '@/lib/salesOrder';
-import { buildVersions, grandTotalOf } from '@/lib/revisionQueue';
-import { quoteSignature, soSendEmailPatch } from './helpers';
-import { SoPreviewModal } from './SoGenerationDrawer';
+import { soSendEmailPatch } from './helpers';
+import { CorrectQuoteModal } from './CorrectQuoteModal';
+import { SoPreviewModal } from './SoGenerationModal';
 import {
   FIELD_RESOLUTION_META,
   actionableFields,
@@ -50,9 +40,6 @@ import {
 
 // Prototype "today" — kept consistent with the rest of the app's seeded data.
 const TODAY_ISO = '2026-08-13';
-const ATTACH_TS = '2026-08-13T12:40:00';
-
-const clone = (it: LineItem): LineItem => ({ ...it });
 
 /**
  * RIGHT panel for a "PO vs Quote Verification" conversation. It surfaces the
@@ -60,10 +47,12 @@ const clone = (it: LineItem): LineItem => ({ ...it });
  * mismatch is resolved. The two resolution paths only PREPARE the customer
  * email in the centre composer:
  *   • Request Updated PO  → prefill the composer with a PO-correction request
- *   • Correct Quote       → edit the quotation here, then attach the corrected
- *                            PDF to the composer
+ *   • Correct Quote       → re-price the quotation in a full-width modal, then
+ *                            attach the corrected PDF to the composer
  * Nothing is sent from this panel, and the workflow state only advances once
- * the email is actually sent from the centre panel.
+ * the email is actually sent from the centre panel. When the corrected document
+ * comes back, the comparison is re-run from here and the record flips to
+ * Verified the moment every field reconciles.
  */
 export function PoVerificationPanel({
   email,
@@ -72,7 +61,7 @@ export function PoVerificationPanel({
 }: {
   email: InboxEmail;
   onPrepared?: () => void;
-  /** Opens the full-width SO Generation drawer (owned by GlobalInbox). */
+  /** Opens the large SO Generation modal (owned by GlobalInbox). */
   onGenerateSo?: () => void;
 }) {
   const {
@@ -95,20 +84,13 @@ export function PoVerificationPanel({
   const canEditQuote = can('quotations', 'edit');
 
   const [tab, setTab] = useState<'compare' | 'generate'>('compare');
-  const [showLatest, setShowLatest] = useState(false);
-
-  // Correct-Quote editor state (Path 2).
+  // Correct Quote opens over the workspace (Path 2) rather than replacing this
+  // panel — a quotation is not something to re-price inside a 320px strip.
   const [correcting, setCorrecting] = useState(false);
-  const [items, setItems] = useState<LineItem[]>([]);
-  const [addId, setAddId] = useState('');
-  const [showPreview, setShowPreview] = useState(false);
 
   useEffect(() => {
     setTab('compare');
-    setShowLatest(false);
     setCorrecting(false);
-    setShowPreview(false);
-    setAddId('');
   }, [email.id]);
 
   const fields = so?.verificationFields ?? [];
@@ -117,9 +99,6 @@ export function PoVerificationPanel({
   const awaitingPo = fields.filter((f) => fieldResolution(f) === 'awaiting_po');
   const awaitingQuote = fields.filter((f) => fieldResolution(f) === 'awaiting_quote');
   const resolvedAll = allResolved(fields);
-
-  const packing = quote?.packingCharges ?? 0;
-  const correctedTotal = useMemo(() => grandTotalOf(items, packing), [items, packing]);
 
   if (!so) {
     return (
@@ -136,9 +115,11 @@ export function PoVerificationPanel({
 
   const statusMeta = VERIFICATION_STATUS[so.verificationStatus];
   const contact = (so.customerName.split(' ')[0] || 'Sir/Madam').trim();
-  const attached = email.attachedQuote;
 
-  const mismatchLines = actionable
+  // Once a correction is already out with the customer no field reads as a live
+  // "mismatch" any more, so the email falls back to everything still
+  // unreconciled rather than listing nothing at all.
+  const mismatchLines = (actionable.length > 0 ? actionable : unresolved)
     .map((f) => `• ${f.label}: quotation shows "${f.quoteValue}", your PO shows "${f.poValue}"`)
     .join('\n');
 
@@ -166,106 +147,11 @@ export function PoVerificationPanel({
     onPrepared?.();
   };
 
-  // ---- Path 2: Correct Quote editor ----------------------------------------
-  const startCorrecting = () => {
-    if (!quote) return;
-    setItems(quote.items.map(clone));
-    setAddId('');
-    setCorrecting(true);
-  };
-
-  const setLine = (id: string, patch: Partial<Pick<LineItem, 'quantity' | 'unitPrice'>>) =>
-    setItems((rows) => rows.map((it) => (it.id === id ? { ...it, ...patch } : it)));
-  const removeLine = (id: string) => setItems((rows) => rows.filter((it) => it.id !== id));
-  const addLine = () => {
-    const src = ITEMS.find((it) => it.id === addId);
-    if (!src) return;
-    setItems((rows) => [
-      ...rows,
-      {
-        id: `ln-add-${src.id}-${rows.length}`,
-        itemId: src.id,
-        itemCode: src.code,
-        description: src.name,
-        hsnCode: src.hsnCode,
-        quantity: 1,
-        unit: src.unit,
-        unitPrice: src.unitPrice,
-        discountPct: 0,
-        taxPct: 18,
-      },
-    ]);
-    setAddId('');
-  };
-
-  // Persist the corrected quote, seeding a baseline version before overwriting.
-  const persistCorrection = (): number => {
-    if (!quote) return correctedTotal;
-    const value = grandTotalOf(items, packing);
-    const { existing } = buildVersions(quote, currentUser.fullName);
-    updateQuotation(quote.id, {
-      quoteVersions: existing,
-      items: items.map(clone),
-      value,
-      lastUpdated: '2026-08-13',
-      revisions: [
-        ...quote.revisions,
-        { id: `rev-${quote.id}-corr-${quote.revisions.length + 1}`, version: existing.length + 1, date: '2026-08-13', reason: `Corrected against PO ${so.poNumber}`, by: currentUser.fullName },
-      ],
-      activity: [
-        ...quote.activity,
-        { id: `act-${quote.id}-corr-${Date.now()}`, date: ATTACH_TS, actor: currentUser.fullName, action: 'Quotation corrected', detail: `Aligned to PO ${so.poNumber} · new value ${formatINR(value)}` },
-      ],
-    });
-    return value;
-  };
-
-  const saveCorrection = () => {
-    if (items.length === 0) return;
-    persistCorrection();
-    addToast({ type: 'success', title: 'Correction saved', message: `${quote?.number} updated. Totals recalculated to ${formatINR(correctedTotal)}.` });
-  };
-
-  const addCorrectedToEmail = () => {
-    if (!quote || items.length === 0) return;
-    const value = persistCorrection();
-    const fileName = `${quote.number.replace(/\//g, '-')}-corrected.pdf`;
-    updateEmail(email.id, {
-      composeIntent: 'quote-correct',
-      attachedQuote: {
-        fileName,
-        qtnNumber: quote.number,
-        fileType: 'PDF',
-        quoteValue: value,
-        signature: quoteSignature({ value, items }),
-        addedBy: 'system',
-        addedAt: ATTACH_TS,
-        version: 'Corrected',
-        sizeLabel: `${118 + items.length * 9} KB`,
-        kind: 'corrected',
-      },
-      draft: {
-        from: email.recipient,
-        to: email.senderEmail,
-        cc: email.cc.join(', '),
-        subject: `Corrected quotation ${quote.number} — ${so.customerName}`,
-        body:
-          `Dear ${contact},\n\nFollowing your Purchase Order ${so.poNumber}, please find attached our corrected quotation ${quote.number} reflecting the aligned terms:\n\n` +
-          `${mismatchLines}\n\n` +
-          `Corrected value: ${formatINR(value)}.\n\n` +
-          `Kindly confirm so we may align the Purchase Order and proceed with the Sales Order.\n\n` +
-          emailSignature(so.owner, officeName(so.officeId)),
-        relatedDoc: quote.number,
-        aiGenerated: true,
-      },
-    });
-    addToast({ type: 'success', title: 'Added to email', message: 'Corrected quotation attached. Set the next review date and send from the centre panel.' });
-    onPrepared?.();
-  };
-
-  // Record that an awaited correction was received & accepted (manual — never
-  // triggered by sending or receiving an email).
-  const acceptCorrection = (mode: 'po' | 'quote') => {
+  // ---- Re-run the comparison once the corrected document is in ---------------
+  // Manual and deliberate: receiving an email is not evidence that the numbers
+  // now agree, so the fields awaiting that side are re-checked only when a
+  // human says the corrected PO / quotation is actually available.
+  const rerunComparison = (mode: 'po' | 'quote') => {
     const target = mode === 'po' ? 'awaiting_po' : 'awaiting_quote';
     const newFields: VerificationField[] = fields.map((f) =>
       fieldResolution(f) === target ? { ...f, resolution: 'resolved' } : f
@@ -275,10 +161,10 @@ export function PoVerificationPanel({
     const activity = [
       ...so.activity,
       {
-        id: `act-${so.id}-accept-${Date.now()}`,
+        id: `act-${so.id}-rerun-${Date.now()}`,
         date: `${TODAY_ISO}T12:30:00`,
         actor: currentUser.fullName,
-        action: mode === 'po' ? 'Updated PO received & accepted' : 'Corrected quotation accepted',
+        action: mode === 'po' ? 'Comparison re-run against updated PO' : 'Comparison re-run against corrected quotation',
         detail: 'Corrected values reconciled against the accepted quotation.',
       },
     ];
@@ -301,10 +187,10 @@ export function PoVerificationPanel({
     updateEmail(email.id, { needsReview: !nowVerified });
     addToast({
       type: 'success',
-      title: nowVerified ? 'Verification complete' : 'Correction accepted',
+      title: nowVerified ? 'Verification complete' : 'Comparison re-run',
       message: nowVerified
-        ? 'All fields resolved — Sales Order generation is now available.'
-        : 'Field resolved. Remaining mismatches still need resolution.',
+        ? 'Every field reconciles — the record is Verified and Sales Order generation is now available.'
+        : 'Those fields now reconcile. The remaining mismatches still need resolution.',
     });
   };
 
@@ -341,7 +227,7 @@ export function PoVerificationPanel({
       <div className="flex-none border-b border-surface-200 px-4">
         <div className="flex gap-1">
           <TabButton active={tab === 'compare'} onClick={() => setTab('compare')} icon={<ClipboardCheck className="h-3.5 w-3.5" />}>
-            PO vs Quote Mismatch
+            PO vs Quote
           </TabButton>
           <TabButton
             active={tab === 'generate'}
@@ -362,33 +248,12 @@ export function PoVerificationPanel({
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-4 py-3">
         {tab === 'generate' ? (
-          <GenerateTab email={email} so={so} quote={quote} onPrepared={onPrepared} onOpenDrawer={onGenerateSo} />
-        ) : correcting ? (
-          <CorrectQuoteEditor
-            quote={quote}
-            items={items}
-            actionable={actionable}
-            correctedTotal={correctedTotal}
-            baselineTotal={quote?.value ?? 0}
-            canEdit={canEditQuote}
-            addId={addId}
-            setAddId={setAddId}
-            onSetLine={setLine}
-            onRemoveLine={removeLine}
-            onAddLine={addLine}
-            onBack={() => setCorrecting(false)}
-            onPreview={() => setShowPreview(true)}
-            onSave={saveCorrection}
-            onAddToEmail={addCorrectedToEmail}
-            attached={attached}
-          />
+          <GenerateTab email={email} so={so} quote={quote} onPrepared={onPrepared} onOpenSoModal={onGenerateSo} />
         ) : (
           <CompareTab
-            so={so}
             fields={fields}
             unresolvedCount={unresolved.length}
             resolvedAll={resolvedAll}
-            actionableCount={actionable.length}
             awaitingPoCount={awaitingPo.length}
             awaitingQuoteCount={awaitingQuote.length}
             canVerify={canVerify}
@@ -397,91 +262,27 @@ export function PoVerificationPanel({
             hasQuoteIntent={email.composeIntent === 'quote-correct'}
             hasPoIntent={email.composeIntent === 'po-request'}
             onRequestPo={prepareRequestPo}
-            onCorrectQuote={startCorrecting}
-            onViewLatest={() => setShowLatest(true)}
-            onAcceptPo={() => acceptCorrection('po')}
-            onAcceptQuote={() => acceptCorrection('quote')}
+            onCorrectQuote={() => setCorrecting(true)}
+            onRerunWithPo={() => rerunComparison('po')}
+            onRerunWithQuote={() => rerunComparison('quote')}
           />
         )}
       </div>
 
-      {/* Preview Corrected Quote */}
-      <Modal
-        open={showPreview}
-        onClose={() => setShowPreview(false)}
-        size="lg"
-        title="Preview — Corrected Quotation"
-        subtitle={`${quote?.number ?? ''} · ${so.customerName}`}
-        footer={<Button variant="primary" onClick={() => setShowPreview(false)}>Close</Button>}
-      >
-        <div className="overflow-hidden rounded-xl border border-surface-200">
-          <table className="w-full border-collapse text-[12px]">
-            <thead>
-              <tr className="border-b border-surface-200 bg-surface-50 text-[11px] font-semibold uppercase tracking-[0.02em] text-surface-500">
-                <th className="px-3 py-2 text-left">Item</th>
-                <th className="px-2 py-2 text-right">Qty</th>
-                <th className="px-2 py-2 text-right">Unit Price</th>
-                <th className="px-3 py-2 text-right">Line Total</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-surface-100">
-              {items.map((it) => (
-                <tr key={it.id}>
-                  <td className="px-3 py-2"><p className="font-medium text-surface-800">{it.description}</p><p className="text-[11px] text-surface-400">{it.itemCode}</p></td>
-                  <td className="px-2 py-2 text-right text-surface-700">{it.quantity} {it.unit}</td>
-                  <td className="px-2 py-2 text-right text-surface-700">{formatINR(it.unitPrice)}</td>
-                  <td className="px-3 py-2 text-right font-medium text-surface-800">{formatINR(lineTotal(it.quantity, it.unitPrice, it.discountPct))}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="flex items-center justify-between border-t border-surface-200 px-3 py-2">
-            <span className="text-[12px] font-medium text-surface-600">Corrected Grand Total</span>
-            <span className="text-[14px] font-bold text-surface-900">{formatINR(correctedTotal)}</span>
-          </div>
-        </div>
-      </Modal>
-
-      {/* View Latest Quote */}
-      <Modal
-        open={showLatest}
-        onClose={() => setShowLatest(false)}
-        size="lg"
-        title="Latest Quotation"
-        subtitle={`${so.quotationNumber ?? ''} · ${so.customerName}`}
-        footer={<Button variant="primary" onClick={() => setShowLatest(false)}>Close</Button>}
-      >
-        {quote ? (
-          <div className="overflow-hidden rounded-xl border border-surface-200">
-            <table className="w-full border-collapse text-[12px]">
-              <thead>
-                <tr className="border-b border-surface-200 bg-surface-50 text-[11px] font-semibold uppercase tracking-[0.02em] text-surface-500">
-                  <th className="px-3 py-2 text-left">Item</th>
-                  <th className="px-2 py-2 text-right">Qty</th>
-                  <th className="px-2 py-2 text-right">Unit Price</th>
-                  <th className="px-3 py-2 text-right">Line Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-surface-100">
-                {quote.items.map((it) => (
-                  <tr key={it.id}>
-                    <td className="px-3 py-2"><p className="font-medium text-surface-800">{it.description}</p><p className="text-[11px] text-surface-400">{it.itemCode}</p></td>
-                    <td className="px-2 py-2 text-right text-surface-700">{it.quantity} {it.unit}</td>
-                    <td className="px-2 py-2 text-right text-surface-700">{formatINR(it.unitPrice)}</td>
-                    <td className="px-3 py-2 text-right font-medium text-surface-800">{formatINR(lineTotal(it.quantity, it.unitPrice, it.discountPct))}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="flex items-center justify-between border-t border-surface-200 px-3 py-2">
-              <span className="text-[12px] font-medium text-surface-600">Quotation Value</span>
-              <span className="text-[14px] font-bold text-surface-900">{formatINR(quote.value)}</span>
-            </div>
-          </div>
-        ) : (
-          <p className="text-[12px] text-surface-500">The linked quotation could not be found.</p>
-        )}
-      </Modal>
+      {/* Correct Quote — the quotation re-priced at full width, over the inbox.
+          Only mounted while open so it seeds fresh from the current quotation. */}
+      {correcting && quote && (
+        <CorrectQuoteModal
+          email={email}
+          so={so}
+          quote={quote}
+          onAddedToEmail={() => {
+            setCorrecting(false);
+            onPrepared?.();
+          }}
+          onClose={() => setCorrecting(false)}
+        />
+      )}
     </div>
   );
 }
@@ -489,11 +290,9 @@ export function PoVerificationPanel({
 // ---------------------------------------------------------------------------
 
 function CompareTab({
-  so,
   fields,
   unresolvedCount,
   resolvedAll,
-  actionableCount,
   awaitingPoCount,
   awaitingQuoteCount,
   canVerify,
@@ -503,15 +302,12 @@ function CompareTab({
   hasPoIntent,
   onRequestPo,
   onCorrectQuote,
-  onViewLatest,
-  onAcceptPo,
-  onAcceptQuote,
+  onRerunWithPo,
+  onRerunWithQuote,
 }: {
-  so: SalesOrder;
   fields: VerificationField[];
   unresolvedCount: number;
   resolvedAll: boolean;
-  actionableCount: number;
   awaitingPoCount: number;
   awaitingQuoteCount: number;
   canVerify: boolean;
@@ -521,9 +317,8 @@ function CompareTab({
   hasPoIntent: boolean;
   onRequestPo: () => void;
   onCorrectQuote: () => void;
-  onViewLatest: () => void;
-  onAcceptPo: () => void;
-  onAcceptQuote: () => void;
+  onRerunWithPo: () => void;
+  onRerunWithQuote: () => void;
 }) {
   if (fields.length === 0) {
     return (
@@ -586,271 +381,92 @@ function CompareTab({
         </table>
       </div>
 
-      {/* Resolution actions */}
+      {/* Resolution actions — exactly two, because a mismatch has exactly two
+          causes: the customer's PO is wrong, or our quotation is. One asks them
+          to reissue, the other re-prices ours. Both end at the same composer. */}
       {!resolvedAll && (
         <section className="mt-4">
           <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-surface-400">Resolve Mismatches</h4>
 
-          {actionableCount > 0 && (
-            <div className="space-y-2 rounded-xl border border-surface-200 p-3">
-              <p className="text-[12px] text-surface-600">
-                {actionableCount} field{actionableCount === 1 ? '' : 's'} still mismatched. Choose which side to correct:
-              </p>
-              <div className="grid grid-cols-1 gap-2">
-                <div>
-                  <Button variant="primary" size="sm" className="w-full justify-start" leftIcon={<Mail className="h-4 w-4" />} onClick={onRequestPo} disabled={!canSend}>
-                    Request Updated PO
-                  </Button>
-                  <p className="mt-1 pl-1 text-[11px] text-surface-400">Customer PO is wrong — ask for a corrected PO. Prepares the email in the centre panel.</p>
-                  {hasPoIntent && (
-                    <p className="mt-1 flex items-center gap-1 pl-1 text-[11px] font-medium text-emerald-600"><CheckCircle2 className="h-3 w-3" /> Draft ready in the centre composer.</p>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <Button variant="secondary" size="sm" className="flex-none" leftIcon={<Eye className="h-4 w-4" />} onClick={onViewLatest}>
-                    View Latest Quote
-                  </Button>
-                  <Button variant="secondary" size="sm" className="flex-1 justify-start" leftIcon={<Wand2 className="h-4 w-4" />} onClick={onCorrectQuote} disabled={!canCorrect}>
-                    Correct Quote
-                  </Button>
-                </div>
-                <p className="pl-1 text-[11px] text-surface-400">Our quotation is wrong — edit it here, then attach the corrected PDF to the email.</p>
-                {hasQuoteIntent && (
-                  <p className="flex items-center gap-1 pl-1 text-[11px] font-medium text-emerald-600"><CheckCircle2 className="h-3 w-3" /> Corrected quote attached in the centre composer.</p>
+          <div className="space-y-2 rounded-xl border border-surface-200 p-3">
+            <p className="text-[12px] text-surface-600">
+              {unresolvedCount} field{unresolvedCount === 1 ? '' : 's'} still to reconcile. Correct whichever side is wrong:
+            </p>
+            <div className="space-y-2.5">
+              <div>
+                <Button variant="primary" size="sm" className="w-full justify-start" leftIcon={<Mail className="h-4 w-4" />} onClick={onRequestPo} disabled={!canSend}>
+                  Request Updated PO
+                </Button>
+                <p className="mt-1 pl-1 text-[11px] text-surface-400">Customer PO is wrong — ask for a corrected PO. Opens the compose window in the centre panel.</p>
+                {hasPoIntent && (
+                  <p className="mt-1 flex items-center gap-1 pl-1 text-[11px] font-medium text-emerald-600"><CheckCircle2 className="h-3 w-3" /> Draft ready in the centre composer.</p>
                 )}
               </div>
-              {!canSend && <p className="text-[11px] font-medium text-rose-600">Send permission required to email the customer.</p>}
+              <div>
+                <Button variant="secondary" size="sm" className="w-full justify-start" leftIcon={<Wand2 className="h-4 w-4" />} onClick={onCorrectQuote} disabled={!canCorrect}>
+                  Correct Quote
+                </Button>
+                <p className="mt-1 pl-1 text-[11px] text-surface-400">Our quotation is wrong — re-price it in the editor, then attach the corrected quote to the email.</p>
+                {hasQuoteIntent && (
+                  <p className="mt-1 flex items-center gap-1 pl-1 text-[11px] font-medium text-emerald-600"><CheckCircle2 className="h-3 w-3" /> Corrected quote attached in the centre composer.</p>
+                )}
+              </div>
             </div>
-          )}
+            {!canSend && <p className="text-[11px] font-medium text-rose-600">Send permission required to email the customer.</p>}
+            {!canCorrect && <p className="text-[11px] font-medium text-rose-600">Edit permission and a linked quotation are required to correct the quote.</p>}
+          </div>
 
+          {/* Re-run, never auto-run: a reply landing in the thread is not proof
+              the numbers now agree. The comparison is redone on demand, once
+              the corrected document is actually in hand. */}
           {(awaitingPoCount > 0 || awaitingQuoteCount > 0) && (
             <div className="mt-2 space-y-2 rounded-xl border border-surface-200 bg-surface-50/60 p-3">
-              <p className="text-[12px] text-surface-600">Corrections requested — record the reply once the customer responds:</p>
+              <p className="text-[12px] text-surface-600">Correction sent — re-run the comparison once the updated document is in hand:</p>
               {awaitingPoCount > 0 && (
-                <Button variant="secondary" size="sm" className="w-full justify-start" leftIcon={<CheckCircle2 className="h-4 w-4" />} onClick={onAcceptPo} disabled={!canVerify}>
-                  Record updated PO received &amp; accepted ({awaitingPoCount})
+                <Button variant="secondary" size="sm" className="w-full justify-start" leftIcon={<RefreshCw className="h-4 w-4" />} onClick={onRerunWithPo} disabled={!canVerify}>
+                  Re-run Comparison with Updated PO ({awaitingPoCount})
                 </Button>
               )}
               {awaitingQuoteCount > 0 && (
-                <Button variant="secondary" size="sm" className="w-full justify-start" leftIcon={<CheckCircle2 className="h-4 w-4" />} onClick={onAcceptQuote} disabled={!canVerify}>
-                  Record corrected quote accepted ({awaitingQuoteCount})
+                <Button variant="secondary" size="sm" className="w-full justify-start" leftIcon={<RefreshCw className="h-4 w-4" />} onClick={onRerunWithQuote} disabled={!canVerify}>
+                  Re-run Comparison with Corrected Quote ({awaitingQuoteCount})
                 </Button>
               )}
-              {!canVerify && <p className="text-[11px] font-medium text-rose-600">Edit permission required to resolve fields.</p>}
+              {!canVerify && <p className="text-[11px] font-medium text-rose-600">Edit permission required to re-run the comparison.</p>}
             </div>
           )}
         </section>
       )}
+
     </>
   );
 }
 
 // ---------------------------------------------------------------------------
 
-function CorrectQuoteEditor({
-  quote,
-  items,
-  actionable,
-  correctedTotal,
-  baselineTotal,
-  canEdit,
-  addId,
-  setAddId,
-  onSetLine,
-  onRemoveLine,
-  onAddLine,
-  onBack,
-  onPreview,
-  onSave,
-  onAddToEmail,
-  attached,
-}: {
-  quote: Quotation | null;
-  items: LineItem[];
-  actionable: VerificationField[];
-  correctedTotal: number;
-  baselineTotal: number;
-  canEdit: boolean;
-  addId: string;
-  setAddId: (v: string) => void;
-  onSetLine: (id: string, patch: Partial<Pick<LineItem, 'quantity' | 'unitPrice'>>) => void;
-  onRemoveLine: (id: string) => void;
-  onAddLine: () => void;
-  onBack: () => void;
-  onPreview: () => void;
-  onSave: () => void;
-  onAddToEmail: () => void;
-  attached: InboxEmail['attachedQuote'];
-}) {
-  if (!quote) {
-    return <p className="text-[12px] text-surface-500">The linked quotation could not be found.</p>;
-  }
-  const delta = correctedTotal - baselineTotal;
-  const attachIsCorrected = attached?.kind === 'corrected';
-
-  return (
-    <div>
-      <button onClick={onBack} className="mb-2 flex items-center gap-1 text-[12px] font-medium text-brand-600 hover:underline">
-        <ArrowLeft className="h-3.5 w-3.5" /> Back to comparison
-      </button>
-
-      {/* Mismatch context above the editor */}
-      <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
-        <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
-          <AlertTriangle className="h-3.5 w-3.5" /> Correcting to match the PO
-        </p>
-        <ul className="mt-1 space-y-0.5 text-[11px] text-amber-800">
-          {actionable.map((f) => (
-            <li key={f.key}>• {f.label}: quote <span className="line-through">{f.quoteValue}</span> → PO <span className="font-semibold">{f.poValue}</span></li>
-          ))}
-          {actionable.length === 0 && <li>No field-level mismatches recorded.</li>}
-        </ul>
-      </div>
-
-      <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-[12px] font-semibold uppercase tracking-wide text-surface-500">Editable Quote Generator</h3>
-      </div>
-
-      <div className="overflow-hidden rounded-xl border border-surface-200">
-        <table className="w-full border-collapse text-[12px]">
-          <thead>
-            <tr className="border-b border-surface-200 bg-surface-50 text-[11px] font-semibold uppercase tracking-[0.02em] text-surface-500">
-              <th className="px-2.5 py-2 text-left">Item</th>
-              <th className="px-1.5 py-2 text-right">Qty</th>
-              <th className="px-1.5 py-2 text-right">Unit Price</th>
-              <th className="px-2.5 py-2 text-right">Line Total</th>
-              {canEdit && <th className="w-8 px-1 py-2" />}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-surface-100">
-            {items.map((it) => (
-              <tr key={it.id}>
-                <td className="px-2.5 py-2 align-top">
-                  <p className="font-medium text-surface-800">{it.description}</p>
-                  <p className="text-[11px] text-surface-400">{it.itemCode} · HSN {it.hsnCode}</p>
-                </td>
-                <td className="px-1.5 py-2 text-right align-top">
-                  {canEdit ? (
-                    <input
-                      type="number"
-                      min={0}
-                      value={it.quantity}
-                      onChange={(e) => onSetLine(it.id, { quantity: Math.max(0, Number(e.target.value)) })}
-                      className="input h-7 w-14 px-1.5 py-0 text-right text-[12px]"
-                      aria-label={`Quantity for ${it.description}`}
-                    />
-                  ) : (
-                    <span className="text-surface-700">{it.quantity} {it.unit}</span>
-                  )}
-                </td>
-                <td className="px-1.5 py-2 text-right align-top">
-                  {canEdit ? (
-                    <input
-                      type="number"
-                      min={0}
-                      value={it.unitPrice}
-                      onChange={(e) => onSetLine(it.id, { unitPrice: Math.max(0, Number(e.target.value)) })}
-                      className="input h-7 w-20 px-1.5 py-0 text-right text-[12px]"
-                      aria-label={`Unit price for ${it.description}`}
-                    />
-                  ) : (
-                    <span className="text-surface-700">{formatINR(it.unitPrice)}</span>
-                  )}
-                </td>
-                <td className="px-2.5 py-2 text-right align-top font-medium text-surface-800">
-                  {formatINR(lineTotal(it.quantity, it.unitPrice, it.discountPct))}
-                </td>
-                {canEdit && (
-                  <td className="px-1 py-2 text-center align-top">
-                    <button onClick={() => onRemoveLine(it.id)} aria-label={`Remove ${it.description}`} className="rounded p-1 text-surface-300 hover:bg-rose-50 hover:text-rose-500">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </td>
-                )}
-              </tr>
-            ))}
-            {items.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-2.5 py-4 text-center text-[12px] text-surface-400">All lines removed — add at least one item before saving.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-
-        {canEdit && (
-          <div className="flex items-center gap-1.5 border-t border-surface-100 bg-surface-50/60 px-2.5 py-2">
-            <select value={addId} onChange={(e) => setAddId(e.target.value)} className="input h-7 flex-1 px-2 py-0 text-[12px]" aria-label="Select catalogue item to add">
-              <option value="">Add catalogue item…</option>
-              {ITEMS.filter((it) => it.active).map((it) => (
-                <option key={it.id} value={it.id}>{it.code} · {it.name}</option>
-              ))}
-            </select>
-            <Button variant="secondary" size="sm" leftIcon={<Plus className="h-3.5 w-3.5" />} onClick={onAddLine} disabled={!addId}>Add</Button>
-          </div>
-        )}
-      </div>
-
-      <div className="mt-2 flex items-center justify-between rounded-lg bg-surface-50 px-3 py-2">
-        <span className="text-[12px] font-medium text-surface-600">Corrected Grand Total</span>
-        <div className="text-right">
-          <span className="text-[15px] font-bold text-surface-900">{formatINR(correctedTotal)}</span>
-          {delta !== 0 && (
-            <span className={classNames('ml-2 text-[11px] font-medium', delta < 0 ? 'text-emerald-600' : 'text-rose-600')}>
-              {delta < 0 ? '−' : '+'}{formatINR(Math.abs(delta))} vs latest
-            </span>
-          )}
-        </div>
-      </div>
-
-      {attachIsCorrected && (
-        <div className="mt-2 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-700">
-          <Paperclip className="h-4 w-4 flex-none" /> Corrected quotation added to the email — set the review date and send from the centre panel.
-        </div>
-      )}
-
-      {/* Secondary Save / Preview are compact icon buttons; the primary
-          Add-to-Email action keeps its visible text label. */}
-      <div className="mt-3 flex items-center gap-2">
-        <IconButton label="Save Changes" icon={<Save className="h-4 w-4" />} onClick={onSave} disabled={!canEdit || items.length === 0} />
-        <IconButton label="Preview Corrected Quote" icon={<Eye className="h-4 w-4" />} onClick={onPreview} disabled={items.length === 0} />
-        <Button
-          variant="primary"
-          size="sm"
-          className="min-w-0 flex-1"
-          leftIcon={items.length > 0 ? <Paperclip className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
-          onClick={onAddToEmail}
-          disabled={!canEdit || items.length === 0}
-          title="Attach the corrected quotation to the email in the centre panel"
-        >
-          Add Corrected Quote to Email
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-
 /**
- * SO Generation tab — entry point into the full-width SO Generation drawer.
- * Before generation it shows a verified summary card with the single "Generate
- * Sales Order" action (which opens the drawer over the inbox); after generation
- * it shows the read-only generated-document view whose only send path is the
- * middle composer ("Add Sales Order to Email"). The SO is submitted to ERP
- * Handoff only once that email is actually sent.
+ * SO Generation tab — entry point into the large SO Generation modal.
+ *
+ * The Generate action exists in exactly one state: verified, and no Sales Order
+ * yet. The moment one exists the card flips to the generated document, whose
+ * primary affordance is View Sales Order plus that order's current status —
+ * there is no second Generate button to press, so a duplicate SO cannot be
+ * created by pressing the same card twice. The only send path is the middle
+ * composer ("Add Sales Order to Email"), and the SO reaches ERP Handoff only
+ * once that email is actually sent.
  */
 function GenerateTab({
   email,
   so,
   quote,
   onPrepared,
-  onOpenDrawer,
+  onOpenSoModal,
 }: {
   email: InboxEmail;
   so: SalesOrder;
   quote: Quotation | null;
   onPrepared?: () => void;
-  onOpenDrawer?: () => void;
+  onOpenSoModal?: () => void;
 }) {
   const { parties, items: catalog, updateSalesOrder, updateEmail, addToast, currentUser, can } = useApp();
   const navigate = useNavigate();
@@ -929,9 +545,9 @@ function GenerateTab({
           size="sm"
           className="w-full"
           leftIcon={<FileSpreadsheet className="h-4 w-4" />}
-          onClick={onOpenDrawer}
+          onClick={onOpenSoModal}
           disabled={!canGenerate}
-          title={!canGenerate ? 'You do not have permission to generate Sales Orders' : 'Open the Sales Order form'}
+          title={!canGenerate ? 'You do not have permission to generate Sales Orders' : 'Open the prefilled Sales Order form'}
         >
           Generate Sales Order
         </Button>
@@ -963,7 +579,14 @@ function GenerateTab({
           <span className="flex items-center gap-1.5 text-[12px] font-semibold text-surface-700">
             <FileSpreadsheet className="h-3.5 w-3.5 text-brand-600" /> {so.number}
           </span>
-          <StatusBadge tone={soEmailed ? 'green' : 'blue'} label={soEmailed ? 'Sent' : 'Generated'} dot />
+          {/* The record's own lifecycle status once it has actually gone out;
+              until then "Generated" — so.status flips to so_sent at generation
+              time and would otherwise claim a send that has not happened. */}
+          {soEmailed ? (
+            <StatusBadge tone={SO_STATUS[so.status].tone} label={SO_STATUS[so.status].label} dot />
+          ) : (
+            <StatusBadge tone="blue" label="Generated" dot />
+          )}
         </div>
         <div className="grid grid-cols-1 gap-x-5 gap-y-1 px-3 py-2.5 text-[12px] sm:grid-cols-2">
           <p><span className="text-surface-400">Customer:</span> <span className="font-medium text-surface-800">{so.customerName}</span></p>
@@ -1009,7 +632,7 @@ function GenerateTab({
           /* Secondary Edit / Preview are compact icon buttons; the primary
              Add-to-Email action keeps its visible text label. */
           <div className="flex items-center gap-2">
-            <IconButton label="Edit Sales Order" icon={<Pencil className="h-4 w-4" />} onClick={onOpenDrawer} disabled={!canGenerate} />
+            <IconButton label="Edit Sales Order" icon={<Pencil className="h-4 w-4" />} onClick={onOpenSoModal} disabled={!canGenerate} />
             <IconButton label="Preview Sales Order" icon={<Eye className="h-4 w-4" />} onClick={() => setPreview(true)} />
             <Button variant="primary" size="sm" className="min-w-0 flex-1" leftIcon={<Mail className="h-4 w-4" />} onClick={addSoToEmail}>
               {soAttached ? 'Update Sales Order in Email' : 'Add Sales Order to Email'}
@@ -1017,7 +640,9 @@ function GenerateTab({
           </div>
         )}
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" size="sm" leftIcon={<FileSpreadsheet className="h-3.5 w-3.5" />} onClick={() => navigate('/sales-orders')}>View Sales Order</Button>
+          <Button variant={soEmailed ? 'primary' : 'secondary'} size="sm" leftIcon={<FileSpreadsheet className="h-3.5 w-3.5" />} onClick={() => navigate('/sales-orders', { state: { highlightId: so.id } })}>
+            View Sales Order
+          </Button>
           {so.erpHandoff && (
             <Button variant="secondary" size="sm" leftIcon={<ArrowLeft className="h-3.5 w-3.5 rotate-180" />} onClick={() => navigate('/erp-handoff', { state: { highlightId: so.id } })}>View in ERP Handoff</Button>
           )}

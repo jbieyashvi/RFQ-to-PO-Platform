@@ -14,7 +14,7 @@ import { INBOX_CLASSIFICATION } from '@/lib/labels';
 import type { EmailClassification, InboxEmail } from '@/types';
 import { classNames } from '@/lib/format';
 import { EmailList, EmailIconRail } from './EmailList';
-import { SoGenerationDrawer } from './SoGenerationDrawer';
+import { SoGenerationModal } from './SoGenerationModal';
 import { EmailActionPanel } from './EmailActionPanel';
 import { QuotationBuilderModal } from './QuotationBuilderModal';
 import { ComposePopup } from './ComposePopup';
@@ -106,27 +106,16 @@ export default function GlobalInbox() {
   const [builderQtnId, setBuilderQtnId] = useState<string | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
 
-  // SO Generation drawer + the manual/automatic email-list minimise. Opening
-  // the drawer collapses the list to its icon rail so the selected thread stays
-  // visible beside the drawer; closing restores whatever the user had before.
-  const [soDrawerOpen, setSoDrawerOpen] = useState(false);
+  // SO Generation modal. It covers the inbox, so the email-list minimise stays
+  // purely the user's own toggle — there is nothing behind the modal worth
+  // rearranging the layout for.
+  const [soModalOpen, setSoModalOpen] = useState(false);
   const [listCollapsed, setListCollapsed] = useState(false);
-  const prevListCollapsedRef = useRef(false);
-  const openSoDrawer = () => {
-    prevListCollapsedRef.current = listCollapsed;
-    setListCollapsed(true);
-    setSoDrawerOpen(true);
-  };
-  const closeSoDrawer = () => {
-    setSoDrawerOpen(false);
-    setListCollapsed(prevListCollapsedRef.current);
-  };
 
-  // Changing conversation while the drawer is open closes it (its form state
-  // belongs to the previous email's Sales Order) and restores the list.
+  // Changing conversation while the modal is open closes it — its form state
+  // belongs to the previous email's Sales Order.
   useEffect(() => {
-    if (soDrawerOpen) closeSoDrawer();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setSoModalOpen(false);
   }, [selectedId]);
 
   // The builder and the compose window hold the previous email's quotation and
@@ -914,7 +903,7 @@ export default function GlobalInbox() {
                     onCompose={() => setComposeOpen(true)}
                   />
                 ) : isPoVerify ? (
-                  <PoVerificationPanel email={selected} onPrepared={onPrepared} onGenerateSo={openSoDrawer} />
+                  <PoVerificationPanel email={selected} onPrepared={onPrepared} onGenerateSo={() => setSoModalOpen(true)} />
                 ) : isSoRevision ? (
                   <SoRevisionPanel email={selected} salesOrder={soRevisionSalesOrder!} onPrepared={onPrepared} />
                 ) : isPoAssociate ? (
@@ -971,16 +960,16 @@ export default function GlobalInbox() {
         />
       )}
 
-      {/* SO Generation drawer — full-height right drawer (~65% on desktop,
-          full-screen on tablet/mobile) over the inbox. Conditionally mounted so
-          its form state initialises fresh from the selected Sales Order. */}
-      {soDrawerOpen && isPoVerify && poSalesOrder && selected && (
-        <SoGenerationDrawer
+      {/* SO Generation — the prefilled Sales Order on a large modal over the
+          inbox. Conditionally mounted so its form state initialises fresh from
+          the selected Sales Order every time it opens. */}
+      {soModalOpen && isPoVerify && poSalesOrder && selected && (
+        <SoGenerationModal
           email={selected}
           so={poSalesOrder}
           quote={poQuote}
           onPrepared={onPrepared}
-          onClose={closeSoDrawer}
+          onClose={() => setSoModalOpen(false)}
         />
       )}
 

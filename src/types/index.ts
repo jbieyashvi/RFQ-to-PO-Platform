@@ -438,22 +438,14 @@ export interface SORevisionVersion {
   notes?: string;
   snapshot: SORevisionSnapshot;
 }
-// PM-confirmed prototype statuses (see lib/labels VERIFICATION_STATUS):
-//   pending            → Pending Comparison
-//   mismatch           → Mismatch Found
-//   corrected_awaited  → Updated PO Awaited
-//   updated_quote_sent → Updated Quote Sent
-//   pending_review     → Pending Review
-//   verified           → Verified
-// "Matched" is deliberately NOT a final state — an SO is only ever Verified once
-// every required field is resolved.
-export type VerificationStatus =
-  | 'pending'
-  | 'mismatch'
-  | 'corrected_awaited'
-  | 'updated_quote_sent'
-  | 'pending_review'
-  | 'verified';
+// A PO is either reconciled against its quotation or it is not — there is no
+// third thing to report on a list. Every intermediate the workflow passes
+// through (comparison not yet run, updated PO requested, corrected quote sent,
+// manual review pending) is a step INSIDE "not yet verified", tracked per field
+// on FieldResolution below, and shows on the record as Mismatch Found until
+// every field resolves. Two states is what the list screen filters on and what
+// SO generation gates on.
+export type VerificationStatus = 'mismatch' | 'verified';
 
 // Per-field resolution state in the PO vs Quote comparison. A field counts as
 // resolved (and lets Sales Order generation proceed) only when it originally

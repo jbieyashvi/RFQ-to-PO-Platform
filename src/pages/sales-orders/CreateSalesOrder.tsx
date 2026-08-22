@@ -385,7 +385,9 @@ export default function CreateSalesOrder() {
       poValue: totals.grandTotal,
       quoteValue: q ? q.value : totals.grandTotal,
       status: opts.withHandoff ? 'so_sent' : 'draft',
-      verificationStatus: form.quotationId ? 'verified' : 'pending',
+      // No quotation to compare against means nothing has been verified, which
+      // reads as Mismatch Found until one is associated and the comparison runs.
+      verificationStatus: form.quotationId ? 'verified' : 'mismatch',
       receivedDate: form.poDate,
       createdDate: now.slice(0, 10),
       deliveryDate: form.expectedDelivery,
