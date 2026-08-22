@@ -320,7 +320,7 @@ export default function QuotationsList() {
         {!loading && total > 0 && <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={setPageSize} />}
       </div>
 
-      <QuotationDetailsDrawer quotation={active} onClose={() => setActiveId(null)} onEdit={() => addToast({ type: 'info', title: 'Edit mode', message: 'Use the workflow controls to update status, stage and review date.' })} />
+      <QuotationDetailsDrawer quotation={active} onClose={() => setActiveId(null)} />
 
       <WorkflowUpdateModal request={pending} onClose={() => setPending(null)} />
     </>
