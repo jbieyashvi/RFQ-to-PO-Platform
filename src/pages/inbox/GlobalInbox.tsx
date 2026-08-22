@@ -13,7 +13,7 @@ import { inboxParams, type InboxMode } from '@/lib/inboxContext';
 import { INBOX_CLASSIFICATION } from '@/lib/labels';
 import type { EmailClassification, InboxEmail } from '@/types';
 import { classNames } from '@/lib/format';
-import { EmailList, EmailIconRail } from './EmailList';
+import { EmailList } from './EmailList';
 import { SoGenerationModal } from './SoGenerationModal';
 import { EmailActionPanel } from './EmailActionPanel';
 import { QuotationBuilderModal } from './QuotationBuilderModal';
@@ -37,6 +37,10 @@ import {
 } from '@/lib/poAssociation';
 
 type Tab = 'all' | 'needs_review' | 'drafts';
+
+// Width of the collapsed Company Emails rail — just wide enough for the
+// "Show Company Emails" button, its count and the upright label.
+const RAIL_WIDTH = 40;
 
 export default function GlobalInbox() {
   const { emails, updateEmail, quotations, salesOrders, parties, addQuotation, addSalesOrder, addToast, currentUser, sidebarCollapsed, setSidebarCollapsed } = useApp();
@@ -110,7 +114,12 @@ export default function GlobalInbox() {
   // purely the user's own toggle — there is nothing behind the modal worth
   // rearranging the layout for.
   const [soModalOpen, setSoModalOpen] = useState(false);
-  const [listCollapsed, setListCollapsed] = useState(false);
+  // The company email list starts COLLAPSED whenever a conversation is open:
+  // the thread and the action workspace are what the user came for, and the
+  // list is one click away on its rail. Nothing ever resets this but the user's
+  // own Show / Hide, so the choice survives moving between emails for the rest
+  // of the session — no effect re-collapses a list they just opened.
+  const [listCollapsed, setListCollapsed] = useState(true);
 
   // Changing conversation while the modal is open closes it — its form state
   // belongs to the previous email's Sales Order.
@@ -451,43 +460,7 @@ export default function GlobalInbox() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, customerScopeId, inquiryScopeId, quoteSend, salesOrders, params, setParams]);
 
-  // LAYOUT ONLY: a workflow conversation that belongs to NO inquiry opens with
-  // the email list collapsed to its icon rail, giving the saved width to the
-  // thread and the business workspace. Inside an inquiry the full list always
-  // stays open — the inbox is never traded away for a single conversation. The
-  // collapse is remembered as "automatic" so leaving workflow mode restores the
-  // list; a manual toggle (Show / Hide Emails) always wins over it.
-  const autoCollapsedRef = useRef(false);
-  const workflowEmailRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!selected) return;
-    if (isWorkflowMode) {
-      if (workflowEmailRef.current !== selected.id) {
-        // The email is marked as handled either way, so that later dropping the
-        // grouping ("Back to All Emails") on the SAME conversation never
-        // collapses the list the user just asked to go back to.
-        workflowEmailRef.current = selected.id;
-        // Read the inquiry off the SELECTED email, not off the grouping state:
-        // the state lands one render later, and by then the list would already
-        // have been collapsed for an email that does belong to an inquiry.
-        if (!inquiryScopeId) {
-          autoCollapsedRef.current = true;
-          setListCollapsed(true);
-        }
-      }
-    } else {
-      workflowEmailRef.current = null;
-      if (autoCollapsedRef.current) {
-        autoCollapsedRef.current = false;
-        setListCollapsed(false);
-      }
-    }
-  }, [selected, isWorkflowMode, inquiryScopeId]);
-
-  const toggleList = () => {
-    autoCollapsedRef.current = false;
-    setListCollapsed((v) => !v);
-  };
+  const toggleList = () => setListCollapsed((v) => !v);
 
   // Automatic association by quotation number: if the number cited in the PO
   // exists in the register (for the same customer), associate it and open the
@@ -531,10 +504,10 @@ export default function GlobalInbox() {
     setSelectedId(null);
     setQuoteSend(null);
     setEmailDrawerOpen(false);
-    // The rail is a three-panel affordance; the direct inbox is always the
-    // full-width list, never a column of icons with no way to expand it.
-    autoCollapsedRef.current = false;
-    setListCollapsed(false);
+    // The collapse is deliberately NOT reset here. The direct inbox is always
+    // the full-width list (the rail only exists beside an open conversation),
+    // so the flag is inert until the next email opens — and then it is still
+    // whatever the user last chose.
     setParams({}, { replace: true });
   };
 
@@ -588,13 +561,17 @@ export default function GlobalInbox() {
   // the full-height list on direct /inbox and every side-by-side workspace.
   // Only the narrow stacked tier falls back to separate cards.
   const connected = !selected || panels >= 2;
-  // Desktop split: Company Emails 22% · Email Thread 40% · Action Workspace 38%.
-  // The list keeps a 230px floor so the ratio never makes it unreadable at the
-  // bottom of the three-panel tier; above ~1050px the split is exactly 22/40/38.
+  // Desktop split. Collapsed — the default — is Email Thread 52% · Action
+  // Workspace 48% beside the 40px rail. Expanded is Company Emails 21% · Email
+  // Thread 41% · Action Workspace 38%. The list keeps a 210px floor so the
+  // ratio never makes it unreadable at the bottom of the three-panel tier;
+  // above ~1000px the split is exactly 21/41/38.
   const gridColumns = !selected
     ? undefined
     : panels === 3
-    ? `${listCollapsed ? '56px' : 'minmax(230px, 22fr)'} minmax(0, 40fr) minmax(0, 38fr)`
+    ? listCollapsed
+      ? `${RAIL_WIDTH}px minmax(0, 52fr) minmax(0, 48fr)`
+      : 'minmax(210px, 21fr) minmax(0, 41fr) minmax(0, 38fr)'
     : panels === 2
     ? 'minmax(320px, 1fr) minmax(300px, 380px)'
     : undefined;
@@ -629,7 +606,17 @@ export default function GlobalInbox() {
   // slim title block, the toolbar edge to edge, and a workspace that takes the
   // rest of the viewport height (the app header is 56px tall).
   return (
-    <div className="flex h-[calc(100vh-56px)] min-h-[560px] flex-col leading-[1.4]">
+    <div
+      className={classNames(
+        'flex h-[calc(100vh-56px)] min-h-[560px] w-full flex-col leading-[1.4]',
+        // Compact density, but only for the screen the brief is about: an open
+        // conversation. `inbox-dense` (src/index.css) restates every size ~20%
+        // smaller as REAL pixel values — no transform, no zoom — so text stays
+        // sharp and the 1px dividers stay 1px. The direct /inbox list keeps the
+        // normal scale, and the modals portal outside this subtree untouched.
+        selected && 'inbox-dense leading-[1.35]'
+      )}
+    >
       <div className="flex-none px-4 pt-3">
         <PageHeader
           dense
@@ -708,7 +695,39 @@ export default function GlobalInbox() {
             reached from the "Company Emails (n)" button in the centre). Inside
             the full layout it can still be collapsed to a 56px icon rail, so
             the conversation + workspace keep their width beside the SO drawer. */}
-        {listAsColumn && (
+        {listAsColumn && (listCollapsed && selected ? (
+          /* Collapsed — the default while a conversation is open. A slim rail
+             carrying one control: Show Company Emails, with the count of this
+             customer's mail. The list itself is exactly what collapsing was
+             meant to reclaim, so nothing else competes for the width; the way
+             back to the full inbox stays as an icon at the foot of the rail so
+             an open email is still never a one-way door. */
+          <div className="flex flex-col items-center gap-1.5 overflow-hidden border-r border-surface-200 bg-surface-50/60 py-2">
+            <button
+              onClick={toggleList}
+              title={`Show Company Emails (${filtered.length})${customer ? ` — ${customer.companyName}` : ''}`}
+              aria-label={`Show Company Emails (${filtered.length})`}
+              aria-expanded={false}
+              className="flex min-h-0 flex-col items-center gap-1 rounded-lg px-1 py-1.5 text-surface-500 transition-colors hover:bg-surface-200/70 hover:text-brand-700"
+            >
+              <PanelLeftOpen className="h-4 w-4 flex-none" />
+              <span className="flex-none rounded-full bg-surface-200 px-1.5 text-[10px] font-semibold leading-4 text-surface-700">
+                {filtered.length}
+              </span>
+              <span className="mt-0.5 truncate text-[10px] font-semibold uppercase tracking-wide [writing-mode:vertical-rl]">
+                Company Emails
+              </span>
+            </button>
+            <button
+              onClick={exitToInbox}
+              title="Back to All Emails — the full Global Inbox"
+              aria-label="Back to All Emails"
+              className="mt-auto flex-none rounded-lg p-1.5 text-brand-700 transition-colors hover:bg-brand-100/60"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          </div>
+        ) : (
           <div
             className={classNames(
               'card flex flex-col overflow-hidden',
@@ -718,53 +737,32 @@ export default function GlobalInbox() {
           >
             <div
               className={classNames(
-                'flex-none items-center border-b border-surface-100 px-2 py-1.5',
-                selected ? 'flex' : 'hidden',
-                listCollapsed ? 'justify-center' : 'justify-between'
+                'flex-none items-center justify-between border-b border-surface-100 px-2 py-1.5',
+                selected ? 'flex' : 'hidden'
               )}
             >
-              {listCollapsed ? (
-                /* The expand control for the collapsed rail — it names what it
-                   holds ("Company Emails") and how many, so the list is never
-                   reduced to an unlabelled strip of icons. */
-                <button
-                  onClick={toggleList}
-                  title={`Company Emails (${filtered.length})${customer ? ` — ${customer.companyName}` : ''}`}
-                  aria-label={`Company Emails (${filtered.length})`}
-                  aria-expanded={false}
-                  className="flex w-full flex-col items-center gap-0.5 rounded-lg py-1 text-surface-400 transition-colors hover:bg-surface-100 hover:text-surface-600"
-                >
-                  <PanelLeftOpen className="h-4 w-4" />
-                  <span className="rounded-full bg-surface-200/80 px-1.5 text-[10px] font-semibold leading-4 text-surface-600">
-                    {filtered.length}
-                  </span>
-                </button>
-              ) : (
-                <>
-                  {/* Contextual mode names the company the list belongs to and
-                      counts ITS emails — never the global total. */}
-                  <span
-                    className={classNames(
-                      'min-w-0 truncate pl-2 text-[11px] font-semibold uppercase tracking-wide',
-                      customer ? 'text-brand-700' : 'text-surface-400'
-                    )}
-                    title={customer ? `${customer.companyName} — ${filtered.length} emails` : undefined}
-                  >
-                    {customer
-                      ? `${customer.companyName} — ${filtered.length} Email${filtered.length === 1 ? '' : 's'}`
-                      : `${filtered.length} email${filtered.length === 1 ? '' : 's'}`}
-                  </span>
-                  <button
-                    onClick={toggleList}
-                    title="Hide Emails"
-                    aria-label="Hide Emails"
-                    aria-expanded
-                    className="rounded-lg p-1.5 text-surface-400 transition-colors hover:bg-surface-100 hover:text-surface-600"
-                  >
-                    <PanelLeftClose className="h-4 w-4" />
-                  </button>
-                </>
-              )}
+              {/* Contextual mode names the company the list belongs to and
+                  counts ITS emails — never the global total. */}
+              <span
+                className={classNames(
+                  'min-w-0 truncate pl-2 text-[11px] font-semibold uppercase tracking-wide',
+                  customer ? 'text-brand-700' : 'text-surface-400'
+                )}
+                title={customer ? `${customer.companyName} — ${filtered.length} emails` : undefined}
+              >
+                {customer
+                  ? `${customer.companyName} — ${filtered.length} Email${filtered.length === 1 ? '' : 's'}`
+                  : `${filtered.length} email${filtered.length === 1 ? '' : 's'}`}
+              </span>
+              <button
+                onClick={toggleList}
+                title="Hide Emails"
+                aria-label="Hide Emails"
+                aria-expanded
+                className="flex flex-none items-center gap-1 rounded-lg px-1.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-surface-500 transition-colors hover:bg-surface-100 hover:text-surface-700"
+              >
+                <PanelLeftClose className="h-4 w-4" /> Hide
+              </button>
             </div>
             {/* The way back to the direct Global Inbox: it closes the
                 conversation and its workspace and widens the list back to every
@@ -775,25 +773,18 @@ export default function GlobalInbox() {
                   onClick={exitToInbox}
                   title="Back to All Emails — the full Global Inbox"
                   aria-label="Back to All Emails"
-                  className={classNames(
-                    'flex w-full items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-700 transition-colors hover:bg-brand-100/60',
-                    listCollapsed && 'justify-center px-0'
-                  )}
+                  className="flex w-full items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-700 transition-colors hover:bg-brand-100/60"
                 >
                   <ArrowLeft className="h-3.5 w-3.5 flex-none" />
-                  <span className={classNames('truncate', listCollapsed && 'hidden')}>Back to All Emails</span>
+                  <span className="truncate">Back to All Emails</span>
                 </button>
               </div>
             )}
             <div className="min-h-0 flex-1 overflow-y-auto">
-              {listCollapsed && selected ? (
-                <EmailIconRail emails={filtered} selectedId={selectedId} onSelect={onSelect} />
-              ) : (
-                <EmailList emails={filtered} selectedId={selectedId} onSelect={onSelect} inquiryIds={inquiryEmailIds} />
-              )}
+              <EmailList emails={filtered} selectedId={selectedId} onSelect={onSelect} inquiryIds={inquiryEmailIds} />
             </div>
           </div>
-        )}
+        ))}
 
         {/* Center + Right */}
         {selected ? (
