@@ -19,19 +19,38 @@ import type { BadgeTone } from '@/lib/labels';
  * score; the scrollable cards below answer it per line, so an incomplete or
  * low-confidence instrument is visible without opening anything.
  *
- * Three ways deeper, because there are three questions. Clicking a card opens
- * that line's datasheet in the detail drawer — the place a gap is actually
- * filled in. View Details opens the comparison matrix, where every line of the
- * enquiry is read side by side, which is the only way to see that one tag out of
- * twelve was never given a flange rating. Compare with Source sets that same
- * matrix beside the document the enquiry arrived as, which is the only way to
- * see that a figure was read off the wrong row.
+ * Three ways deeper, because there are three questions. A card is one target
+ * end to end: clicking anywhere on it opens that line's datasheet in the detail
+ * drawer — the place a gap is actually filled in. View Details opens the
+ * comparison matrix, where every line of the enquiry is read side by side,
+ * which is the only way to see that one tag out of twelve was never given a
+ * flange rating. Compare with Source sets that same matrix beside the document
+ * the enquiry arrived as, which is the only way to see that a figure was read
+ * off the wrong row.
  */
 
 const STATUS_META: Record<RequirementStatus, { label: string; tone: BadgeTone }> = {
   confirmed: { label: 'Confirmed', tone: 'green' },
   needs_review: { label: 'Needs Review', tone: 'amber' },
   error: { label: 'Error', tone: 'red' },
+};
+
+/**
+ * The status reads as a left accent on an otherwise white card. A wash of
+ * colour over the whole card says nothing about WHICH line is worst and drowns
+ * out the missing fields it is meant to point at.
+ */
+const STATUS_ACCENT: Record<RequirementStatus, string> = {
+  confirmed: 'border-l-emerald-500',
+  needs_review: 'border-l-amber-500',
+  error: 'border-l-rose-500',
+};
+
+/** Unresolved lines are the work; confirmed lines are the record of work done. */
+const STATUS_ORDER: Record<RequirementStatus, number> = {
+  error: 0,
+  needs_review: 1,
+  confirmed: 2,
 };
 
 const SCORE_META = {
@@ -67,11 +86,10 @@ function confidenceClass(confidence: number): string {
 export function RequirementExtractionPanel({ email }: { email: InboxEmail }) {
   const { quotations, salesOrders } = useApp();
   const [activeId, setActiveId] = useState<string | null>(null);
-  // The comparison matrix, and the line it was opened from. Held separately
-  // from `activeId` because the drawer opens ON TOP of the matrix: correcting a
-  // line found by comparison should hand you straight back to the comparison.
+  // The comparison matrix. Held separately from `activeId` because the drawer
+  // opens ON TOP of the matrix: correcting a line found by comparison should
+  // hand you straight back to the comparison.
   const [matrixOpen, setMatrixOpen] = useState(false);
-  const [matrixFocusId, setMatrixFocusId] = useState<string | null>(null);
   // The source comparison, which can be reached either straight from here or
   // from the matrix. When it was opened from the matrix the matrix stays
   // mounted underneath, so Back hands the review straight back to it.
@@ -82,16 +100,6 @@ export function RequirementExtractionPanel({ email }: { email: InboxEmail }) {
   // a datasheet saved in the drawer is reflected by the drawer itself as well as
   // by the card behind it.
   const activeItem = extraction?.items.find((it) => it.id === activeId) ?? null;
-
-  const openMatrix = (focus: string | null) => {
-    setMatrixFocusId(focus);
-    setMatrixOpen(true);
-  };
-
-  const openCompare = (focus: string | null) => {
-    setMatrixFocusId(focus);
-    setCompareOpen(true);
-  };
 
   const closeAll = () => {
     setCompareOpen(false);
@@ -138,7 +146,7 @@ export function RequirementExtractionPanel({ email }: { email: InboxEmail }) {
             <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => openCompare(null)}
+                onClick={() => setCompareOpen(true)}
                 title="Read the extraction against the document the enquiry arrived as"
                 className="inline-flex flex-none items-center gap-1 rounded-lg border border-surface-200 bg-white px-2 py-1 text-[11px] font-semibold text-brand-700 transition-colors hover:border-brand-200 hover:bg-brand-50"
               >
@@ -146,7 +154,7 @@ export function RequirementExtractionPanel({ email }: { email: InboxEmail }) {
               </button>
               <button
                 type="button"
-                onClick={() => openMatrix(null)}
+                onClick={() => setMatrixOpen(true)}
                 className="inline-flex flex-none items-center gap-1 rounded-lg border border-surface-200 bg-white px-2 py-1 text-[11px] font-semibold text-brand-700 transition-colors hover:border-brand-200 hover:bg-brand-50"
               >
                 <Columns3 className="h-3 w-3" /> View Details
@@ -182,18 +190,22 @@ export function RequirementExtractionPanel({ email }: { email: InboxEmail }) {
         </div>
       </div>
 
-      {/* Line items — compact cards, scrolled independently of the header. */}
+      {/* Line items — compact cards, scrolled independently of the header.
+          Everything still to resolve floats to the top, so the queue of work is
+          the first thing in the scroller and confirmed lines stay as evidence
+          below it rather than as spacing between the gaps. */}
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2.5">
-        <div className="space-y-2">
-          {extraction.items.map((item) => (
-            <RequirementCard
-              key={item.id}
-              item={item}
-              active={activeId === item.id}
-              onOpen={() => setActiveId(item.id)}
-              onCompare={() => openMatrix(item.id)}
-            />
-          ))}
+        <div className="space-y-1.5">
+          {[...extraction.items]
+            .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || a.lineNo - b.lineNo)
+            .map((item) => (
+              <RequirementCard
+                key={item.id}
+                item={item}
+                active={activeId === item.id}
+                onOpen={() => setActiveId(item.id)}
+              />
+            ))}
         </div>
       </div>
 
@@ -203,7 +215,7 @@ export function RequirementExtractionPanel({ email }: { email: InboxEmail }) {
         <RequirementMatrixModal
           email={email}
           extraction={extraction}
-          focusId={matrixFocusId}
+          focusId={null}
           blocked={activeId !== null || compareOpen}
           onOpenItem={setActiveId}
           onCompareSource={() => setCompareOpen(true)}
@@ -214,7 +226,7 @@ export function RequirementExtractionPanel({ email }: { email: InboxEmail }) {
         <RequirementCompareModal
           email={email}
           extraction={extraction}
-          focusId={matrixFocusId}
+          focusId={null}
           blocked={activeId !== null}
           fromMatrix={matrixOpen}
           onOpenItem={setActiveId}
@@ -247,29 +259,40 @@ function RequirementCard({
   item,
   active,
   onOpen,
-  onCompare,
 }: {
   item: RequirementItem;
   active: boolean;
   onOpen: () => void;
-  onCompare: () => void;
 }) {
   const status = STATUS_META[item.status];
-  // Low confidence and unstated datasheet fields are the two things that stop a
-  // line being quotable, so the card carries the tint rather than hiding it in
-  // the badge alone.
-  const tint =
-    item.status === 'error'
-      ? 'border-rose-200 bg-rose-50/60 hover:border-rose-300'
-      : item.status === 'needs_review'
-      ? 'border-amber-200 bg-amber-50/50 hover:border-amber-300'
-      : 'border-surface-200 bg-white hover:border-brand-200';
+  // A confirmed line has nothing left to chase, so it collapses to its identity
+  // and its numbers — the card's height is itself a reading of the queue.
+  const collapsed = item.status === 'confirmed';
+
+  const qty = (
+    <span className="text-surface-500">
+      Qty{' '}
+      <span className={classNames('font-semibold', item.quantity === null ? 'text-rose-700' : 'text-surface-800')}>
+        {item.quantity === null ? 'Not readable' : `${item.quantity} ${item.unit}`}
+      </span>
+    </span>
+  );
+  const confidence = (
+    <span className="text-surface-500">
+      Confidence{' '}
+      <span className={classNames('font-semibold tabular-nums', confidenceClass(item.confidence))}>
+        {item.confidence}%
+      </span>
+    </span>
+  );
 
   return (
+    // The whole card is the target — one affordance per line, marked by the
+    // chevron rather than by a button competing with it for the same click.
     <div
       role="button"
       tabIndex={0}
-      aria-label={`Line ${item.lineNo} — ${item.name}`}
+      aria-label={`Line ${item.lineNo} — ${item.name}. ${status.label}. Open datasheet.`}
       onClick={onOpen}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -278,69 +301,65 @@ function RequirementCard({
         }
       }}
       className={classNames(
-        'cursor-pointer rounded-xl border p-3 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300',
-        tint,
+        'group cursor-pointer rounded-lg border border-l-[3px] border-surface-200 bg-white p-3 transition-colors hover:border-surface-300 hover:bg-surface-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-1',
+        STATUS_ACCENT[item.status],
         active && 'ring-2 ring-brand-300'
       )}
     >
-      <div className="flex items-start gap-2">
-        <span className="mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-md bg-surface-100 text-[11px] font-semibold tabular-nums text-surface-600">
+      {/* 1 — line number, name, status */}
+      <div className="flex items-center gap-2">
+        <span className="flex h-5 w-5 flex-none items-center justify-center rounded-md bg-surface-100 text-[11px] font-semibold tabular-nums text-surface-600">
           {item.lineNo}
         </span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] font-semibold text-surface-900" title={item.name}>
-            {item.name}
-          </p>
-          <p className="mt-0.5 flex items-center gap-1 truncate text-[11px] text-surface-500">
-            <Tag className="h-3 w-3 flex-none" />
-            <span className="font-medium text-surface-700">{item.tag}</span>
-            <span aria-hidden>·</span>
-            <span className="truncate">{item.service}</span>
-          </p>
-        </div>
+        <p className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-5 text-surface-900" title={item.name}>
+          {item.name}
+        </p>
         <StatusBadge tone={status.tone} label={status.label} className="flex-none" />
+        <ChevronRight className="h-3.5 w-3.5 flex-none text-surface-300 transition group-hover:translate-x-0.5 group-hover:text-surface-500" />
       </div>
 
-      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
-        <span className="text-surface-500">
-          Qty{' '}
-          <span className={classNames('font-semibold', item.quantity === null ? 'text-rose-700' : 'text-surface-800')}>
-            {item.quantity === null ? 'Not readable' : `${item.quantity} ${item.unit}`}
-          </span>
-        </span>
-        <span className="text-surface-500">
-          Confidence <span className={classNames('font-semibold tabular-nums', confidenceClass(item.confidence))}>{item.confidence}%</span>
-        </span>
-        <span className={classNames(item.missingFields.length ? 'font-semibold text-amber-700' : 'text-surface-500')}>
-          {item.missingFields.length} missing {item.missingFields.length === 1 ? 'field' : 'fields'}
-        </span>
-      </div>
+      {/* 2 — tag / application. A confirmed line carries its numbers here too,
+          which is the whole of its remaining story. */}
+      <p className="mt-1 flex items-center gap-1.5 text-[11px] leading-4 text-surface-500">
+        <Tag className="h-3 w-3 flex-none" />
+        <span className="flex-none font-medium text-surface-700">{item.tag}</span>
+        <span aria-hidden>·</span>
+        <span className="min-w-0 truncate">{item.service}</span>
+        {collapsed && (
+          <>
+            <span aria-hidden className="flex-none">·</span>
+            <span className="flex-none">{qty}</span>
+            <span aria-hidden className="flex-none">·</span>
+            <span className="flex-none">{confidence}</span>
+          </>
+        )}
+      </p>
 
-      {item.errorNote && (
-        <p className="mt-1.5 flex items-start gap-1 text-[11px] text-rose-700">
-          <OctagonAlert className="mt-px h-3 w-3 flex-none" />
-          <span className="min-w-0">{item.errorNote}</span>
-        </p>
+      {!collapsed && (
+        <>
+          {/* 3 — quantity, confidence, how much is still unstated */}
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 text-[11px] leading-4">
+            {qty}
+            {confidence}
+            <span className={classNames(item.missingFields.length ? 'font-semibold text-amber-700' : 'text-surface-500')}>
+              {item.missingFields.length} missing {item.missingFields.length === 1 ? 'field' : 'fields'}
+            </span>
+          </div>
+
+          {/* 4 — which fields, by name: the actual work the card is asking for */}
+          {item.errorNote && (
+            <p className="mt-1 flex items-start gap-1 text-[11px] leading-4 text-rose-700" title={item.errorNote}>
+              <OctagonAlert className="mt-px h-3 w-3 flex-none" />
+              <span className="line-clamp-2 min-w-0">{item.errorNote}</span>
+            </p>
+          )}
+          {!item.errorNote && item.missingFields.length > 0 && (
+            <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-amber-700" title={item.missingFields.join(', ')}>
+              Missing: {item.missingFields.join(', ')}
+            </p>
+          )}
+        </>
       )}
-      {!item.errorNote && item.missingFields.length > 0 && (
-        <p className="mt-1.5 truncate text-[11px] text-amber-700" title={item.missingFields.join(', ')}>
-          Missing: {item.missingFields.join(', ')}
-        </p>
-      )}
-
-      <div className="mt-2 flex justify-end">
-        <button
-          type="button"
-          title="Compare every line of this enquiry, starting here"
-          onClick={(e) => {
-            e.stopPropagation();
-            onCompare();
-          }}
-          className="inline-flex items-center gap-0.5 rounded-lg border border-surface-200 bg-white px-2 py-1 text-[11px] font-semibold text-brand-700 transition-colors hover:border-brand-200 hover:bg-brand-50"
-        >
-          View Details <ChevronRight className="h-3 w-3" />
-        </button>
-      </div>
     </div>
   );
 }
