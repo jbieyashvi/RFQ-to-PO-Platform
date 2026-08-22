@@ -206,6 +206,19 @@
 .inbox-dense .pr-2 { padding-right: 6px; }
 .inbox-dense .pr-3 { padding-right: 10px; }
 
+/* Icon gutters — must come LAST.
+   A control that carries a leading search icon or a trailing chevron reserves
+   room for it with pl-9 / pr-8, and the two rules above (`.input` shorthand,
+   `.px-2\.5`) outrank those single-class utilities, so the reserved space
+   collapsed to 8px and the label ran under its own icon. These restore the
+   gutter at dense scale rather than at full 36px, so the control still reads
+   as compact. */
+.inbox-dense .pl-8 { padding-left: 26px; }
+.inbox-dense .pl-9 { padding-left: 30px; }
+.inbox-dense .pr-7 { padding-right: 24px; }
+.inbox-dense .pr-8 { padding-right: 28px; }
+.inbox-dense .pr-10 { padding-right: 34px; }
+
 .inbox-dense .gap-0\.5 { gap: 2px; }
 .inbox-dense .gap-1 { gap: 3px; }
 .inbox-dense .gap-1\.5 { gap: 5px; }
