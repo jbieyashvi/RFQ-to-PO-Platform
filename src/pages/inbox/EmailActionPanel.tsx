@@ -148,6 +148,11 @@ function contextualActions(
   navigate: (to: string) => void,
   onGenerateQuote?: () => void
 ): { label: string; icon: React.ReactNode; onClick: () => void; primary?: boolean }[] {
+  // A mail WE sent is a record of what went out, not work waiting to be picked
+  // up: a sent revised quotation has already left Quotes Needing Revision, so
+  // inviting the reader to "start revision" from it points at an empty queue.
+  if (email.sent) return [];
+
   switch (email.classification) {
     case 'inquiry':
       // Quoting happens OVER the conversation, not on another page: sending the

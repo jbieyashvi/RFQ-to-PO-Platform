@@ -884,7 +884,10 @@ export default function GlobalInbox() {
                 {showQuoteTools ? (
                   <InboxCenterPanel email={selected} mode="quote-send" quotation={quoteSendQuotation} focusTick={focusTick} />
                 ) : isRevision ? (
-                  <InboxCenterPanel email={selected} mode="revision" quotation={revisionQuotation} focusTick={focusTick} />
+                  /* A revision is read like any other conversation: the quote is
+                     edited in the Edit Quote modal and sent from the compose
+                     window, so the centre has no workflow form of its own. */
+                  <InboxCenterPanel email={selected} />
                 ) : isPoVerify ? (
                   <InboxCenterPanel email={selected} mode="po-verify" salesOrder={poSalesOrder} quotation={poQuote} focusTick={focusTick} />
                 ) : isSoRevision ? (
@@ -905,7 +908,11 @@ export default function GlobalInbox() {
                 {showQuoteTools ? (
                   <QuoteToolsPanel email={selected} quotation={quoteSendQuotation!} onPrepared={onPrepared} />
                 ) : isRevision ? (
-                  <RevisionQuotePanel email={selected} onPrepared={onPrepared} />
+                  <RevisionQuotePanel
+                    email={selected}
+                    quotation={revisionQuotation}
+                    onCompose={() => setComposeOpen(true)}
+                  />
                 ) : isPoVerify ? (
                   <PoVerificationPanel email={selected} onPrepared={onPrepared} onGenerateSo={openSoDrawer} />
                 ) : isSoRevision ? (
@@ -959,6 +966,7 @@ export default function GlobalInbox() {
           email={selected}
           quotation={inquiryQuotation ?? builderQuotation}
           inquiryId={inquiryScopeId}
+          revision={isRevision}
           onClose={() => setComposeOpen(false)}
         />
       )}

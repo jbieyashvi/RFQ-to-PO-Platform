@@ -48,7 +48,7 @@ import {
 const TODAY_TS = '2026-08-13T12:30:00';
 const SENT_TS = '2026-08-13T12:45:00';
 
-export type ComposeMode = 'normal' | 'quote-send' | 'revision' | 'po-verify' | 'so-revision';
+export type ComposeMode = 'normal' | 'quote-send' | 'po-verify' | 'so-revision';
 
 function templateFor(email: InboxEmail): OutgoingDraft {
   const greeting = `Dear ${email.senderName.split(' ')[0] || 'Sir/Madam'},`;
@@ -79,7 +79,6 @@ function blankDraft(email: InboxEmail): OutgoingDraft {
 
 const COMPOSE_HEADING: Record<string, string> = {
   'quote-send': 'Reply — Send Quotation',
-  revision: 'Reply — Send Revised Quotation',
   'po-request': 'Reply — Request Updated PO',
   'quote-correct': 'Reply — Send Corrected Quotation',
   'so-send': 'Reply — Send Sales Order',
@@ -94,7 +93,6 @@ const COMPOSE_HEADING: Record<string, string> = {
  * corrected PO) and hand it to this composer via the email record. Depending on
  * `mode` the composer finalises the matching workflow:
  *   • quote-send    → send the attached quotation
- *   • revision      → send the revised quotation (new version)
  *   • po-verify     → request an updated PO, or send a corrected quotation
  * `normal` keeps the generic Approve & Send reply.
  */
@@ -169,8 +167,8 @@ export function InboxCenterPanel({
   const canSend = canInbox('send');
   const canApprove = canInbox('approve');
 
-  // quote-send and the generic reply both need approve + send; the revision and
-  // PO follow-ups only need send (they were already approved as documents).
+  // quote-send and the generic reply both need approve + send; the PO / SO
+  // follow-ups only need send (they were already approved as documents).
   const permissionOk =
     mode === 'quote-send' || mode === 'normal' ? canSend && canApprove : canSend;
   const permissionMessage =
@@ -184,11 +182,11 @@ export function InboxCenterPanel({
 
   // Which modes carry a system-generated quotation attachment.
   const requireAttachment =
-    mode === 'quote-send' || mode === 'revision' || (mode === 'po-verify' && intent === 'quote-correct');
+    mode === 'quote-send' || (mode === 'po-verify' && intent === 'quote-correct');
 
   // The composer FORM is shown once there is something to send. For quote-send
-  // and normal replies that is always; for revision / PO it is only after the
-  // right panel prepares the email (sets composeIntent).
+  // and normal replies that is always; for PO / SO it is only after the right
+  // panel prepares the email (sets composeIntent).
   const composePrepared = mode === 'quote-send' || mode === 'normal' ? true : !!intent;
 
   const attachmentStale = !!(
@@ -322,47 +320,6 @@ export function InboxCenterPanel({
       ],
     });
     addToast({ type: 'success', title: 'Quotation sent successfully.', message: `${quotation.number} sent to ${draft.to} — moved from Quotes Pending to Follow-up Pending.` });
-  };
-
-  // ---- Revision send (Send Email): the quote was already revised + saved by
-  // the right panel; here we snapshot it as a new sent version and mark sent. ----
-  const sendRevision = () => {
-    if (!canFinalSend || !quotation) return;
-    const q = quotation;
-    const existing = q.quoteVersions && q.quoteVersions.length > 0 ? q.quoteVersions : [];
-    const nextVersion = existing.length + 1;
-    const newVersion = {
-      id: `qv-${q.id}-${nextVersion}`,
-      label: `V${nextVersion}`,
-      version: nextVersion,
-      createdAt: SENT_TS,
-      by: currentUser.fullName,
-      value: q.value,
-      items: q.items.map((it) => ({ ...it })),
-      note: 'Revised quotation sent to customer',
-      sent: true,
-      sentAt: SENT_TS,
-    };
-    updateQuotation(q.id, {
-      quoteVersions: [...existing, newVersion],
-      workState: 'sent',
-      deliveryState: 'sent',
-      sentAt: SENT_TS,
-      sentBy: currentUser.fullName,
-      sendChannel: 'Email (via Global Inbox)',
-      reviewDate,
-      lastUpdated: '2026-08-13',
-      revisions: [
-        ...q.revisions,
-        { id: `rev-${q.id}-${nextVersion}`, version: nextVersion, date: '2026-08-13', reason: 'Revised quotation sent to customer', by: currentUser.fullName },
-      ],
-      activity: [
-        ...q.activity,
-        { id: `act-${q.id}-send-${nextVersion}`, date: SENT_TS, actor: currentUser.fullName, action: 'Revised quotation sent to customer', detail: `${email.attachedQuote?.fileName ?? q.number} → ${draft.to} · next review ${reviewDate}` },
-      ],
-    });
-    updateEmail(email.id, { draft, draftSaved: true, sent: true, sentAt: SENT_TS, needsReview: false, reviewDate });
-    addToast({ type: 'success', title: 'Revised quotation sent successfully.', message: `${q.number} sent to ${draft.to}. Saved as ${newVersion.label}.` });
   };
 
   // Record the outgoing customer email as a sent item in the inbox history.
@@ -582,7 +539,6 @@ export function InboxCenterPanel({
 
   const onWorkflowSend = () => {
     if (mode === 'quote-send') sendQuote();
-    else if (mode === 'revision') sendRevision();
     else if (mode === 'so-revision') sendSoRevision();
     else if (mode === 'po-verify') {
       if (intent === 'po-request') sendPoRequest();
@@ -634,9 +590,7 @@ export function InboxCenterPanel({
               <Wand2 className="mt-0.5 h-4 w-4 flex-none text-brand-400" />
               <span>
                 Prepare this reply from the workspace on the right.{' '}
-                {mode === 'revision'
-                  ? 'Edit the quote, then use “Add Revised Quote to Email”'
-                  : isSoRevise
+                {isSoRevise
                   ? 'Edit the revised Sales Order, then use “Add Revised SO to Email”'
                   : 'Use “Request Updated PO” or “Correct Quote”'}{' '}
                 — it will appear here to review, set the next review date, and send.
@@ -752,9 +706,7 @@ export function InboxCenterPanel({
                       ) : (
                         <div className="flex items-center gap-2 rounded-lg border border-dashed border-surface-300 bg-surface-50 px-3 py-2 text-[12px] text-surface-500">
                           <Paperclip className="h-4 w-4 flex-none" />
-                          {mode === 'revision'
-                            ? 'No quotation attached — use “Add Revised Quote to Email” in the workspace.'
-                            : 'No quotation attached — use “Add Corrected Quote to Email” in the workspace.'}
+                          No quotation attached — use “Add Corrected Quote to Email” in the workspace.
                         </div>
                       )}
                       {attachmentStale && !email.sent && (

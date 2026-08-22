@@ -346,6 +346,14 @@ export interface QuoteVersion {
   by: string;
   value: number;
   items: LineItem[];
+  // The commercial terms this version quoted. Optional because the earliest
+  // records only versioned the lines — a reader falls back to the quotation's
+  // own terms when a version does not carry its own.
+  paymentTerms?: string;
+  deliveryTerms?: string;
+  warranty?: string;
+  packingCharges?: number;
+  otherTerms?: string;
   note?: string;
   sent?: boolean;
   sentAt?: string;
@@ -388,6 +396,9 @@ export interface Quotation {
   deliveryTerms: string;
   warranty: string;
   packingCharges: number;
+  // Free-text commercial conditions beyond the named terms above (validity,
+  // freight, inspection…). Optional — most quotations quote the standard set.
+  otherTerms?: string;
   revisions: RevisionRecord[];
   // Immutable version history — populated when a revised quote is sent so the
   // previous version is preserved (List of Quotations shows the latest).

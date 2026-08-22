@@ -37,13 +37,15 @@ const WIDTH = 520;
  * On send it does the whole handover in one step: the outgoing mail is added to
  * the inquiry conversation (same inquiryId, so it files under the thread it
  * belongs to), the quotation is marked Sent — which takes it out of Quotes
- * Pending to be Sent — and the chosen review date moves it on to Follow-up
- * Pending.
+ * Pending to be Sent, or out of Quotes Needing Revision — and the chosen review
+ * date moves it on to Follow-up Pending. A revision additionally snapshots the
+ * quote it just sent as the next version, so the previous one stays readable.
  */
 export function ComposePopup({
   email,
   quotation,
   inquiryId,
+  revision = false,
   onClose,
 }: {
   email: InboxEmail;
@@ -51,6 +53,12 @@ export function ComposePopup({
   quotation: Quotation | null;
   /** Conversation the sent mail is filed under. */
   inquiryId: string | null;
+  /**
+   * This mail carries a REVISED quotation. Sending it cuts the next immutable
+   * version of the same quotation rather than simply marking the first one
+   * sent — the customer now holds two quotes, and both have to be readable.
+   */
+  revision?: boolean;
   onClose: () => void;
 }) {
   const { updateEmail, updateQuotation, addEmail, addToast, canInbox, currentUser } = useApp();
@@ -158,7 +166,48 @@ export function ComposePopup({
     });
 
     if (quotation && attachment) {
+      // A revision leaves the queue as a NEW version: the quote as it stands
+      // (the revised lines the editor saved) is frozen and appended, so the
+      // history reads V1 → V2 rather than one record edited over.
+      const existing = quotation.quoteVersions ?? [];
+      const nextVersion = existing.length + 1;
+      const versionPatch = revision
+        ? {
+            quoteVersions: [
+              ...existing,
+              {
+                id: `qv-${quotation.id}-${nextVersion}`,
+                label: `V${nextVersion}`,
+                version: nextVersion,
+                createdAt: SENT_TS,
+                by: currentUser.fullName,
+                value: quotation.value,
+                items: quotation.items.map((it) => ({ ...it })),
+                paymentTerms: quotation.paymentTerms,
+                deliveryTerms: quotation.deliveryTerms,
+                warranty: quotation.warranty,
+                packingCharges: quotation.packingCharges,
+                otherTerms: quotation.otherTerms,
+                note: 'Revised quotation sent to customer',
+                sent: true,
+                sentAt: SENT_TS,
+              },
+            ],
+            revisions: [
+              ...quotation.revisions,
+              {
+                id: `rev-${quotation.id}-sent-${nextVersion}`,
+                version: nextVersion,
+                date: TODAY,
+                reason: 'Revised quotation sent to customer',
+                by: currentUser.fullName,
+              },
+            ],
+          }
+        : {};
+
       updateQuotation(quotation.id, {
+        ...versionPatch,
         deliveryState: 'sent',
         workState: 'sent',
         stage: 'no_followup',
@@ -174,8 +223,10 @@ export function ComposePopup({
             id: `act-${quotation.id}-sent-${Date.now()}`,
             date: SENT_TS,
             actor: currentUser.fullName,
-            action: 'Quotation emailed to customer',
-            detail: `${attachment.fileName} → ${draft.to} · ${formatINR(attachment.quoteValue)}`,
+            action: revision ? 'Revised quotation emailed to customer' : 'Quotation emailed to customer',
+            detail:
+              `${attachment.fileName} → ${draft.to} · ${formatINR(attachment.quoteValue)}` +
+              (revision ? ` · saved as V${nextVersion}` : ''),
           },
           {
             id: `act-${quotation.id}-fu-${Date.now()}`,
@@ -188,8 +239,10 @@ export function ComposePopup({
       });
       addToast({
         type: 'success',
-        title: 'Quotation sent successfully.',
-        message: `${quotation.number} sent to ${draft.to} — moved from Quotes Pending to Follow-up Pending.`,
+        title: revision ? 'Revised quotation sent successfully.' : 'Quotation sent successfully.',
+        message: revision
+          ? `${quotation.number} sent to ${draft.to} — saved as V${nextVersion} and moved from Quotes Needing Revision to Follow-up Pending.`
+          : `${quotation.number} sent to ${draft.to} — moved from Quotes Pending to Follow-up Pending.`,
       });
     } else {
       addToast({

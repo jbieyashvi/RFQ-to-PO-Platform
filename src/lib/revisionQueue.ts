@@ -159,9 +159,98 @@ export function buildVersions(q: Quotation, currentBy: string): {
           by: q.owner,
           value: q.value,
           items: q.items.map((it) => ({ ...it })),
+          paymentTerms: q.paymentTerms,
+          deliveryTerms: q.deliveryTerms,
+          warranty: q.warranty,
+          packingCharges: q.packingCharges,
+          otherTerms: q.otherTerms,
           note: 'Original quotation issued to customer',
           sent: true,
           sentAt: q.sentAt ?? `${q.quoteDate}T16:45:00`,
         };
   return { existing: existing.length > 0 ? existing : [baseline], baseline };
+}
+
+// ---------------------------------------------------------------------------
+// Version snapshots — the read model behind "View Latest Quote" / "View
+// Previous Quote" and behind the old → new highlighting in the revision modal.
+//
+// A snapshot is a self-contained quote: lines PLUS the commercial terms that
+// version quoted. Older QuoteVersion records only carried lines, so terms fall
+// back to the quotation's own — and when no version has been cut yet, the
+// quotation itself IS the latest thing the customer received.
+// ---------------------------------------------------------------------------
+export interface QuoteSnapshot {
+  label: string;
+  value: number;
+  items: LineItem[];
+  paymentTerms: string;
+  deliveryTerms: string;
+  warranty: string;
+  packingCharges: number;
+  otherTerms: string;
+  createdAt?: string;
+  sentAt?: string;
+  by?: string;
+  note?: string;
+}
+
+function snapshotOf(q: Quotation, v: QuoteVersion): QuoteSnapshot {
+  return {
+    label: v.label,
+    value: v.value,
+    items: v.items,
+    paymentTerms: v.paymentTerms ?? q.paymentTerms,
+    deliveryTerms: v.deliveryTerms ?? q.deliveryTerms,
+    warranty: v.warranty ?? q.warranty,
+    packingCharges: v.packingCharges ?? q.packingCharges,
+    otherTerms: v.otherTerms ?? q.otherTerms ?? '',
+    createdAt: v.createdAt,
+    sentAt: v.sentAt,
+    by: v.by,
+    note: v.note,
+  };
+}
+
+/** The most recent version — the quotation itself until a version is cut. */
+export function latestQuoteSnapshot(q: Quotation): QuoteSnapshot {
+  const versions = q.quoteVersions ?? [];
+  const last = versions[versions.length - 1];
+  if (last) return snapshotOf(q, last);
+  return {
+    label: 'V1',
+    value: q.value,
+    items: q.items,
+    paymentTerms: q.paymentTerms,
+    deliveryTerms: q.deliveryTerms,
+    warranty: q.warranty,
+    packingCharges: q.packingCharges,
+    otherTerms: q.otherTerms ?? '',
+    createdAt: `${q.quoteDate}T11:30:00`,
+    sentAt: q.sentAt,
+    by: q.owner,
+    note: 'Original quotation issued to customer',
+  };
+}
+
+/** The version before the latest — null while only one version exists. */
+export function previousQuoteSnapshot(q: Quotation): QuoteSnapshot | null {
+  const versions = q.quoteVersions ?? [];
+  const prev = versions[versions.length - 2];
+  return prev ? snapshotOf(q, prev) : null;
+}
+
+/** The commercial terms the customer asked for, keyed onto the quote's fields. */
+export function proposedTerms(changes: RequestedChange[] = []): {
+  paymentTerms?: string;
+  deliveryTerms?: string;
+  warranty?: string;
+} {
+  const out: { paymentTerms?: string; deliveryTerms?: string; warranty?: string } = {};
+  for (const c of changes) {
+    if (c.type === 'payment') out.paymentTerms = c.newValue;
+    else if (c.type === 'delivery') out.deliveryTerms = c.newValue;
+    else if (c.type === 'warranty') out.warranty = c.newValue;
+  }
+  return out;
 }

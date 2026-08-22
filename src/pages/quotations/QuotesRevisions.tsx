@@ -204,7 +204,10 @@ export default function QuotesRevisions() {
       inquiryNo: r.inquiryNo,
       queueLabel: 'Quote Needs Revision',
       requestedChanges: changes,
-      reviewDate: q.reviewDate,
+      // No review date: this is the customer ASKING for a revision. The next
+      // review date belongs to the revised quote we send back, and the sender
+      // has to choose it — carrying the old quote's date over would pre-satisfy
+      // that gate with a date nobody set for this reply.
       extraction: [
         { key: 'customer', label: 'Customer', value: q.customerName, confidence: 'high', required: true },
         { key: 'inquiry', label: 'Inquiry Number', value: r.inquiryNo, confidence: 'high', required: true },
