@@ -470,12 +470,21 @@ export interface VerificationField {
 
 // ---------- ERP Handoff ----------
 // A final, approved Sales Order enters the ERP Handoff queue when it is
-// generated from Global Inbox or created via Create SO Manually. The single
-// status is Submitted — every SO handed to the ERP stays permanently visible
-// as Submitted. No real ERP is called — this records the operational handoff
-// step only. A single record is kept per SO (approved revisions update it in
-// place, never duplicate it).
-export type ErpHandoffState = 'submitted';
+// generated from Global Inbox or created via Create SO Manually.
+//
+// Entering the queue is NOT the same as reaching the ERP. Sending the Sales
+// Order to the customer is an email event; keying it into the ERP is a person
+// doing a second, separate job. So a record arrives as Pending and only turns
+// Submitted when someone explicitly submits it from the ERP Handoff screen:
+//
+//   pending   : queued — the SO has gone out by email but is not in the ERP yet
+//   submitted : handed to the ERP, stamped with who did it and when
+//
+// No real ERP is called — this records the operational handoff step only. A
+// single record is kept per SO (approved revisions update it in place, never
+// duplicate it) and a revision drops it back to Pending, because what the ERP
+// holds is now the superseded version.
+export type ErpHandoffState = 'pending' | 'submitted';
 
 // Which flow pushed the Sales Order into the ERP Handoff queue.
 export type ErpHandoffSource = 'po_verification' | 'manual';
@@ -483,8 +492,11 @@ export type ErpHandoffSource = 'po_verification' | 'manual';
 export interface ErpHandoff {
   state: ErpHandoffState;
   source: ErpHandoffSource; // Global Inbox generation vs Create SO Manually
-  submittedAt: string; // ISO datetime the SO entered the ERP Handoff queue
-  submittedBy: string;
+  queuedAt: string; // ISO datetime the SO entered the ERP Handoff queue
+  queuedBy: string;
+  // Set ONLY by the explicit Submit to ERP action — undefined while Pending.
+  submittedAt?: string;
+  submittedBy?: string;
   updatedAt: string; // ISO datetime of the latest change to this handoff record
   revisionNumber?: number; // SO revision reflected here (mirrors SalesOrder.revisionNumber)
   reference?: string; // ERP reference / handoff note

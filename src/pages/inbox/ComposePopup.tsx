@@ -201,13 +201,24 @@ export function ComposePopup({
       snapshot,
     };
     const handoffNote = `Revised Sales Order ${so.number} (Rev ${nextNum}) available for ERP update.`;
+    // A revision puts the ERP out of date: whatever it holds is now the
+    // superseded version, so the record drops back to Pending and the earlier
+    // submission stamp is cleared. Re-submitting is the operator's call.
     const erpHandoff: ErpHandoff = so.erpHandoff
-      ? { ...so.erpHandoff, state: 'submitted', revisionNumber: nextNum, updatedAt: SENT_TS, reference: handoffNote }
+      ? {
+          ...so.erpHandoff,
+          state: 'pending',
+          submittedAt: undefined,
+          submittedBy: undefined,
+          revisionNumber: nextNum,
+          updatedAt: SENT_TS,
+          reference: handoffNote,
+        }
       : {
-          state: 'submitted',
+          state: 'pending',
           source: 'po_verification',
-          submittedAt: SENT_TS,
-          submittedBy: currentUser.fullName,
+          queuedAt: SENT_TS,
+          queuedBy: currentUser.fullName,
           updatedAt: SENT_TS,
           revisionNumber: nextNum,
           reference: handoffNote,
@@ -242,15 +253,15 @@ export function ComposePopup({
           id: `act-${so.id}-erp-${nextNum}`,
           date: SENT_TS,
           actor: currentUser.fullName,
-          action: 'ERP Handoff updated',
-          detail: handoffNote,
+          action: 'ERP Handoff reset to Pending',
+          detail: `${handoffNote} Awaiting Submit to ERP.`,
         },
       ],
     });
     addToast({
       type: 'success',
       title: 'Revised Sales Order sent successfully.',
-      message: `${so.number} (Rev ${nextNum}) emailed to ${draft.to}. ERP Handoff updated to Rev ${nextNum} · Submitted.`,
+      message: `${so.number} (Rev ${nextNum}) emailed to ${draft.to}. ERP Handoff moved to Rev ${nextNum} · Pending — submit it to the ERP from the ERP Handoff screen.`,
     });
   };
 
@@ -261,8 +272,10 @@ export function ComposePopup({
    *   • po-request    → the flagged fields move to "Updated PO awaited"
    *   • quote-correct → they move to "Corrected quote awaited"
    *   • so-send       → the Sales Order is stamped as sent and — now that the
-   *                     customer email has actually gone out — submitted to ERP
-   *                     Handoff (Submitted)
+   *                     customer email has actually gone out — queued in ERP
+   *                     Handoff as Pending. The email having gone out is not
+   *                     the ERP having been keyed: that is a separate, explicit
+   *                     Submit to ERP action on the ERP Handoff screen.
    *
    * The first two deliberately leave the record on Mismatch Found: a correction
    * having been SENT is not evidence that the numbers now agree. Only the re-run
@@ -275,10 +288,10 @@ export function ComposePopup({
       // must never mint a second ERP Handoff record for the same order.
       const newHandoff = !so.erpHandoff;
       const erpHandoff: ErpHandoff = so.erpHandoff ?? {
-        state: 'submitted',
+        state: 'pending',
         source: 'po_verification',
-        submittedAt: SENT_TS,
-        submittedBy: currentUser.fullName,
+        queuedAt: SENT_TS,
+        queuedBy: currentUser.fullName,
         updatedAt: SENT_TS,
         revisionNumber: so.revisionNumber,
       };
@@ -297,8 +310,8 @@ export function ComposePopup({
           id: `act-${so.id}-handoff-${Date.now()}`,
           date: SENT_TS,
           actor: currentUser.fullName,
-          action: 'Submitted to ERP Handoff',
-          detail: `${so.number} added to ERP Handoff (Submitted) after the SO email was sent`,
+          action: 'Added to ERP Handoff',
+          detail: `${so.number} queued in ERP Handoff (Pending) after the SO email was sent`,
         });
       }
       updateSalesOrder(so.id, { sentAt: SENT_TS, status: 'so_sent', erpHandoff, reviewDate, activity });
@@ -307,8 +320,8 @@ export function ComposePopup({
         type: 'success',
         title: 'Sales Order sent successfully.',
         message: newHandoff
-          ? `${so.number} emailed to ${draft.to} and submitted to ERP Handoff (Submitted).`
-          : `${so.number} emailed to ${draft.to}. Already in ERP Handoff (Submitted).`,
+          ? `${so.number} emailed to ${draft.to} and added to ERP Handoff (Pending).`
+          : `${so.number} emailed to ${draft.to}. Already in the ERP Handoff queue.`,
       });
       return;
     }

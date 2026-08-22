@@ -458,7 +458,9 @@ export default function CreateSalesOrder() {
       inspection: form.inspection || undefined,
       additionalTerms: form.additionalTerms || undefined,
       sentAt: opts.withHandoff ? now : undefined,
-      erpHandoff: opts.withHandoff ? { state: 'submitted', source: 'manual', submittedAt: now, submittedBy: currentUser.fullName, updatedAt: now, revisionNumber: 0 } : undefined,
+      // Creating the order queues it for the ERP; it does not key it in. The
+      // record lands as Pending and waits for Submit to ERP.
+      erpHandoff: opts.withHandoff ? { state: 'pending', source: 'manual', queuedAt: now, queuedBy: currentUser.fullName, updatedAt: now, revisionNumber: 0 } : undefined,
       revisionNumber: 0,
       versions: [
         {
@@ -487,7 +489,7 @@ export default function CreateSalesOrder() {
       activity: [
         { id: `act-${Date.now()}-created`, date: now, actor: form.owner, action: 'Sales Order created', detail: q ? `From quotation ${q.number}` : 'Created manually' },
         ...(opts.withHandoff
-          ? [{ id: `act-${Date.now()}-erp`, date: now, actor: currentUser.fullName, action: 'Submitted to ERP Handoff', detail: 'Submitted for manufacturing handover' }]
+          ? [{ id: `act-${Date.now()}-erp`, date: now, actor: currentUser.fullName, action: 'Added to ERP Handoff', detail: 'Queued as Pending for manufacturing handover' }]
           : []),
       ],
       verificationFields: [],
@@ -518,7 +520,7 @@ export default function CreateSalesOrder() {
     addToast({
       type: 'success',
       title: `Sales Order ${so.number} created`,
-      message: `${so.number} added to the Sales Order list and to ERP Handoff (Submitted).`,
+      message: `${so.number} added to the Sales Order list and to ERP Handoff (Pending). Submit it to the ERP from the ERP Handoff screen.`,
     });
     navigate('/erp-handoff', { state: { highlightId: so.id } });
   };
@@ -831,7 +833,7 @@ export default function CreateSalesOrder() {
         onClose={() => setConfirmCreate(false)}
         onConfirm={doCreateAndSubmit}
         title="Create Sales Order?"
-        message="The Sales Order will be created and added to ERP Handoff for manufacturing processing."
+        message="The Sales Order will be created and queued in ERP Handoff as Pending. Submitting it to the ERP is a separate step on the ERP Handoff screen."
         confirmLabel="Create & Submit"
       />
 

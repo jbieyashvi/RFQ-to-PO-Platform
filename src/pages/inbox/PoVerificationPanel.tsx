@@ -24,7 +24,7 @@ import { officeName } from '@/data/offices';
 import { emailSignature } from '@/lib/brand';
 import { classNames, formatDate, formatDateTime, formatINR } from '@/lib/format';
 import { poReceivedAtOf, slaDueAt, verificationSla } from '@/lib/sla';
-import { SO_STATUS, VERIFICATION_STATUS } from '@/lib/labels';
+import { ERP_HANDOFF_STATE, SO_STATUS, VERIFICATION_STATUS } from '@/lib/labels';
 import { resolveSalesOrder } from '@/lib/salesOrder';
 import { soSendEmailPatch } from './helpers';
 import { CorrectQuoteModal } from './CorrectQuoteModal';
@@ -493,18 +493,19 @@ function GenerateTab({
   const previewResolved = useMemo(() => resolveSalesOrder(so, { parties, catalog }), [so, parties, catalog]);
 
   // Repair a broken link: a Sales Order already emailed (seed/legacy) but with
-  // no ERP Handoff record. Creates the missing Submitted handoff.
+  // no ERP Handoff record. Creates the missing record as Pending — a repair
+  // knows the SO was sent, which is not evidence anyone keyed it into the ERP.
   const repairHandoff = () => {
     if (so.erpHandoff) return;
     const now = `${TODAY_ISO}T12:30:00`;
     updateSalesOrder(so.id, {
-      erpHandoff: { state: 'submitted', source: 'po_verification', submittedAt: now, submittedBy: currentUser.fullName, updatedAt: now, revisionNumber: so.revisionNumber },
+      erpHandoff: { state: 'pending', source: 'po_verification', queuedAt: now, queuedBy: currentUser.fullName, updatedAt: now, revisionNumber: so.revisionNumber },
       activity: [
         ...so.activity,
-        { id: `act-${so.id}-handoffrepair-${Date.now()}`, date: now, actor: currentUser.fullName, action: 'ERP Handoff record created', detail: `Linked ERP Handoff (Submitted) created for ${so.number}` },
+        { id: `act-${so.id}-handoffrepair-${Date.now()}`, date: now, actor: currentUser.fullName, action: 'ERP Handoff record created', detail: `Linked ERP Handoff (Pending) created for ${so.number}` },
       ],
     });
-    addToast({ type: 'success', title: 'ERP Handoff linked', message: `${so.number} added to ERP Handoff (Submitted).` });
+    addToast({ type: 'success', title: 'ERP Handoff linked', message: `${so.number} added to ERP Handoff (Pending).` });
   };
 
   // Attach the generated SO PDF and open the compose window on it. Only the
@@ -578,8 +579,8 @@ function GenerateTab({
         <CheckCircle2 className="h-4 w-4 flex-none" />
         <span>
           <span className="font-semibold">{so.number}</span> generated from the verified PO &amp; quotation
-          {so.erpHandoff ? ' and added to ERP Handoff (Submitted).' : '.'}
-          {!so.erpHandoff && !soEmailed && ' It will be submitted to ERP Handoff once the email is sent.'}
+          {so.erpHandoff ? ` and added to ERP Handoff (${ERP_HANDOFF_STATE[so.erpHandoff.state].label}).` : '.'}
+          {!so.erpHandoff && !soEmailed && ' It will be queued in ERP Handoff as Pending once the email is sent.'}
           {!soEmailed && ' Add it to the email and send it from the compose window.'}
         </span>
       </div>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Download, Eye } from 'lucide-react';
+import { CheckCircle2, Download, Eye, Upload } from 'lucide-react';
 import { PageHeader } from '@/layout/PageHeader';
 import {
   DataTable,
@@ -9,6 +9,7 @@ import {
   FilterSelect,
   Pagination,
   StatusBadge,
+  ConfirmDialog,
   type Column,
   type FilterChip,
 } from '@/components/ui';
@@ -18,14 +19,14 @@ import { useApp, useOfficeScope, useNoOfficeAssigned } from '@/context/AppContex
 import { OFFICES, officeName } from '@/data/offices';
 import type { ErpHandoffSource, SalesOrder } from '@/types';
 import { ERP_HANDOFF_STATE, ERP_HANDOFF_SOURCE } from '@/lib/labels';
-import { downloadText, formatDate, formatINR } from '@/lib/format';
+import { downloadText, formatDate, formatDateTime, formatINR } from '@/lib/format';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 
 const iconBtn =
   'inline-flex h-7 w-7 items-center justify-center rounded-lg text-surface-500 transition-colors hover:bg-surface-100 hover:text-surface-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent';
 
 export default function ErpHandoff() {
-  const { salesOrders, role, can, addToast } = useApp();
+  const { salesOrders, role, can, addToast, updateSalesOrder, currentUser } = useApp();
   const inScope = useOfficeScope();
   const noOffice = useNoOfficeAssigned();
   const location = useLocation();
@@ -36,6 +37,8 @@ export default function ErpHandoff() {
   const [source, setSource] = useState('');
 
   const [active, setActive] = useState<SalesOrder | null>(null);
+  // The record awaiting the Submit to ERP confirmation, if any.
+  const [confirming, setConfirming] = useState<SalesOrder | null>(null);
   const loading = useSimulatedLoading([]);
 
   // A freshly-created SO passes its id via router state so we can highlight it.
@@ -48,15 +51,18 @@ export default function ErpHandoff() {
   }, [highlightId]);
 
   const canDownload = can('erp_handoff', 'download');
+  const canSubmit = can('erp_handoff', 'edit');
 
-  // Every SO ever submitted to the ERP — records stay permanently visible.
-  // Submitted is the only handoff state there is: nothing that has not been
-  // submitted (and no downstream ERP outcome) belongs on this screen.
+  // Every SO that has entered the handoff queue — records stay permanently
+  // visible. Pending ones are the work: the Sales Order has gone out to the
+  // customer but nobody has keyed it into the ERP yet. Ordered by when they
+  // joined the queue, so the oldest unsubmitted work is never hidden behind a
+  // freshly submitted record.
   const records = useMemo(
     () =>
       salesOrders
-        .filter((so) => so.erpHandoff?.state === 'submitted' && inScope(so.officeId))
-        .sort((a, b) => b.erpHandoff!.submittedAt.localeCompare(a.erpHandoff!.submittedAt)),
+        .filter((so) => !!so.erpHandoff && inScope(so.officeId))
+        .sort((a, b) => b.erpHandoff!.queuedAt.localeCompare(a.erpHandoff!.queuedAt)),
     [salesOrders, inScope]
   );
 
@@ -88,10 +94,43 @@ export default function ErpHandoff() {
 
   const clearAll = () => { setSearch(''); setOffice(''); setOwner(''); setSource(''); };
 
+  /**
+   * The one thing that turns Pending into Submitted. Deliberately the ONLY
+   * writer of submittedAt/submittedBy — sending the Sales Order by email is a
+   * different event and must never stand in for this one.
+   */
+  const submitToErp = (so: SalesOrder) => {
+    // Re-read from the live record: the row in hand may be a stale closure,
+    // and a second submission would overwrite the first one's stamp.
+    const current = salesOrders.find((r) => r.id === so.id);
+    if (!current?.erpHandoff || current.erpHandoff.state !== 'pending') return;
+    const now = new Date().toISOString();
+    updateSalesOrder(so.id, {
+      erpHandoff: {
+        ...current.erpHandoff,
+        state: 'submitted',
+        submittedAt: now,
+        submittedBy: currentUser.fullName,
+        updatedAt: now,
+      },
+      activity: [
+        ...current.activity,
+        {
+          id: `act-${so.id}-erpsubmit-${Date.now()}`,
+          date: now,
+          actor: currentUser.fullName,
+          action: 'Submitted to ERP',
+          detail: `${current.number}${current.revisionNumber > 0 ? ` (Rev ${current.revisionNumber})` : ''} handed to the ERP for manufacturing.`,
+        },
+      ],
+    });
+    addToast({ type: 'success', title: 'Submitted to ERP', message: `${current.number} is now Submitted.` });
+  };
+
   const downloadOne = (so: SalesOrder) => {
     downloadText(
       `${so.number.replace(/\//g, '-')}.txt`,
-      `SALES ORDER ${so.number}${so.revisionNumber > 0 ? ` (Rev ${so.revisionNumber})` : ''}\nPO ${so.poNumber} (${formatDate(so.poDate)})\nCustomer ${so.customerName}\nSales Office ${officeName(so.officeId)}\nOwner ${so.owner}\nValue ${formatINR(so.value)}\nSource ${ERP_HANDOFF_SOURCE[so.erpHandoff!.source]}\nRevision ${so.revisionNumber > 0 ? `Rev ${so.revisionNumber}` : 'Original'}\nHandoff Status ${ERP_HANDOFF_STATE[so.erpHandoff!.state].label}`
+      `SALES ORDER ${so.number}${so.revisionNumber > 0 ? ` (Rev ${so.revisionNumber})` : ''}\nPO ${so.poNumber} (${formatDate(so.poDate)})\nCustomer ${so.customerName}\nSales Office ${officeName(so.officeId)}\nOwner ${so.owner}\nValue ${formatINR(so.value)}\nSource ${ERP_HANDOFF_SOURCE[so.erpHandoff!.source]}\nRevision ${so.revisionNumber > 0 ? `Rev ${so.revisionNumber}` : 'Original'}\nHandoff Status ${ERP_HANDOFF_STATE[so.erpHandoff!.state].label}\nQueued ${formatDateTime(so.erpHandoff!.queuedAt)}\nSubmitted to ERP ${so.erpHandoff!.submittedAt ? `${formatDateTime(so.erpHandoff!.submittedAt)} by ${so.erpHandoff!.submittedBy}` : 'Not yet submitted'}`
     );
     addToast({ type: 'info', title: 'Download started', message: so.number });
   };
@@ -140,24 +179,50 @@ export default function ErpHandoff() {
     { key: 'value', header: 'Order Value', width: '96px', align: 'right', sortValue: (r) => r.value, render: (r) => <span className="font-medium text-surface-800">{formatINR(r.value)}</span> },
     {
       key: 'submitted',
-      header: 'Submitted',
-      width: '104px',
-      sortValue: (r) => r.erpHandoff!.submittedAt,
+      header: 'ERP Status',
+      width: '112px',
+      // Pending sorts by when it joined the queue — it has no submission date,
+      // and that absence is the whole point of the status.
+      sortValue: (r) => r.erpHandoff!.submittedAt ?? r.erpHandoff!.queuedAt,
       render: (r) => (
         <div className="flex flex-col gap-0.5">
           <StatusBadge tone={ERP_HANDOFF_STATE[r.erpHandoff!.state].tone} label={ERP_HANDOFF_STATE[r.erpHandoff!.state].label} />
-          <span className="text-[11px] text-surface-400">{formatDate(r.erpHandoff!.submittedAt)}</span>
+          <span className="text-[11px] text-surface-400">
+            {r.erpHandoff!.submittedAt ? formatDate(r.erpHandoff!.submittedAt) : `Queued ${formatDate(r.erpHandoff!.queuedAt)}`}
+          </span>
         </div>
       ),
     },
     {
       key: 'actions',
       header: 'Actions',
-      width: '76px',
+      width: '186px',
       align: 'right',
       sticky: 'right',
       render: (r) => (
         <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+          {/* Pending is the only state with anything to do. Once submitted the
+              action is replaced by the indicator, so there is no second button
+              left to press. */}
+          {r.erpHandoff!.state === 'pending' ? (
+            <button
+              type="button"
+              className="mr-1 inline-flex h-7 items-center gap-1.5 rounded-lg bg-brand-600 px-2.5 text-[11px] font-semibold text-white transition-colors hover:bg-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-brand-600"
+              title={canSubmit ? 'Submit this Sales Order to the ERP' : 'You do not have permission to submit to the ERP.'}
+              aria-label={`Submit ${r.number} to ERP`}
+              disabled={!canSubmit}
+              onClick={() => setConfirming(r)}
+            >
+              <Upload className="h-3.5 w-3.5" /> Submit to ERP
+            </button>
+          ) : (
+            <span
+              className="mr-1 inline-flex h-7 items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 text-[11px] font-semibold text-emerald-700"
+              title={`Submitted ${formatDateTime(r.erpHandoff!.submittedAt!)}${r.erpHandoff!.submittedBy ? ` by ${r.erpHandoff!.submittedBy}` : ''}`}
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" /> Submitted
+            </span>
+          )}
           <button type="button" className={iconBtn} title="View Sales Order" aria-label={`View ${r.number}`} onClick={() => setActive(r)}>
             <Eye className="h-4 w-4" />
           </button>
@@ -207,12 +272,26 @@ export default function ErpHandoff() {
           onRowClick={(r) => setActive(r)}
           rowClassName={(r) => (r.id === highlight ? 'bg-emerald-50/70' : undefined)}
           emptyTitle="No Sales Orders are currently in the ERP Handoff queue."
-          emptyMessage="Sales Orders submitted from the Global Inbox or entered through Create SO Manually appear here for ERP handoff."
+          emptyMessage="Sales Orders sent from the Global Inbox or entered through Create SO Manually arrive here as Pending, ready to be submitted to the ERP."
         />
         {!loading && total > 0 && <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={setPageSize} />}
       </div>
 
       <SalesOrderDetailsDrawer order={active} onClose={() => setActive(null)} />
+
+      {/* Submitting is a real-world handover — it gets a confirmation. */}
+      <ConfirmDialog
+        open={!!confirming}
+        onClose={() => setConfirming(null)}
+        onConfirm={() => { if (confirming) submitToErp(confirming); }}
+        title="Submit to ERP?"
+        message={
+          confirming
+            ? `${confirming.number}${confirming.revisionNumber > 0 ? ` (Rev ${confirming.revisionNumber})` : ''} for ${confirming.customerName} will be marked as Submitted to the ERP and stamped with the date and time. This cannot be undone.`
+            : ''
+        }
+        confirmLabel="Submit to ERP"
+      />
     </>
   );
 }

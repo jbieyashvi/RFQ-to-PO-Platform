@@ -71,7 +71,12 @@ export function SalesOrderDetailsDrawer({
               <Meta label="Status" value={ERP_HANDOFF_STATE[so.erpHandoff.state]?.label ?? so.erpHandoff.state} />
               <Meta label="Source" value={ERP_HANDOFF_SOURCE[so.erpHandoff.source] ?? so.erpHandoff.source} />
               <Meta label="Revision" value={so.revisionNumber > 0 ? `Rev ${so.revisionNumber}` : 'Original'} />
-              <Meta label="Submitted" value={`${formatDateTime(so.erpHandoff.submittedAt)} · ${so.erpHandoff.submittedBy}`} />
+              <Meta label="Queued" value={`${formatDateTime(so.erpHandoff.queuedAt)} · ${so.erpHandoff.queuedBy}`} />
+              {/* Absent while Pending — the SO is in the queue, not in the ERP. */}
+              <Meta
+                label="Submitted to ERP"
+                value={so.erpHandoff.submittedAt ? `${formatDateTime(so.erpHandoff.submittedAt)} · ${so.erpHandoff.submittedBy}` : 'Not yet submitted'}
+              />
               <Meta label="Last Updated" value={formatDateTime(so.erpHandoff.updatedAt)} />
               {so.erpHandoff.reference && <Meta label="ERP Reference" value={so.erpHandoff.reference} />}
             </dl>

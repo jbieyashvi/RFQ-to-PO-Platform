@@ -286,20 +286,25 @@ function generate(): SalesOrder[] {
     const value = poValue;
 
     // Generated SOs are, by definition, final approved orders — seed a matching
-    // ERP Handoff record so the queue mirrors the Sales Orders list. Every
-    // handed-off SO carries the single status: Submitted.
+    // ERP Handoff record so the queue mirrors the Sales Orders list. The state
+    // tracks how far the order actually got: an order that has run all the way
+    // to Finalised was keyed into the ERP along the way, while one that has
+    // only just been emailed to the customer is still sitting in the queue
+    // waiting for someone to submit it.
     const soGenerated = flavor === 'verified' && (status === 'so_sent' || status === 'finalised');
     let erpHandoff: ErpHandoff | undefined;
     if (soGenerated) {
-      const submittedAt = sentAt ?? verifiedAt ?? `${createdDate}T12:30:00`;
+      const queuedAt = sentAt ?? verifiedAt ?? `${createdDate}T12:30:00`;
+      const inErp = status === 'finalised';
       erpHandoff = {
-        state: 'submitted',
+        state: inErp ? 'submitted' : 'pending',
         source: 'po_verification',
-        submittedAt,
-        submittedBy: verifiedBy ?? q.owner,
-        updatedAt: submittedAt,
+        queuedAt,
+        queuedBy: verifiedBy ?? q.owner,
+        ...(inErp ? { submittedAt: queuedAt, submittedBy: verifiedBy ?? q.owner } : {}),
+        updatedAt: queuedAt,
         revisionNumber: 0,
-        reference: `ERP-${pad(500 + i + 1, 4)}`,
+        ...(inErp ? { reference: `ERP-${pad(500 + i + 1, 4)}` } : {}),
       };
     }
 
@@ -442,9 +447,18 @@ function seedRevisionSubStates(list: SalesOrder[]) {
       { id: `act-${sent.id}-sent`, date: `${addDays(stamp, 3)}T12:00:00`, actor: sent.owner, action: 'Revised SO sent', detail: 'Rev 1 dispatched to customer.' },
     );
     // Keep the single ERP Handoff record in step with the revision: bump its
-    // revision number and updated timestamp (no duplicate record).
+    // revision number and drop it back to Pending (no duplicate record). The
+    // ERP holds the superseded version until someone re-submits.
     if (sent.erpHandoff) {
-      sent.erpHandoff = { ...sent.erpHandoff, revisionNumber: 1, updatedAt: `${addDays(stamp, 3)}T12:00:00`, reference: 'Revised Sales Order (Rev 1) available for ERP update.' };
+      sent.erpHandoff = {
+        ...sent.erpHandoff,
+        state: 'pending',
+        submittedAt: undefined,
+        submittedBy: undefined,
+        revisionNumber: 1,
+        updatedAt: `${addDays(stamp, 3)}T12:00:00`,
+        reference: 'Revised Sales Order (Rev 1) available for ERP update.',
+      };
     }
   }
 }
@@ -498,6 +512,8 @@ function generateHistoricalSos(): SalesOrder[] {
     const erpHandoff: ErpHandoff = {
       state: 'submitted',
       source: 'po_verification',
+      queuedAt: soSentAt,
+      queuedBy: q.owner,
       submittedAt: soSentAt,
       submittedBy: q.owner,
       updatedAt: soSentAt,
@@ -711,6 +727,8 @@ function generateManualSos(): SalesOrder[] {
       erpHandoff: {
         state: 'submitted',
         source: 'manual',
+        queuedAt: submittedAt,
+        queuedBy: ownerName,
         submittedAt,
         submittedBy: ownerName,
         updatedAt: submittedAt,

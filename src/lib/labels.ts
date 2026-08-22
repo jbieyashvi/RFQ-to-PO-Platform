@@ -108,7 +108,8 @@ export const SO_STATUS: Record<SOStatus, { label: string; tone: BadgeTone }> = {
 };
 
 export const ERP_HANDOFF_STATE: Record<ErpHandoffState, { label: string; tone: BadgeTone }> = {
-  submitted: { label: 'Submitted', tone: 'blue' },
+  pending: { label: 'Pending', tone: 'amber' },
+  submitted: { label: 'Submitted', tone: 'green' },
 };
 
 // Where the Sales Order entered the ERP Handoff queue from. `manual` reads
