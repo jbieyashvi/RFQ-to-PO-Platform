@@ -260,54 +260,33 @@ const ACTION_TONE: Record<ActionRow['tone'], { edge: string; count: string }> = 
   red: { edge: 'border-l-rose-500', count: 'text-rose-600' },
   orange: { edge: 'border-l-amber-500', count: 'text-amber-600' },
   purple: { edge: 'border-l-violet-500', count: 'text-violet-600' },
-  slate: { edge: 'border-l-surface-300', count: 'text-surface-600' },
 };
 
 function ActionRowItem({ row, onOpen }: { row: ActionRow; onOpen: (to: string) => void }) {
   const tone = ACTION_TONE[row.tone];
   return (
-    // The tone edge lives on a wrapper so the main row and each sub-split are
-    // separate sibling buttons (never nested) and all of them stay clickable.
-    <div className={classNames('border-l-[3px]', tone.edge)}>
-      <button
-        type="button"
-        onClick={() => onOpen(row.to)}
-        aria-label={`${row.label}: ${row.count}. ${row.description}`}
-        className="group flex min-h-[64px] w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-surface-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/40"
-      >
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-semibold leading-[18px] text-surface-800">
-            {row.label}
-          </span>
-          <span className="mt-0.5 block truncate text-[12px] leading-4 text-surface-500">
-            {row.description}
-          </span>
-        </span>
-        <span className={classNames('flex-none text-[20px] font-bold leading-6 tabular-nums', tone.count)}>
-          {row.count}
-        </span>
-        <ChevronRight className="h-4 w-4 flex-none text-surface-300 transition group-hover:translate-x-0.5 group-hover:text-surface-500" />
-      </button>
-      {/* Clickable sub-splits — each chip deep-links to its own filtered list. */}
-      {row.parts && (
-        <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2.5">
-          {row.parts.map((part) => (
-            <button
-              key={part.key}
-              type="button"
-              onClick={() => onOpen(part.to)}
-              aria-label={`${part.label}: ${part.count}. Open filtered list.`}
-              className="inline-flex items-center gap-1.5 rounded-full bg-surface-100 py-1 pl-2.5 pr-1.5 text-left text-[11px] font-semibold leading-4 text-surface-600 transition hover:bg-surface-200 hover:text-surface-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
-            >
-              {part.label}
-              <span className="rounded-full bg-white px-1.5 tabular-nums text-surface-700 ring-1 ring-inset ring-surface-200">
-                {part.count}
-              </span>
-            </button>
-          ))}
-        </div>
+    <button
+      type="button"
+      onClick={() => onOpen(row.to)}
+      aria-label={`${row.label}: ${row.count}. ${row.description}`}
+      className={classNames(
+        'group flex min-h-[64px] w-full items-center gap-3 border-l-[3px] px-3 py-2.5 text-left transition-colors hover:bg-surface-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/40',
+        tone.edge
       )}
-    </div>
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] font-semibold leading-[18px] text-surface-800">
+          {row.label}
+        </span>
+        <span className="mt-0.5 block truncate text-[12px] leading-4 text-surface-500">
+          {row.description}
+        </span>
+      </span>
+      <span className={classNames('flex-none text-[20px] font-bold leading-6 tabular-nums', tone.count)}>
+        {row.count}
+      </span>
+      <ChevronRight className="h-4 w-4 flex-none text-surface-300 transition group-hover:translate-x-0.5 group-hover:text-surface-500" />
+    </button>
   );
 }
 

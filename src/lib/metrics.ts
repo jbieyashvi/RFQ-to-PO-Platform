@@ -102,21 +102,18 @@ export function salesOrderMetrics(salesOrders: SalesOrder[]): SalesOrderMetrics 
 //                     reconcile with its quotation, whether the correction is
 //                     still to be requested or already out with the customer ->
 //                     verificationStatus 'mismatch'.
-//  - Overdue        : the record's due/review/SLA date has PASSED, decided by
+//  - Overdue        : the record's due / review date has PASSED, decided by
 //                     date comparison against TODAY — never a manual label.
 // ---------------------------------------------------------------------------
 
-/** Internal-ops service level: a task is "overdue" once it is older than 24h. */
-export const SLA_HOURS = 24;
-/** True when an ISO date is more than 24h in the past (day-granular prototype). */
-const agedOver24h = (iso?: string) => !!iso && daysBetween(iso) > 1;
+/** True when a record's due date has passed (day-granular prototype). */
+const duePassed = (iso?: string) => !!iso && daysBetween(iso) > 1;
 
 // -- Shared record predicates (used by both counts and destination lists) ----
 export const isQuoteSent = (q: Quotation) => q.workState === 'sent';
 export const isQuotePending = (q: Quotation) => q.workState === 'pending_send';
 export const isQuoteNeedsRevision = (q: Quotation) => q.workState === 'needs_revision';
 export const isSOSent = (s: SalesOrder) => s.status === 'so_sent';
-export const isSODraft = (s: SalesOrder) => s.status === 'draft';
 export const isSOMismatch = (s: SalesOrder) => s.verificationStatus === 'mismatch';
 
 // -- Per-section Branch + date-range scoping ---------------------------------
@@ -170,27 +167,17 @@ export interface MetricRow {
   hint?: string;
 }
 
-export interface ActionRowPart {
-  key: string;
-  label: string;
-  count: number;
-  to: string;
-}
-
 export interface ActionRow {
   key: string;
   label: string;
   count: number;
   /**
    * Semantic tone (drives the left-border + count colour):
-   *  red = urgent/escalation · purple = PO/Quote mismatch ·
-   *  orange = revision · slate = remaining work.
+   *  red = urgent/escalation · purple = PO/Quote mismatch · orange = revision.
    */
-  tone: 'red' | 'orange' | 'purple' | 'slate';
+  tone: 'red' | 'orange' | 'purple';
   to: string;
   description: string;
-  /** clickable sub-splits rendered as chips under the row */
-  parts?: ActionRowPart[];
 }
 
 export interface OverdueRow {
@@ -281,7 +268,7 @@ export function conversionFunnel(): FunnelStage[] {
     },
     {
       key: 'finalize',
-      label: 'Finalize',
+      label: 'Finalise',
       count: 3,
       to: '/quotations?stage=finalised',
       hint: 'Ready to close — awaiting decision',
@@ -306,8 +293,8 @@ export function conversionFunnel(): FunnelStage[] {
 /**
  * Client-approved Action Required list (exact content, order and counts as
  * signed off — approved sample numbers for the demo dataset). Semantic tones:
- * red = urgent · purple = mismatch · orange = revision · slate = remaining
- * work. Every row (and sub-split chip) deep-links to its operational list.
+ * red = urgent · purple = mismatch · orange = revision. Every row deep-links to
+ * its operational list.
  */
 export function actionRequired(): ActionRow[] {
   return [
@@ -320,16 +307,8 @@ export function actionRequired(): ActionRow[] {
       description: 'Client raised a concern on a sent SO — revision in progress.',
     },
     {
-      key: 'so_pending',
-      label: 'SO Pending — Not Sent in 24h',
-      count: 2,
-      tone: 'red',
-      to: '/sales-orders?status=draft',
-      description: 'PO verified but the Sales Order is still to be prepared and sent.',
-    },
-    {
       key: 'po_mismatch',
-      label: 'PO vs Quote Mismatch — Updated PO Pending',
+      label: 'PO vs Quote — Updated PO Pending',
       count: 2,
       tone: 'purple',
       to: '/sales-orders/verification',
@@ -343,28 +322,6 @@ export function actionRequired(): ActionRow[] {
       to: '/quotations/revisions',
       description: 'Client requested changes — quotation must be revised and re-sent.',
     },
-    {
-      key: 'quotes_remaining',
-      label: 'Quotes Remaining to Send',
-      count: 30,
-      tone: 'slate',
-      to: '/quotations/pending',
-      description: 'Inquiries received but quotations not yet sent.',
-      parts: [
-        {
-          key: 'no_conversation_24h',
-          label: 'No conversation in 24h',
-          count: 18,
-          to: '/quotations?stage=no_followup',
-        },
-        {
-          key: 'still_open',
-          label: 'Of 100 inquiries received, 70 quoted — 30 still open',
-          count: 30,
-          to: '/quotations/pending',
-        },
-      ],
-    },
   ];
 }
 
@@ -374,42 +331,35 @@ export function overdueTasks(quotations: Quotation[], salesOrders: SalesOrder[])
   const internalOps: OverdueRow[] = [
     {
       key: 'quotes_not_sent',
-      label: 'Quotes Not Sent in 24h',
-      count: quotations.filter((q) => isQuotePending(q) && agedOver24h(q.createdDate)).length,
+      label: 'Quotes Not Sent — Overdue',
+      count: quotations.filter((q) => isQuotePending(q) && duePassed(q.createdDate)).length,
       to: '/quotations/pending',
-      note: 'Pending quotations older than 24h.',
+      note: 'Quotation still not sent past its due date.',
     },
     {
       key: 'revision_pending',
-      label: 'Quote Revision Pending over 24h',
+      label: 'Quote Revision Pending — Overdue',
       count: quotations.filter(
-        (q) => isQuoteNeedsRevision(q) && agedOver24h(q.revisionRequestedDate ?? q.lastUpdated)
+        (q) => isQuoteNeedsRevision(q) && duePassed(q.revisionRequestedDate ?? q.lastUpdated)
       ).length,
       to: '/quotations/revisions',
-      note: 'Revision requested more than 24h ago.',
+      note: 'Requested revision still open past its due date.',
     },
     {
       key: 'mismatch_over',
-      label: 'PO vs Quote Mismatch over 24h',
-      count: salesOrders.filter((so) => isSOMismatch(so) && agedOver24h(so.receivedDate)).length,
+      label: 'PO vs Quote — Overdue',
+      count: salesOrders.filter((so) => isSOMismatch(so) && duePassed(so.receivedDate)).length,
       to: '/sales-orders/verification',
-      note: 'Mismatch unresolved beyond 24h.',
-    },
-    {
-      key: 'so_pending_over',
-      label: 'SO Pending over 24h',
-      count: salesOrders.filter((so) => isSODraft(so) && agedOver24h(so.createdDate)).length,
-      to: '/sales-orders?status=draft',
-      note: 'Verified PO with SO not sent beyond 24h.',
+      note: 'Mismatch unresolved past its due date.',
     },
     {
       key: 'escalation_over',
-      label: 'Client SO Escalation over 24h',
+      label: 'Client SO Escalation — Overdue',
       count: salesOrders.filter(
-        (so) => isActiveRevision(so) && agedOver24h(so.revisionRequestedDate ?? so.createdDate)
+        (so) => isActiveRevision(so) && duePassed(so.revisionRequestedDate ?? so.createdDate)
       ).length,
       to: '/sales-orders/revisions',
-      note: 'Client SO concern open beyond 24h.',
+      note: 'Client SO concern open past its due date.',
     },
   ];
 
