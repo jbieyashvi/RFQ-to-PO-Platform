@@ -44,23 +44,24 @@ const TODAY_ISO = '2026-08-13';
 /**
  * RIGHT panel for a "PO vs Quote Verification" conversation. It surfaces the
  * field-by-field comparison and gates Sales-Order generation until every
- * mismatch is resolved. The two resolution paths only PREPARE the customer
- * email in the centre composer:
- *   • Request Updated PO  → prefill the composer with a PO-correction request
+ * mismatch is resolved. The two resolution paths PREPARE the customer email and
+ * hand it to the Gmail-style compose window:
+ *   • Request Updated PO  → open the compose window on a PO-correction request
  *   • Correct Quote       → re-price the quotation in a full-width modal, then
- *                            attach the corrected PDF to the composer
+ *                            open the compose window with the corrected PDF
  * Nothing is sent from this panel, and the workflow state only advances once
- * the email is actually sent from the centre panel. When the corrected document
+ * the email is actually sent from that window. When the corrected document
  * comes back, the comparison is re-run from here and the record flips to
  * Verified the moment every field reconciles.
  */
 export function PoVerificationPanel({
   email,
-  onPrepared,
+  onCompose,
   onGenerateSo,
 }: {
   email: InboxEmail;
-  onPrepared?: () => void;
+  /** Opens the Gmail-style compose window (owned by GlobalInbox). */
+  onCompose?: () => void;
   /** Opens the large SO Generation modal (owned by GlobalInbox). */
   onGenerateSo?: () => void;
 }) {
@@ -123,7 +124,7 @@ export function PoVerificationPanel({
     .map((f) => `• ${f.label}: quotation shows "${f.quoteValue}", your PO shows "${f.poValue}"`)
     .join('\n');
 
-  // ---- Path 1: prepare the "Request Updated PO" email in the centre panel ---
+  // ---- Path 1: open the "Request Updated PO" mail in the compose window ----
   const prepareRequestPo = () => {
     updateEmail(email.id, {
       composeIntent: 'po-request',
@@ -143,8 +144,8 @@ export function PoVerificationPanel({
         aiGenerated: true,
       },
     });
-    addToast({ type: 'success', title: 'Draft ready', message: 'Updated-PO request prepared in the centre panel. Set the review date and send.' });
-    onPrepared?.();
+    addToast({ type: 'success', title: 'Draft ready', message: 'Updated-PO request opened in the compose window. Set the review date and send.' });
+    onCompose?.();
   };
 
   // ---- Re-run the comparison once the corrected document is in ---------------
@@ -248,7 +249,7 @@ export function PoVerificationPanel({
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-4 py-3">
         {tab === 'generate' ? (
-          <GenerateTab email={email} so={so} quote={quote} onPrepared={onPrepared} onOpenSoModal={onGenerateSo} />
+          <GenerateTab email={email} so={so} quote={quote} onCompose={onCompose} onOpenSoModal={onGenerateSo} />
         ) : (
           <CompareTab
             fields={fields}
@@ -263,6 +264,7 @@ export function PoVerificationPanel({
             hasPoIntent={email.composeIntent === 'po-request'}
             onRequestPo={prepareRequestPo}
             onCorrectQuote={() => setCorrecting(true)}
+            onReopenCompose={() => onCompose?.()}
             onRerunWithPo={() => rerunComparison('po')}
             onRerunWithQuote={() => rerunComparison('quote')}
           />
@@ -277,8 +279,10 @@ export function PoVerificationPanel({
           so={so}
           quote={quote}
           onAddedToEmail={() => {
+            // The correction is attached; the editor's job is done and the mail
+            // it rides on is the next thing the user needs.
             setCorrecting(false);
-            onPrepared?.();
+            onCompose?.();
           }}
           onClose={() => setCorrecting(false)}
         />
@@ -302,6 +306,7 @@ function CompareTab({
   hasPoIntent,
   onRequestPo,
   onCorrectQuote,
+  onReopenCompose,
   onRerunWithPo,
   onRerunWithQuote,
 }: {
@@ -317,6 +322,8 @@ function CompareTab({
   hasPoIntent: boolean;
   onRequestPo: () => void;
   onCorrectQuote: () => void;
+  /** Brings an already-prepared reply back on screen. */
+  onReopenCompose: () => void;
   onRerunWithPo: () => void;
   onRerunWithQuote: () => void;
 }) {
@@ -397,9 +404,11 @@ function CompareTab({
                 <Button variant="primary" size="sm" className="w-full justify-start" leftIcon={<Mail className="h-4 w-4" />} onClick={onRequestPo} disabled={!canSend}>
                   Request Updated PO
                 </Button>
-                <p className="mt-1 pl-1 text-[11px] text-surface-400">Customer PO is wrong — ask for a corrected PO. Opens the compose window in the centre panel.</p>
+                <p className="mt-1 pl-1 text-[11px] text-surface-400">Customer PO is wrong — ask for a corrected PO. Opens the compose window with the mismatch details filled in.</p>
                 {hasPoIntent && (
-                  <p className="mt-1 flex items-center gap-1 pl-1 text-[11px] font-medium text-emerald-600"><CheckCircle2 className="h-3 w-3" /> Draft ready in the centre composer.</p>
+                  <button onClick={onRequestPo} disabled={!canSend} className="mt-1 flex items-center gap-1 pl-1 text-[11px] font-medium text-emerald-600 hover:underline disabled:no-underline">
+                    <CheckCircle2 className="h-3 w-3" /> Draft ready — reopen the compose window.
+                  </button>
                 )}
               </div>
               <div>
@@ -408,7 +417,9 @@ function CompareTab({
                 </Button>
                 <p className="mt-1 pl-1 text-[11px] text-surface-400">Our quotation is wrong — re-price it in the editor, then attach the corrected quote to the email.</p>
                 {hasQuoteIntent && (
-                  <p className="mt-1 flex items-center gap-1 pl-1 text-[11px] font-medium text-emerald-600"><CheckCircle2 className="h-3 w-3" /> Corrected quote attached in the centre composer.</p>
+                  <button onClick={onReopenCompose} disabled={!canSend} className="mt-1 flex items-center gap-1 pl-1 text-[11px] font-medium text-emerald-600 hover:underline disabled:no-underline">
+                    <CheckCircle2 className="h-3 w-3" /> Corrected quote attached — reopen the compose window.
+                  </button>
                 )}
               </div>
             </div>
@@ -451,21 +462,21 @@ function CompareTab({
  * yet. The moment one exists the card flips to the generated document, whose
  * primary affordance is View Sales Order plus that order's current status —
  * there is no second Generate button to press, so a duplicate SO cannot be
- * created by pressing the same card twice. The only send path is the middle
- * composer ("Add Sales Order to Email"), and the SO reaches ERP Handoff only
- * once that email is actually sent.
+ * created by pressing the same card twice. The only send path is the compose
+ * window ("Add SO to Email"), and the SO reaches ERP Handoff only once that
+ * email is actually sent.
  */
 function GenerateTab({
   email,
   so,
   quote,
-  onPrepared,
+  onCompose,
   onOpenSoModal,
 }: {
   email: InboxEmail;
   so: SalesOrder;
   quote: Quotation | null;
-  onPrepared?: () => void;
+  onCompose?: () => void;
   onOpenSoModal?: () => void;
 }) {
   const { parties, items: catalog, updateSalesOrder, updateEmail, addToast, currentUser, can } = useApp();
@@ -496,13 +507,13 @@ function GenerateTab({
     addToast({ type: 'success', title: 'ERP Handoff linked', message: `${so.number} added to ERP Handoff (Submitted).` });
   };
 
-  // Attach the generated SO PDF to the middle composer and prefill the customer
-  // email. Only the system-generated SO document can be attached — there is no
-  // generic file upload. The final send happens from the centre panel.
+  // Attach the generated SO PDF and open the compose window on it. Only the
+  // system-generated SO document can be attached — there is no generic file
+  // upload — and the final send happens from that window.
   const addSoToEmail = () => {
     updateEmail(email.id, soSendEmailPatch(email, so));
-    addToast({ type: 'success', title: 'Added to email', message: 'Sales Order attached. Review the email in the centre panel and send it.' });
-    onPrepared?.();
+    addToast({ type: 'success', title: 'Added to email', message: 'Sales Order attached. Set the next review date and send.' });
+    onCompose?.();
   };
 
   const soAttached = email.attachedSalesOrder?.soNumber === so.number && email.composeIntent === 'so-send';
@@ -552,7 +563,7 @@ function GenerateTab({
           Generate Sales Order
         </Button>
         <p className="text-center text-[11px] text-surface-400">
-          Opens the prefilled Sales Order form. Once generated, it is attached to the email and submitted to ERP Handoff after the email is sent.
+          Opens the prefilled Sales Order form. Once generated, it is attached to the compose window and submitted to ERP Handoff after the email is sent.
         </p>
         {!canGenerate && <p className="text-center text-[11px] font-medium text-rose-600">Create permission required.</p>}
       </div>
@@ -569,7 +580,7 @@ function GenerateTab({
           <span className="font-semibold">{so.number}</span> generated from the verified PO &amp; quotation
           {so.erpHandoff ? ' and added to ERP Handoff (Submitted).' : '.'}
           {!so.erpHandoff && !soEmailed && ' It will be submitted to ERP Handoff once the email is sent.'}
-          {!soEmailed && ' Review the email in the centre panel and send it.'}
+          {!soEmailed && ' Add it to the email and send it from the compose window.'}
         </span>
       </div>
 
@@ -616,7 +627,7 @@ function GenerateTab({
 
       {soAttached && !soEmailed && (
         <div className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-[12px] text-brand-700">
-          <Paperclip className="h-4 w-4 flex-none" /> Sales Order added to the email — review and send it from the centre panel.
+          <Paperclip className="h-4 w-4 flex-none" /> Sales Order added to the email — review and send it from the compose window.
         </div>
       )}
 
@@ -635,7 +646,7 @@ function GenerateTab({
             <IconButton label="Edit Sales Order" icon={<Pencil className="h-4 w-4" />} onClick={onOpenSoModal} disabled={!canGenerate} />
             <IconButton label="Preview Sales Order" icon={<Eye className="h-4 w-4" />} onClick={() => setPreview(true)} />
             <Button variant="primary" size="sm" className="min-w-0 flex-1" leftIcon={<Mail className="h-4 w-4" />} onClick={addSoToEmail}>
-              {soAttached ? 'Update Sales Order in Email' : 'Add Sales Order to Email'}
+              {soAttached ? 'Reopen SO Email' : 'Add SO to Email'}
             </Button>
           </div>
         )}

@@ -9,6 +9,7 @@ import type {
   SalesOrder,
   SORevisionSnapshot,
   SORevisionVersion,
+  VerificationField,
 } from '@/types';
 import { Button, Modal } from '@/components/ui';
 import { DocumentLetterhead } from '@/components/DocumentLetterhead';
@@ -19,7 +20,8 @@ import { officeName } from '@/data/offices';
 import { emailSignature } from '@/lib/brand';
 import { classNames, computeTotals, formatINR, lineTotal } from '@/lib/format';
 import { resolveSalesOrder } from '@/lib/salesOrder';
-import { reviewDateError } from '@/lib/quotationWorkflow';
+import { REVIEW_DATE_REQUIRED, reviewDateError } from '@/lib/quotationWorkflow';
+import { actionableFields, deriveVerificationStatus } from '@/lib/verification';
 import { isValidEmail } from './helpers';
 
 // Deterministic prototype clock (pinned to 2026-08-13).
@@ -59,6 +61,7 @@ export function ComposePopup({
   revision = false,
   salesOrder = null,
   soRevision = false,
+  poVerification = false,
   onClose,
 }: {
   email: InboxEmail;
@@ -80,6 +83,13 @@ export function ComposePopup({
    * the one ERP Handoff record — it never creates a second SO.
    */
   soRevision?: boolean;
+  /**
+   * This is a PO vs Quote Verification reply. Which of the three it is comes
+   * from the mail's own compose intent, written by whichever workspace prepared
+   * it — request an updated PO, send the corrected quotation, or send the
+   * generated Sales Order.
+   */
+  poVerification?: boolean;
   onClose: () => void;
 }) {
   const { updateEmail, updateQuotation, updateSalesOrder, addEmail, addToast, canInbox, currentUser, parties } =
@@ -97,12 +107,25 @@ export function ComposePopup({
 
   const drag = useRef<{ x: number; y: number; right: number; bottom: number } | null>(null);
 
+  // Which PO-verification reply this is. Read off the email rather than passed
+  // in, so the window always matches the draft the workspace actually wrote.
+  const poIntent = poVerification ? email.composeIntent : undefined;
+  const isPoRequest = poIntent === 'po-request';
+  const isQuoteCorrect = poIntent === 'quote-correct';
+  const isSoSend = poIntent === 'so-send';
+
   const attachment = email.attachedQuote;
-  // The SO Revision flow attaches a revised Sales Order PDF instead of a quote.
-  const soAttachment = soRevision ? email.attachedSalesOrder : undefined;
+  // The SO Revision and SO Generation flows attach a Sales Order PDF instead of
+  // a quotation; a PO correction request carries no attachment at all.
+  const soAttachment = soRevision || isSoSend ? email.attachedSalesOrder : undefined;
   const set = (patch: Partial<OutgoingDraft>) => setDraft((d) => ({ ...d, ...patch }));
 
-  const dateError = reviewDateError(reviewDate);
+  // The shared validator's "before updating the quotation" wording belongs to
+  // the quotation workspace; here the date gates an outgoing email, and the
+  // same window sends Sales Orders and PO corrections too.
+  const rawDateError = reviewDateError(reviewDate);
+  const dateError =
+    rawDateError === REVIEW_DATE_REQUIRED ? 'Select the next review date before sending.' : rawDateError;
 
   const blockers = useMemo(() => {
     const out: string[] = [];
@@ -113,8 +136,10 @@ export function ComposePopup({
     // A revised SO email is only worth sending with the revised SO on it — the
     // attachment IS the deliverable, so removing it blocks Send.
     if (soRevision && !soAttachment) out.push('the revised Sales Order attachment');
+    if (isSoSend && !soAttachment) out.push('the Sales Order attachment');
+    if (isQuoteCorrect && !attachment) out.push('the corrected quotation attachment');
     return out;
-  }, [draft, dateError, soRevision, soAttachment]);
+  }, [draft, dateError, soRevision, soAttachment, isSoSend, isQuoteCorrect, attachment]);
 
   const blocked = !canSend || blockers.length > 0;
 
@@ -129,7 +154,9 @@ export function ComposePopup({
       addToast({
         type: 'info',
         title: 'Attachment removed',
-        message: 'Re-open Revise Sales Order to attach the revised SO again.',
+        message: soRevision
+          ? 'Re-open Revise Sales Order to attach the revised SO again.'
+          : 'Use “Add Sales Order to Email” in the workspace to attach it again.',
       });
       return;
     }
@@ -137,7 +164,9 @@ export function ComposePopup({
     addToast({
       type: 'info',
       title: 'Attachment removed',
-      message: 'Re-open Generate Quote to attach the quotation again.',
+      message: isQuoteCorrect
+        ? 'Re-open Correct Quote to attach the corrected quotation again.'
+        : 'Re-open Generate Quote to attach the quotation again.',
     });
   };
 
@@ -226,6 +255,134 @@ export function ComposePopup({
   };
 
   /**
+   * The PO vs Quote Verification half of Send. There are exactly three replies,
+   * and the mail's compose intent says which one is on screen:
+   *
+   *   • po-request    → the flagged fields move to "Updated PO awaited"
+   *   • quote-correct → they move to "Corrected quote awaited"
+   *   • so-send       → the Sales Order is stamped as sent and — now that the
+   *                     customer email has actually gone out — submitted to ERP
+   *                     Handoff (Submitted)
+   *
+   * The first two deliberately leave the record on Mismatch Found: a correction
+   * having been SENT is not evidence that the numbers now agree. Only the re-run
+   * comparison in the workspace, done once the corrected document is in hand,
+   * clears those fields.
+   */
+  const sendPoVerification = (so: SalesOrder) => {
+    if (isSoSend) {
+      // An SO that already carries a handoff keeps it — sending the mail twice
+      // must never mint a second ERP Handoff record for the same order.
+      const newHandoff = !so.erpHandoff;
+      const erpHandoff: ErpHandoff = so.erpHandoff ?? {
+        state: 'submitted',
+        source: 'po_verification',
+        submittedAt: SENT_TS,
+        submittedBy: currentUser.fullName,
+        updatedAt: SENT_TS,
+        revisionNumber: so.revisionNumber,
+      };
+      const activity = [
+        ...so.activity,
+        {
+          id: `act-${so.id}-sosend-${Date.now()}`,
+          date: SENT_TS,
+          actor: currentUser.fullName,
+          action: 'Sales Order emailed to customer',
+          detail: `${soAttachment?.soNumber ?? so.number} → ${draft.to} · next review ${reviewDate}`,
+        },
+      ];
+      if (newHandoff) {
+        activity.push({
+          id: `act-${so.id}-handoff-${Date.now()}`,
+          date: SENT_TS,
+          actor: currentUser.fullName,
+          action: 'Submitted to ERP Handoff',
+          detail: `${so.number} added to ERP Handoff (Submitted) after the SO email was sent`,
+        });
+      }
+      updateSalesOrder(so.id, { sentAt: SENT_TS, status: 'so_sent', erpHandoff, reviewDate, activity });
+      updateEmail(email.id, { composeIntent: undefined, draft: undefined, draftSaved: false });
+      addToast({
+        type: 'success',
+        title: 'Sales Order sent successfully.',
+        message: newHandoff
+          ? `${so.number} emailed to ${draft.to} and submitted to ERP Handoff (Submitted).`
+          : `${so.number} emailed to ${draft.to}. Already in ERP Handoff (Submitted).`,
+      });
+      return;
+    }
+
+    const target = isPoRequest ? 'awaiting_po' : 'awaiting_quote';
+    const targetKeys = new Set(actionableFields(so.verificationFields).map((f) => f.key));
+    const newFields: VerificationField[] = so.verificationFields.map((f) =>
+      targetKeys.has(f.key) ? { ...f, resolution: target } : f
+    );
+    const newStatus = deriveVerificationStatus(newFields);
+    updateSalesOrder(so.id, {
+      verificationFields: newFields,
+      verificationStatus: newStatus,
+      reviewDate,
+      activity: [
+        ...so.activity,
+        isPoRequest
+          ? {
+              id: `act-${so.id}-po-${Date.now()}`,
+              date: SENT_TS,
+              actor: currentUser.fullName,
+              action: 'Requested updated PO from customer',
+              detail: `${targetKeys.size} field(s) flagged · next review ${reviewDate}`,
+            }
+          : {
+              id: `act-${so.id}-qc-${Date.now()}`,
+              date: SENT_TS,
+              actor: currentUser.fullName,
+              action: 'Sent corrected quotation to customer',
+              detail: `${attachment?.qtnNumber ?? so.quotationNumber ?? ''} → ${draft.to} · next review ${reviewDate}`,
+            },
+      ],
+    });
+    if (isQuoteCorrect && quotation) {
+      updateQuotation(quotation.id, {
+        reviewDate,
+        lastUpdated: TODAY,
+        activity: [
+          ...quotation.activity,
+          {
+            id: `act-${quotation.id}-qc-${Date.now()}`,
+            date: SENT_TS,
+            actor: currentUser.fullName,
+            action: 'Corrected quotation sent to customer',
+            detail: `PO ${so.poNumber} · next review ${reviewDate}`,
+          },
+        ],
+      });
+    }
+    // The PO conversation stays open — the correction is out, so the composer
+    // resets and the workspace is free to prepare the next reply on it.
+    updateEmail(email.id, {
+      needsReview: newStatus !== 'verified',
+      composeIntent: undefined,
+      draft: undefined,
+      draftSaved: false,
+      attachedQuote: undefined,
+    });
+    addToast(
+      isPoRequest
+        ? {
+            type: 'success',
+            title: 'Updated PO requested',
+            message: `Sent to ${draft.to}. Re-run the comparison once the updated PO arrives.`,
+          }
+        : {
+            type: 'success',
+            title: 'Corrected quotation sent',
+            message: `Sent to ${draft.to}. Re-run the comparison once the customer accepts it.`,
+          }
+    );
+  };
+
+  /**
    * Send. Everything the workflow needs to move happens here, in one place:
    * the conversation gains the outgoing mail, the enquiry stops asking for
    * review, and — when a quotation rode along — it leaves Quotes Pending for
@@ -288,6 +445,11 @@ export function ComposePopup({
 
     if (soRevision && salesOrder && soAttachment) {
       sendSoRevision(salesOrder);
+    } else if (poIntent && salesOrder) {
+      // Checked BEFORE the quotation branch: a corrected quote sent during
+      // verification must not be marked "Sent" and pushed into Follow-up
+      // Pending — that quotation was already sent and accepted long ago.
+      sendPoVerification(salesOrder);
     } else if (quotation && attachment) {
       // A revision leaves the queue as a NEW version: the quote as it stands
       // (the revised lines the editor saved) is frozen and appended, so the
@@ -428,9 +590,15 @@ export function ComposePopup({
           <p className="min-w-0 flex-1 truncate text-[13px] font-semibold">
             {soRevision && salesOrder
               ? `Revised Sales Order ${salesOrder.number}`
-              : quotation
-                ? `Quotation ${quotation.number}`
-                : draft.subject || 'New Message'}
+              : isSoSend && salesOrder
+                ? `Sales Order ${salesOrder.number}`
+                : isPoRequest && salesOrder
+                  ? `Updated PO requested — ${salesOrder.poNumber}`
+                  : isQuoteCorrect && quotation
+                    ? `Corrected Quotation ${quotation.number}`
+                    : quotation
+                      ? `Quotation ${quotation.number}`
+                      : draft.subject || 'New Message'}
           </p>
           <div className="flex flex-none items-center gap-0.5">
             <HeaderButton
@@ -610,9 +778,9 @@ export function ComposePopup({
         )}
       </div>
 
-      {/* Revised Sales Order preview — the document exactly as attached, built
-          from the saved revised draft so it shows the revision, not the SO it
-          replaces. */}
+      {/* Sales Order preview — the document exactly as attached. In the revision
+          flow it is built from the saved revised draft, so it shows the
+          revision rather than the SO it replaces. */}
       {soAttachment && salesOrder && (() => {
         const snap = salesOrder.revisionDraft;
         const soForDoc = snap
@@ -632,7 +800,7 @@ export function ComposePopup({
             open={showPreview}
             onClose={() => setShowPreview(false)}
             size="xl"
-            title="Revised Sales Order Preview"
+            title={soRevision ? 'Revised Sales Order Preview' : 'Sales Order Preview'}
             subtitle={`${soAttachment.fileName}${soAttachment.revisionLabel ? ` · ${soAttachment.revisionLabel}` : ''} · ${formatINR(soAttachment.value)}`}
             footer={
               <Button variant="primary" onClick={() => setShowPreview(false)}>

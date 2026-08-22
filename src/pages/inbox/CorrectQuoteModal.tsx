@@ -29,7 +29,7 @@ const clone = (it: LineItem): LineItem => ({ ...it });
  * table underneath, and the corrected total against the accepted one.
  *
  * Nothing is sent from here. "Add Corrected Quote to Email" saves the
- * correction, attaches the PDF and hands over to the centre composer, which is
+ * correction, attaches the PDF and hands over to the compose window, which is
  * the one surface that sends.
  */
 export function CorrectQuoteModal({
@@ -192,7 +192,7 @@ export function CorrectQuoteModal({
     addToast({
       type: 'success',
       title: 'Added to email',
-      message: 'Corrected quotation attached. Set the next review date and send from the centre panel.',
+      message: 'Corrected quotation attached. Set the next review date and send.',
     });
     onAddedToEmail();
   };
@@ -353,7 +353,7 @@ export function CorrectQuoteModal({
           {attachIsCorrected && (
             <div className="mt-2 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-700">
               <Paperclip className="h-4 w-4 flex-none" /> Corrected quotation added to the email — set the review date and send
-              from the centre panel.
+              from the compose window.
             </div>
           )}
         </div>
@@ -385,7 +385,7 @@ export function CorrectQuoteModal({
               leftIcon={<Paperclip className="h-4 w-4" />}
               onClick={addCorrectedToEmail}
               disabled={!canEdit || items.length === 0}
-              title="Attach the corrected quotation to the email in the centre panel"
+              title="Attach the corrected quotation to the email and open the compose window"
             >
               Add Corrected Quote to Email
             </Button>

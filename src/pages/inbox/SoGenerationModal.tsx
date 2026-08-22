@@ -175,22 +175,23 @@ const ERROR_SECTION: Record<string, SectionKey> = {
  * Footer actions:
  *   • Save Draft            → persist the edited fields onto the SO record
  *   • Preview SO            → the shared Sales Order Acknowledgement document
- *   • Generate & Add to Email → flip the SO live and attach it to the composer.
+ *   • Generate & Add to Email → flip the SO live and attach it to the compose window.
  * ERP Handoff is NOT created here — the SO is submitted to ERP Handoff only
- * once the customer email is actually sent from the centre composer.
+ * once the customer email is actually sent from the compose window.
  */
 export function SoGenerationModal({
   email,
   so,
   quote,
   onClose,
-  onPrepared,
+  onCompose,
 }: {
   email: InboxEmail;
   so: SalesOrder;
   quote: Quotation | null;
   onClose: () => void;
-  onPrepared?: () => void;
+  /** The SO is on the email — open the Gmail-style compose window on it. */
+  onCompose?: () => void;
 }) {
   const {
     parties,
@@ -373,10 +374,10 @@ export function SoGenerationModal({
 
   // ---- Footer action 3: Generate & Add to Email ------------------------------
   // Persist the (possibly edited) fields, flip the SO live, and attach the
-  // generated document straight to the middle composer. The SO is submitted to
-  // ERP Handoff only AFTER the email is sent (from the centre panel) — not here.
+  // generated document straight to the compose window. The SO is submitted to
+  // ERP Handoff only AFTER that email is actually sent — not here.
   // Guarded so re-running on an already-generated SO saves + re-attaches without
-  // minting a new SO. Stays in the inbox; the drawer closes onto the composer.
+  // minting a new SO. Stays in the inbox; this modal closes onto the compose window.
   const generateAndAttach = () => {
     if (!validate()) return;
     const now = `${TODAY_ISO}T12:30:00`;
@@ -413,9 +414,9 @@ export function SoGenerationModal({
     addToast({
       type: 'success',
       title: generated ? 'Sales Order updated' : 'Sales Order generated',
-      message: `${so.number} attached to the email. Review the composer and send — it is submitted to ERP Handoff after sending.`,
+      message: `${so.number} attached to the email. Set the next review date and send — it is submitted to ERP Handoff after sending.`,
     });
-    onPrepared?.();
+    onCompose?.();
     onClose();
   };
 
@@ -661,7 +662,7 @@ export function SoGenerationModal({
               leftIcon={<Mail className="h-4 w-4" />}
               onClick={generateAndAttach}
               disabled={!canGenerate}
-              title={!canGenerate ? 'You do not have permission to generate Sales Orders' : 'Generate the Sales Order and attach it to the email composer'}
+              title={!canGenerate ? 'You do not have permission to generate Sales Orders' : 'Generate the Sales Order and attach it to the compose window'}
             >
               {generated ? 'Save & Add to Email' : 'Generate & Add to Email'}
             </Button>

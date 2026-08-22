@@ -874,7 +874,11 @@ export default function GlobalInbox() {
                      window, so the centre has no workflow form of its own. */
                   <InboxCenterPanel email={selected} />
                 ) : isPoVerify ? (
-                  <InboxCenterPanel email={selected} mode="po-verify" salesOrder={poSalesOrder} quotation={poQuote} focusTick={focusTick} />
+                  /* Verification is worked in the right panel and answered from
+                     the compose window — an updated-PO request, a corrected
+                     quote or the generated SO — so the centre stays a plain
+                     conversation here too. */
+                  <InboxCenterPanel email={selected} />
                 ) : isSoRevision ? (
                   /* Same shape as a quote revision: the SO is edited in the
                      Revise Sales Order modal and sent from the compose window,
@@ -902,7 +906,11 @@ export default function GlobalInbox() {
                     onCompose={() => setComposeOpen(true)}
                   />
                 ) : isPoVerify ? (
-                  <PoVerificationPanel email={selected} onPrepared={onPrepared} onGenerateSo={() => setSoModalOpen(true)} />
+                  <PoVerificationPanel
+                    email={selected}
+                    onCompose={() => setComposeOpen(true)}
+                    onGenerateSo={() => setSoModalOpen(true)}
+                  />
                 ) : isSoRevision ? (
                   <SoRevisionPanel
                     email={selected}
@@ -957,12 +965,15 @@ export default function GlobalInbox() {
         <ComposePopup
           email={selected}
           /* An SO revision must NOT touch the quotation it was born from —
-             that quote was already sent and accepted. */
-          quotation={isSoRevision ? null : inquiryQuotation ?? builderQuotation}
+             that quote was already sent and accepted. The same holds for a
+             corrected quote sent during verification, which is why the PO
+             quotation is passed for rendering only. */
+          quotation={isSoRevision ? null : isPoVerify ? poQuote : inquiryQuotation ?? builderQuotation}
           inquiryId={inquiryScopeId}
           revision={isRevision}
-          salesOrder={isSoRevision ? soRevisionSalesOrder : null}
+          salesOrder={isSoRevision ? soRevisionSalesOrder : isPoVerify ? poSalesOrder : null}
           soRevision={isSoRevision}
+          poVerification={isPoVerify}
           onClose={() => setComposeOpen(false)}
         />
       )}
@@ -975,7 +986,7 @@ export default function GlobalInbox() {
           email={selected}
           so={poSalesOrder}
           quote={poQuote}
-          onPrepared={onPrepared}
+          onCompose={() => setComposeOpen(true)}
           onClose={() => setSoModalOpen(false)}
         />
       )}
