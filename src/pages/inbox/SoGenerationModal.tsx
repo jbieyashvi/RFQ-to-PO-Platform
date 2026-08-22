@@ -414,7 +414,7 @@ export function SoGenerationModal({
     addToast({
       type: 'success',
       title: generated ? 'Sales Order updated' : 'Sales Order generated',
-      message: `${so.number} attached to the email. Set the next review date and send — it is submitted to ERP Handoff after sending.`,
+      message: `${so.number} attached to the email. Send it — the Sales Order joins ERP Handoff as Pending once the mail goes out.`,
     });
     onCompose?.();
     onClose();

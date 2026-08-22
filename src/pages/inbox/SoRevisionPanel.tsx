@@ -337,15 +337,15 @@ export function SoRevisionPanel({
         )}
 
         {/* A revised SO is already attached to the reply — the compose window is
-            where it gets a review date and goes out. */}
+            where it goes out. */}
         {open && attachedRev && (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-3.5 py-3">
             <div className="flex items-center gap-2 text-[12.5px] font-semibold text-emerald-700">
               <Paperclip className="h-4 w-4 flex-none" /> Revised SO attached to the reply
             </div>
             <p className="mt-1 text-[12px] text-surface-600">
-              {email.attachedSalesOrder?.fileName} · {email.attachedSalesOrder?.revisionLabel ?? `Rev ${nextRevNum}`}. Set the
-              next review date in the compose window and send it.
+              {email.attachedSalesOrder?.fileName} · {email.attachedSalesOrder?.revisionLabel ?? `Rev ${nextRevNum}`}. Send it
+              from the compose window.
             </p>
             <Button variant="primary" size="sm" className="mt-2.5 w-full" leftIcon={<Mail className="h-3.5 w-3.5" />} onClick={onCompose}>
               Open the compose window

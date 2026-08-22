@@ -530,7 +530,7 @@ export function SoRevisionModal({
     addToast({
       type: 'success',
       title: 'Revised SO added to email',
-      message: `${so.number} (Rev ${nextRevNum}) attached. Set the next review date and send from the compose window.`,
+      message: `${so.number} (Rev ${nextRevNum}) attached. Send it from the compose window.`,
     });
     onAddedToEmail();
   };

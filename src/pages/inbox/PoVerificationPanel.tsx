@@ -513,7 +513,7 @@ function GenerateTab({
   // upload — and the final send happens from that window.
   const addSoToEmail = () => {
     updateEmail(email.id, soSendEmailPatch(email, so));
-    addToast({ type: 'success', title: 'Added to email', message: 'Sales Order attached. Set the next review date and send.' });
+    addToast({ type: 'success', title: 'Added to email', message: 'Sales Order attached. Send it from the compose window.' });
     onCompose?.();
   };
 

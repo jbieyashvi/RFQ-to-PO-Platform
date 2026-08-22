@@ -113,6 +113,12 @@ export function ComposePopup({
   const isPoRequest = poIntent === 'po-request';
   const isQuoteCorrect = poIntent === 'quote-correct';
   const isSoSend = poIntent === 'so-send';
+  // A Sales Order email is a delivery, not a follow-up. The order is final and
+  // the next step is the ERP handoff — a person keying it in from the ERP
+  // Handoff screen — so there is nothing to chase the customer about and no
+  // date to set. Quotation mails, revised ones included, still require a Next
+  // Review Date: that date IS what moves them into Follow-up Pending.
+  const isSoEmail = soRevision || isSoSend;
 
   const attachment = email.attachedQuote;
   // The SO Revision and SO Generation flows attach a Sales Order PDF instead of
@@ -123,7 +129,7 @@ export function ComposePopup({
   // The shared validator's "before updating the quotation" wording belongs to
   // the quotation workspace; here the date gates an outgoing email, and the
   // same window sends Sales Orders and PO corrections too.
-  const rawDateError = reviewDateError(reviewDate);
+  const rawDateError = isSoEmail ? null : reviewDateError(reviewDate);
   const dateError =
     rawDateError === REVIEW_DATE_REQUIRED ? 'Select the next review date before sending.' : rawDateError;
 
@@ -239,7 +245,6 @@ export function ComposePopup({
       value: newValue,
       versions: [...so.versions, newVersion],
       erpHandoff,
-      reviewDate,
       activity: [
         ...so.activity,
         {
@@ -247,7 +252,7 @@ export function ComposePopup({
           date: SENT_TS,
           actor: currentUser.fullName,
           action: 'Revised Sales Order sent to customer',
-          detail: `${so.number} · Rev ${nextNum} → ${draft.to} · next review ${reviewDate}`,
+          detail: `${so.number} · Rev ${nextNum} → ${draft.to}`,
         },
         {
           id: `act-${so.id}-erp-${nextNum}`,
@@ -302,7 +307,7 @@ export function ComposePopup({
           date: SENT_TS,
           actor: currentUser.fullName,
           action: 'Sales Order emailed to customer',
-          detail: `${soAttachment?.soNumber ?? so.number} → ${draft.to} · next review ${reviewDate}`,
+          detail: `${soAttachment?.soNumber ?? so.number} → ${draft.to}`,
         },
       ];
       if (newHandoff) {
@@ -314,7 +319,7 @@ export function ComposePopup({
           detail: `${so.number} queued in ERP Handoff (Pending) after the SO email was sent`,
         });
       }
-      updateSalesOrder(so.id, { sentAt: SENT_TS, status: 'so_sent', erpHandoff, reviewDate, activity });
+      updateSalesOrder(so.id, { sentAt: SENT_TS, status: 'so_sent', erpHandoff, activity });
       updateEmail(email.id, { composeIntent: undefined, draft: undefined, draftSaved: false });
       addToast({
         type: 'success',
@@ -436,7 +441,8 @@ export function ComposePopup({
       linkedSO: salesOrder?.number ?? email.linkedSO,
       inquiryId: inquiryId ?? email.inquiryId ?? quotation?.id,
       inquiryNo: email.inquiryNo,
-      reviewDate,
+      // Left unset on a Sales Order mail — there is no review date to carry.
+      reviewDate: isSoEmail ? undefined : reviewDate,
       attachedQuote: attachment,
       attachedSalesOrder: soAttachment,
       extraction: [],
@@ -453,7 +459,7 @@ export function ComposePopup({
       draftSaved: true,
       read: true,
       needsReview: false,
-      reviewDate,
+      ...(isSoEmail ? {} : { reviewDate }),
     });
 
     if (soRevision && salesOrder && soAttachment) {
@@ -741,20 +747,22 @@ export function ComposePopup({
                 </div>
               )}
 
-              <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-surface-100 pt-2">
-                <label htmlFor="compose-review-date" className="text-[12px] font-medium text-surface-700">
-                  Next Review Date <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  id="compose-review-date"
-                  type="date"
-                  value={reviewDate}
-                  min={TODAY}
-                  onChange={(e) => setReviewDate(e.target.value)}
-                  className={classNames('input h-7 w-40 px-2 py-0 text-[12px]', dateError && 'input-error')}
-                />
-                {dateError && <p className="text-[11px] font-medium text-rose-600">{dateError}</p>}
-              </div>
+              {!isSoEmail && (
+                <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-surface-100 pt-2">
+                  <label htmlFor="compose-review-date" className="text-[12px] font-medium text-surface-700">
+                    Next Review Date <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    id="compose-review-date"
+                    type="date"
+                    value={reviewDate}
+                    min={TODAY}
+                    onChange={(e) => setReviewDate(e.target.value)}
+                    className={classNames('input h-7 w-40 px-2 py-0 text-[12px]', dateError && 'input-error')}
+                  />
+                  {dateError && <p className="text-[11px] font-medium text-rose-600">{dateError}</p>}
+                </div>
+              )}
             </div>
 
             <div className="flex flex-none items-center justify-between gap-2 border-t border-surface-100 bg-surface-50/70 px-3 py-2">
