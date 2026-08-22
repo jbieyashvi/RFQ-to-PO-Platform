@@ -1,13 +1,24 @@
 import { useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Eye, FileText, Maximize2, Minimize2, Minus, Paperclip, Save, Send, X } from 'lucide-react';
-import type { InboxEmail, OutgoingDraft, Quotation } from '@/types';
+import type {
+  ErpHandoff,
+  InboxEmail,
+  OutgoingDraft,
+  Quotation,
+  SalesOrder,
+  SORevisionSnapshot,
+  SORevisionVersion,
+} from '@/types';
 import { Button, Modal } from '@/components/ui';
 import { DocumentLetterhead } from '@/components/DocumentLetterhead';
+import { SalesOrderDocument } from '@/components/sales-order/SalesOrderDocument';
 import { useApp } from '@/context/AppContext';
+import { ITEMS } from '@/data/masters';
 import { officeName } from '@/data/offices';
 import { emailSignature } from '@/lib/brand';
-import { classNames, formatINR, lineTotal } from '@/lib/format';
+import { classNames, computeTotals, formatINR, lineTotal } from '@/lib/format';
+import { resolveSalesOrder } from '@/lib/salesOrder';
 import { reviewDateError } from '@/lib/quotationWorkflow';
 import { isValidEmail } from './helpers';
 
@@ -46,6 +57,8 @@ export function ComposePopup({
   quotation,
   inquiryId,
   revision = false,
+  salesOrder = null,
+  soRevision = false,
   onClose,
 }: {
   email: InboxEmail;
@@ -59,9 +72,18 @@ export function ComposePopup({
    * sent — the customer now holds two quotes, and both have to be readable.
    */
   revision?: boolean;
+  /** The Sales Order this mail revises, in the SO Revision flow. */
+  salesOrder?: SalesOrder | null;
+  /**
+   * This mail carries a REVISED Sales Order. Sending it promotes the saved
+   * revised snapshot to the next version of the SAME Sales Order and updates
+   * the one ERP Handoff record — it never creates a second SO.
+   */
+  soRevision?: boolean;
   onClose: () => void;
 }) {
-  const { updateEmail, updateQuotation, addEmail, addToast, canInbox, currentUser } = useApp();
+  const { updateEmail, updateQuotation, updateSalesOrder, addEmail, addToast, canInbox, currentUser, parties } =
+    useApp();
 
   const canSend = canInbox('send');
 
@@ -76,6 +98,8 @@ export function ComposePopup({
   const drag = useRef<{ x: number; y: number; right: number; bottom: number } | null>(null);
 
   const attachment = email.attachedQuote;
+  // The SO Revision flow attaches a revised Sales Order PDF instead of a quote.
+  const soAttachment = soRevision ? email.attachedSalesOrder : undefined;
   const set = (patch: Partial<OutgoingDraft>) => setDraft((d) => ({ ...d, ...patch }));
 
   const dateError = reviewDateError(reviewDate);
@@ -86,8 +110,11 @@ export function ComposePopup({
     if (!draft.subject.trim()) out.push('a subject');
     if (!draft.body.trim()) out.push('a message body');
     if (dateError) out.push('a next review date');
+    // A revised SO email is only worth sending with the revised SO on it — the
+    // attachment IS the deliverable, so removing it blocks Send.
+    if (soRevision && !soAttachment) out.push('the revised Sales Order attachment');
     return out;
-  }, [draft, dateError]);
+  }, [draft, dateError, soRevision, soAttachment]);
 
   const blocked = !canSend || blockers.length > 0;
 
@@ -97,11 +124,104 @@ export function ComposePopup({
   };
 
   const removeAttachment = () => {
+    if (soAttachment) {
+      updateEmail(email.id, { attachedSalesOrder: undefined });
+      addToast({
+        type: 'info',
+        title: 'Attachment removed',
+        message: 'Re-open Revise Sales Order to attach the revised SO again.',
+      });
+      return;
+    }
     updateEmail(email.id, { attachedQuote: undefined });
     addToast({
       type: 'info',
       title: 'Attachment removed',
       message: 'Re-open Generate Quote to attach the quotation again.',
+    });
+  };
+
+  /**
+   * The Sales Order half of Send. The revised SO was prepared, saved and
+   * attached in the revision modal; here it becomes real: the saved snapshot is
+   * frozen as the NEXT immutable version of the SAME Sales Order (Rev n → Rev
+   * n+1), the live SO fields move to the revised values so the List of Sales
+   * Orders shows the latest, the revision request is marked resolved, and the
+   * SINGLE ERP Handoff record is updated in place to the latest revision with
+   * status Submitted. No duplicate Sales Order and no duplicate handoff.
+   */
+  const sendSoRevision = (so: SalesOrder) => {
+    const snapshot: SORevisionSnapshot = so.revisionDraft ?? {
+      items: so.items.map((it) => ({ ...it })),
+      paymentTerms: so.paymentTerms,
+      deliveryTerms: so.deliveryTerms,
+      deliveryDate: so.deliveryDate,
+      billingAddress: so.billingAddress,
+      shippingAddress: so.shippingAddress,
+    };
+    const nextNum = so.revisionNumber + 1;
+    const newValue = computeTotals(snapshot.items, so.packingCharges).grandTotal;
+    const newVersion: SORevisionVersion = {
+      id: `ver-${so.id}-${nextNum}`,
+      label: `Rev ${nextNum}`,
+      version: nextNum,
+      createdAt: SENT_TS,
+      by: currentUser.fullName,
+      reason: so.revisionReason ?? 'Customer-requested Sales Order revision',
+      notes: so.revisionNotes,
+      snapshot,
+    };
+    const handoffNote = `Revised Sales Order ${so.number} (Rev ${nextNum}) available for ERP update.`;
+    const erpHandoff: ErpHandoff = so.erpHandoff
+      ? { ...so.erpHandoff, state: 'submitted', revisionNumber: nextNum, updatedAt: SENT_TS, reference: handoffNote }
+      : {
+          state: 'submitted',
+          source: 'po_verification',
+          submittedAt: SENT_TS,
+          submittedBy: currentUser.fullName,
+          updatedAt: SENT_TS,
+          revisionNumber: nextNum,
+          reference: handoffNote,
+        };
+    updateSalesOrder(so.id, {
+      revisionNumber: nextNum,
+      revisionState: 'revised_sent',
+      revisionDraft: undefined,
+      revisionPreviewed: false,
+      sentAt: SENT_TS,
+      status: 'so_sent',
+      items: snapshot.items.map((it) => ({ ...it })),
+      paymentTerms: snapshot.paymentTerms,
+      deliveryTerms: snapshot.deliveryTerms,
+      deliveryDate: snapshot.deliveryDate,
+      billingAddress: snapshot.billingAddress,
+      shippingAddress: snapshot.shippingAddress,
+      value: newValue,
+      versions: [...so.versions, newVersion],
+      erpHandoff,
+      reviewDate,
+      activity: [
+        ...so.activity,
+        {
+          id: `act-${so.id}-sorev-${nextNum}`,
+          date: SENT_TS,
+          actor: currentUser.fullName,
+          action: 'Revised Sales Order sent to customer',
+          detail: `${so.number} · Rev ${nextNum} → ${draft.to} · next review ${reviewDate}`,
+        },
+        {
+          id: `act-${so.id}-erp-${nextNum}`,
+          date: SENT_TS,
+          actor: currentUser.fullName,
+          action: 'ERP Handoff updated',
+          detail: handoffNote,
+        },
+      ],
+    });
+    addToast({
+      type: 'success',
+      title: 'Revised Sales Order sent successfully.',
+      message: `${so.number} (Rev ${nextNum}) emailed to ${draft.to}. ERP Handoff updated to Rev ${nextNum} · Submitted.`,
     });
   };
 
@@ -143,11 +263,12 @@ export function ComposePopup({
       customerCode: email.customerCode,
       linkedQuotation: quotation?.number ?? email.linkedQuotation,
       linkedPO: email.linkedPO,
-      linkedSO: email.linkedSO,
+      linkedSO: salesOrder?.number ?? email.linkedSO,
       inquiryId: inquiryId ?? email.inquiryId ?? quotation?.id,
       inquiryNo: email.inquiryNo,
       reviewDate,
       attachedQuote: attachment,
+      attachedSalesOrder: soAttachment,
       extraction: [],
       extractionConfirmed: true,
       draftSaved: true,
@@ -165,7 +286,9 @@ export function ComposePopup({
       reviewDate,
     });
 
-    if (quotation && attachment) {
+    if (soRevision && salesOrder && soAttachment) {
+      sendSoRevision(salesOrder);
+    } else if (quotation && attachment) {
       // A revision leaves the queue as a NEW version: the quote as it stands
       // (the revised lines the editor saved) is frozen and appended, so the
       // history reads V1 → V2 rather than one record edited over.
@@ -303,7 +426,11 @@ export function ComposePopup({
           )}
         >
           <p className="min-w-0 flex-1 truncate text-[13px] font-semibold">
-            {quotation ? `Quotation ${quotation.number}` : draft.subject || 'New Message'}
+            {soRevision && salesOrder
+              ? `Revised Sales Order ${salesOrder.number}`
+              : quotation
+                ? `Quotation ${quotation.number}`
+                : draft.subject || 'New Message'}
           </p>
           <div className="flex flex-none items-center gap-0.5">
             <HeaderButton
@@ -375,6 +502,36 @@ export function ComposePopup({
                 className="mt-2 w-full resize-none bg-transparent text-[13px] leading-[19px] text-surface-800 outline-none"
               />
 
+              {soAttachment && (
+                <div className="mt-1.5 flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-2.5 py-1.5">
+                  <FileText className="h-4 w-4 flex-none text-brand-600" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[12px] font-medium text-surface-800">{soAttachment.fileName}</p>
+                    <p className="text-[11px] text-surface-500">
+                      {soAttachment.fileType}
+                      {soAttachment.revisionLabel ? ` · ${soAttachment.revisionLabel}` : ''} ·{' '}
+                      {soAttachment.sizeLabel ?? '—'} · {formatINR(soAttachment.value)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowPreview(true)}
+                    aria-label="Preview revised Sales Order"
+                    title="Preview revised Sales Order"
+                    className="rounded p-1 text-surface-400 hover:bg-white hover:text-brand-600"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={removeAttachment}
+                    aria-label="Remove attachment"
+                    title="Remove attachment"
+                    className="rounded p-1 text-surface-400 hover:bg-white hover:text-rose-500"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+
               {attachment && (
                 <div className="mt-1.5 flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-2.5 py-1.5">
                   <FileText className="h-4 w-4 flex-none text-brand-600" />
@@ -441,7 +598,7 @@ export function ComposePopup({
                   Save Draft
                 </Button>
               </div>
-              {attachment ? (
+              {attachment || soAttachment ? (
                 <p className="flex items-center gap-1 text-[11px] text-surface-500">
                   <Paperclip className="h-3 w-3" />1 attachment
                 </p>
@@ -452,6 +609,41 @@ export function ComposePopup({
           </>
         )}
       </div>
+
+      {/* Revised Sales Order preview — the document exactly as attached, built
+          from the saved revised draft so it shows the revision, not the SO it
+          replaces. */}
+      {soAttachment && salesOrder && (() => {
+        const snap = salesOrder.revisionDraft;
+        const soForDoc = snap
+          ? {
+              ...salesOrder,
+              items: snap.items,
+              deliveryTerms: snap.deliveryTerms,
+              paymentTerms: snap.paymentTerms,
+              deliveryDate: snap.deliveryDate,
+              billingAddress: snap.billingAddress,
+              shippingAddress: snap.shippingAddress,
+            }
+          : salesOrder;
+        const resolved = resolveSalesOrder(soForDoc, { parties, catalog: ITEMS });
+        return (
+          <Modal
+            open={showPreview}
+            onClose={() => setShowPreview(false)}
+            size="xl"
+            title="Revised Sales Order Preview"
+            subtitle={`${soAttachment.fileName}${soAttachment.revisionLabel ? ` · ${soAttachment.revisionLabel}` : ''} · ${formatINR(soAttachment.value)}`}
+            footer={
+              <Button variant="primary" onClick={() => setShowPreview(false)}>
+                Close
+              </Button>
+            }
+          >
+            <SalesOrderDocument resolved={resolved} showLetterhead />
+          </Modal>
+        );
+      })()}
 
       {/* Attachment preview — the quotation as the customer will receive it. */}
       {attachment && quotation && (

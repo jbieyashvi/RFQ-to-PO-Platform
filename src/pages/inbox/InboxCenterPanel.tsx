@@ -21,8 +21,6 @@ import type {
   OutgoingDraft,
   Quotation,
   SalesOrder,
-  SORevisionSnapshot,
-  SORevisionVersion,
   VerificationField,
 } from '@/types';
 import { Button, IconButton, TextField, TextAreaField, Modal } from '@/components/ui';
@@ -30,7 +28,7 @@ import { useApp } from '@/context/AppContext';
 import { officeName } from '@/data/offices';
 import { ITEMS } from '@/data/masters';
 import { emailSignature } from '@/lib/brand';
-import { classNames, computeTotals, formatINR, lineTotal } from '@/lib/format';
+import { classNames, formatINR, lineTotal } from '@/lib/format';
 import { resolveSalesOrder } from '@/lib/salesOrder';
 import { SalesOrderDocument } from '@/components/sales-order/SalesOrderDocument';
 import { TODAY_ISO } from '@/lib/quotationWorkflow';
@@ -48,7 +46,7 @@ import {
 const TODAY_TS = '2026-08-13T12:30:00';
 const SENT_TS = '2026-08-13T12:45:00';
 
-export type ComposeMode = 'normal' | 'quote-send' | 'po-verify' | 'so-revision';
+export type ComposeMode = 'normal' | 'quote-send' | 'po-verify';
 
 function templateFor(email: InboxEmail): OutgoingDraft {
   const greeting = `Dear ${email.senderName.split(' ')[0] || 'Sir/Madam'},`;
@@ -82,7 +80,6 @@ const COMPOSE_HEADING: Record<string, string> = {
   'po-request': 'Reply — Request Updated PO',
   'quote-correct': 'Reply — Send Corrected Quotation',
   'so-send': 'Reply — Send Sales Order',
-  'so-revise': 'Reply — Send Revised Sales Order',
   normal: 'Outgoing Email',
 };
 
@@ -123,13 +120,10 @@ export function InboxCenterPanel({
   } = useApp();
 
   const isWorkflow = mode !== 'normal';
-  const intent = email.composeIntent; // 'revision' | 'po-request' | 'quote-correct' | 'so-send' | 'so-revise'
+  const intent = email.composeIntent; // 'revision' | 'po-request' | 'quote-correct' | 'so-send'
   // so-send carries the generated Sales Order PDF (not a quotation) and skips
   // the next-review-date gate — it is the terminal step of the SO workflow.
   const isSoSend = mode === 'po-verify' && intent === 'so-send';
-  // so-revision carries the revised Sales Order Acknowledgement PDF and, unlike
-  // so-send, KEEPS the next-review-date gate — the client conversation continues.
-  const isSoRevise = mode === 'so-revision';
   // A verified PO has nothing left to correct, so the placeholder must not go
   // on advertising "Request Updated PO" — the only reply left to prepare on a
   // verified record is the Sales Order itself.
@@ -239,25 +233,11 @@ export function InboxCenterPanel({
     return b;
   }, [draft.to, draft.subject, draft.body, email.attachedSalesOrder]);
 
-  // so-revision gate: valid recipient + subject + body + the revised SO attached
-  // + a next review date. The revised SO must have been saved & attached first.
-  const soReviseBlockers = useMemo(() => {
-    const b: string[] = [];
-    if (!isValidEmail(draft.to)) b.push('A valid recipient email is required.');
-    if (!draft.subject.trim()) b.push('Subject is required.');
-    if (!draft.body.trim()) b.push('Email body is required.');
-    if (!email.attachedSalesOrder) b.push('Add the revised Sales Order to the email before sending.');
-    if (!reviewDate) b.push('Next review date is required.');
-    return b;
-  }, [draft.to, draft.subject, draft.body, email.attachedSalesOrder, reviewDate]);
-
   const baseBlockers =
     mode === 'quote-send'
       ? quoteBlockersBase
       : mode === 'normal'
       ? normalBlockers
-      : isSoRevise
-      ? soReviseBlockers
       : isSoSend
       ? soSendBlockers
       : workflowBlockersBase;
@@ -468,83 +448,8 @@ export function InboxCenterPanel({
     });
   };
 
-  // ---- Sales Order Revision send (Send Email): the SO was already revised,
-  // saved and attached by the right panel. Here we promote the saved revised
-  // snapshot to a NEW immutable version, increment the revision number, stamp the
-  // SO Sent Date, mark the revision request completed, and update the EXISTING
-  // ERP Handoff to flag that a revised SO is available — no duplicate SO or
-  // handoff, and manufacturing is NOT auto-confirmed. ----
-  const sendSoRevision = () => {
-    if (!canFinalSend || !salesOrder) return;
-    const so = salesOrder;
-    const snapshot: SORevisionSnapshot = so.revisionDraft ?? {
-      items: so.items.map((it) => ({ ...it })),
-      paymentTerms: so.paymentTerms,
-      deliveryTerms: so.deliveryTerms,
-      deliveryDate: so.deliveryDate,
-      billingAddress: so.billingAddress,
-      shippingAddress: so.shippingAddress,
-    };
-    const nextNum = so.revisionNumber + 1;
-    const newValue = computeTotals(snapshot.items, so.packingCharges).grandTotal;
-    const newVersion: SORevisionVersion = {
-      id: `ver-${so.id}-${nextNum}`,
-      label: `Rev ${nextNum}`,
-      version: nextNum,
-      createdAt: SENT_TS,
-      by: currentUser.fullName,
-      reason: so.revisionReason ?? 'Customer-requested Sales Order revision',
-      notes: so.revisionNotes,
-      snapshot,
-    };
-    // Update (never duplicate) the ERP Handoff so operations see a revised SO is
-    // available. Existing handoff → annotate in place; none → create the single
-    // handoff record. State stays as-is (manufacturing is not auto-confirmed).
-    const handoffNote = `Revised Sales Order ${so.number} (Rev ${nextNum}) available for ERP update.`;
-    // Update the SINGLE ERP Handoff record in place — never create a duplicate.
-    // The record stays Submitted, carrying the new revision number and a fresh
-    // updated timestamp so the ERP picks up the revised order.
-    const erpHandoff: ErpHandoff = so.erpHandoff
-      ? { ...so.erpHandoff, state: 'submitted', revisionNumber: nextNum, updatedAt: SENT_TS, reference: handoffNote }
-      : {
-          state: 'submitted',
-          source: 'po_verification',
-          submittedAt: SENT_TS,
-          submittedBy: currentUser.fullName,
-          updatedAt: SENT_TS,
-          revisionNumber: nextNum,
-          reference: handoffNote,
-        };
-    updateSalesOrder(so.id, {
-      revisionNumber: nextNum,
-      revisionState: 'revised_sent',
-      revisionDraft: undefined,
-      revisionPreviewed: false,
-      sentAt: SENT_TS,
-      status: 'so_sent',
-      items: snapshot.items.map((it) => ({ ...it })),
-      paymentTerms: snapshot.paymentTerms,
-      deliveryTerms: snapshot.deliveryTerms,
-      deliveryDate: snapshot.deliveryDate,
-      billingAddress: snapshot.billingAddress,
-      shippingAddress: snapshot.shippingAddress,
-      value: newValue,
-      versions: [...so.versions, newVersion],
-      erpHandoff,
-      reviewDate,
-      activity: [
-        ...so.activity,
-        { id: `act-${so.id}-sorev-${nextNum}`, date: SENT_TS, actor: currentUser.fullName, action: 'Revised Sales Order sent to customer', detail: `${email.attachedSalesOrder?.soNumber ?? so.number} · Rev ${nextNum} → ${draft.to} · next review ${reviewDate}` },
-        { id: `act-${so.id}-erp-${nextNum}`, date: SENT_TS, actor: currentUser.fullName, action: 'ERP Handoff updated', detail: handoffNote },
-      ],
-    });
-    updateEmail(email.id, { draft, draftSaved: true, sent: true, sentAt: SENT_TS, needsReview: false, reviewDate });
-    addToast({ type: 'success', title: 'Revised Sales Order sent successfully.', message: `${so.number} (Rev ${nextNum}) emailed to ${draft.to}. ERP Handoff flagged for update.` });
-  };
-
   const onWorkflowSend = () => {
     if (mode === 'quote-send') sendQuote();
-    else if (mode === 'so-revision') sendSoRevision();
     else if (mode === 'po-verify') {
       if (intent === 'po-request') sendPoRequest();
       else if (intent === 'so-send') sendSalesOrder();
@@ -595,11 +500,9 @@ export function InboxCenterPanel({
               <Wand2 className="mt-0.5 h-4 w-4 flex-none text-brand-400" />
               <span>
                 Prepare this reply from the workspace on the right.{' '}
-                {isSoRevise
-                  ? 'Edit the revised Sales Order, then use “Add Revised SO to Email”'
-                  : poVerified
-                    ? 'Generate the Sales Order, then use “Add Sales Order to Email”'
-                    : 'Use “Request Updated PO” or “Correct Quote”'}{' '}
+                {poVerified
+                  ? 'Generate the Sales Order, then use “Add Sales Order to Email”'
+                  : 'Use “Request Updated PO” or “Correct Quote”'}{' '}
                 — it will appear here to review{poVerified ? '' : ', set the next review date'} and send.
               </span>
             </div>
@@ -637,10 +540,10 @@ export function InboxCenterPanel({
                   )}
 
                   {/* SO attachment chip — the generated / revised Sales Order PDF */}
-                  {(isSoSend || isSoRevise) && (
+                  {isSoSend && (
                     <div>
                       <p className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-surface-500">
-                        <Paperclip className="h-3.5 w-3.5" /> {isSoRevise ? 'Attached Revised Sales Order' : 'Attached Sales Order'}
+                        <Paperclip className="h-3.5 w-3.5" /> Attached Sales Order
                       </p>
                       {email.attachedSalesOrder ? (
                         <div className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2">
@@ -674,9 +577,7 @@ export function InboxCenterPanel({
                       ) : (
                         <div className="flex items-center gap-2 rounded-lg border border-dashed border-surface-300 bg-surface-50 px-3 py-2 text-[12px] text-surface-500">
                           <Paperclip className="h-4 w-4 flex-none" />
-                          {isSoRevise
-                            ? 'No revised Sales Order attached — use “Add Revised SO to Email” in the workspace.'
-                            : 'No Sales Order attached — use “Add Sales Order to Email” in the workspace.'}
+                          No Sales Order attached — use “Add Sales Order to Email” in the workspace.
                         </div>
                       )}
                     </div>
@@ -829,22 +730,16 @@ export function InboxCenterPanel({
         </Modal>
       )}
 
-      {/* Sales Order preview — read-only document exactly as attached. For a
-          revision, reflect the saved revised draft (falls back to the live SO). */}
+      {/* Sales Order preview — the read-only document exactly as attached. */}
       {salesOrder && (() => {
-        const snap = isSoRevise ? salesOrder.revisionDraft ?? null : null;
-        const soForDoc = snap
-          ? { ...salesOrder, items: snap.items, deliveryTerms: snap.deliveryTerms, paymentTerms: snap.paymentTerms }
-          : salesOrder;
-        const resolved = resolveSalesOrder(soForDoc, { parties, catalog: ITEMS });
-        const revLabel = email.attachedSalesOrder?.revisionLabel;
+        const resolved = resolveSalesOrder(salesOrder, { parties, catalog: ITEMS });
         return (
         <Modal
           open={soPreview}
           onClose={() => setSoPreview(false)}
           size="xl"
-          title={isSoRevise ? 'Revised Sales Order Preview' : 'Sales Order Preview'}
-          subtitle={`${salesOrder.number}${revLabel ? ` · ${revLabel}` : ''} · ${salesOrder.customerName}`}
+          title="Sales Order Preview"
+          subtitle={`${salesOrder.number} · ${salesOrder.customerName}`}
           footer={<Button variant="secondary" onClick={() => setSoPreview(false)}>Close Preview</Button>}
         >
           <SalesOrderDocument resolved={resolved} showLetterhead />

@@ -41,14 +41,6 @@ export interface SlaInfo {
   dueAt: string;
 }
 
-// List-page filter choices; "All" is the empty filter value, and "Due in Xh"
-// rows (due later than today) appear only under All.
-export const SLA_FILTER_OPTIONS: { value: SlaState; label: string }[] = [
-  { value: 'due_today', label: 'Due Today' },
-  { value: 'overdue', label: 'Overdue' },
-  { value: 'completed', label: 'Completed' },
-];
-
 export function slaInfo(
   receivedAt: string | undefined,
   completed: boolean,
@@ -85,14 +77,5 @@ export function revisionReceivedAtOf(so: SalesOrder): string | undefined {
   return (
     so.revisionRequestedAt ??
     (so.revisionRequestedDate ? `${so.revisionRequestedDate}T10:15:00` : undefined)
-  );
-}
-
-/** Sales Order Revision SLA — completed once the revised SO is sent or the
- *  request is resolved (no revision / escalated to quote revision). */
-export function revisionSla(so: SalesOrder): SlaInfo | null {
-  return slaInfo(
-    revisionReceivedAtOf(so),
-    so.revisionState === 'revised_sent' || !!so.revisionResolution
   );
 }

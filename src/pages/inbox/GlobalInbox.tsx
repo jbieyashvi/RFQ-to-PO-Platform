@@ -383,14 +383,10 @@ export default function GlobalInbox() {
     () => (poSalesOrder ? quotations.find((q) => q.id === poSalesOrder.quotationId) ?? null : null),
     [poSalesOrder, quotations]
   );
-  // Sales Order Revision context — the SO being revised and its linked quotation.
+  // Sales Order Revision context — the SO the customer asked to change.
   const soRevisionSalesOrder = useMemo(
     () => (selected?.soRevisionId ? salesOrders.find((s) => s.id === selected.soRevisionId) ?? null : null),
     [selected, salesOrders]
-  );
-  const soRevisionQuote = useMemo(
-    () => (soRevisionSalesOrder ? quotations.find((q) => q.id === soRevisionSalesOrder.quotationId) ?? null : null),
-    [soRevisionSalesOrder, quotations]
   );
 
   const isRevision = !showQuoteTools && !!selected?.revisionSendId;
@@ -880,7 +876,10 @@ export default function GlobalInbox() {
                 ) : isPoVerify ? (
                   <InboxCenterPanel email={selected} mode="po-verify" salesOrder={poSalesOrder} quotation={poQuote} focusTick={focusTick} />
                 ) : isSoRevision ? (
-                  <InboxCenterPanel email={selected} mode="so-revision" salesOrder={soRevisionSalesOrder} quotation={soRevisionQuote} focusTick={focusTick} />
+                  /* Same shape as a quote revision: the SO is edited in the
+                     Revise Sales Order modal and sent from the compose window,
+                     so the centre stays a plain conversation. */
+                  <InboxCenterPanel email={selected} />
                 ) : (
                   <InboxCenterPanel email={selected} />
                 )}
@@ -905,7 +904,11 @@ export default function GlobalInbox() {
                 ) : isPoVerify ? (
                   <PoVerificationPanel email={selected} onPrepared={onPrepared} onGenerateSo={() => setSoModalOpen(true)} />
                 ) : isSoRevision ? (
-                  <SoRevisionPanel email={selected} salesOrder={soRevisionSalesOrder!} onPrepared={onPrepared} />
+                  <SoRevisionPanel
+                    email={selected}
+                    salesOrder={soRevisionSalesOrder!}
+                    onCompose={() => setComposeOpen(true)}
+                  />
                 ) : isPoAssociate ? (
                   <PoAssociationPanel email={selected} />
                 ) : isInquiry ? (
@@ -953,9 +956,13 @@ export default function GlobalInbox() {
       {composeOpen && selected && (
         <ComposePopup
           email={selected}
-          quotation={inquiryQuotation ?? builderQuotation}
+          /* An SO revision must NOT touch the quotation it was born from —
+             that quote was already sent and accepted. */
+          quotation={isSoRevision ? null : inquiryQuotation ?? builderQuotation}
           inquiryId={inquiryScopeId}
           revision={isRevision}
+          salesOrder={isSoRevision ? soRevisionSalesOrder : null}
+          soRevision={isSoRevision}
           onClose={() => setComposeOpen(false)}
         />
       )}
