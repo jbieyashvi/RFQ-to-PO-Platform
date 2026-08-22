@@ -77,14 +77,18 @@ export function RequirementDetailDrawer({
     });
   };
 
+  // Confirming is a statement that this line is ready to be quoted, so it can
+  // only be made once the datasheet supports it: nothing contradictory, and
+  // nothing a quotation needs left blank. Save Changes stays open regardless,
+  // so partial work is never lost on the way to chasing the customer.
+  const confirmBlocked = invalidCount > 0 || missingKeys.size > 0;
+
   const onConfirm = () => {
     persist(true);
     addToast({
       type: 'success',
       title: `Line ${item.lineNo} confirmed`,
-      message: missingKeys.size
-        ? `${item.tag} — confirmed with ${missingKeys.size} required ${missingKeys.size === 1 ? 'field' : 'fields'} still to chase.`
-        : `${item.tag} — ${item.name} is ready to quote.`,
+      message: `${item.tag} — ${item.name} is ready to quote.`,
     });
     onClose();
   };
@@ -119,7 +123,19 @@ export function RequirementDetailDrawer({
           <Button variant="secondary" size="sm" onClick={onSave} disabled={!dirty}>
             Save Changes
           </Button>
-          <Button variant="primary" size="sm" onClick={onConfirm} disabled={invalidCount > 0}>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onConfirm}
+            disabled={confirmBlocked}
+            title={
+              invalidCount > 0
+                ? 'Fix the values that cannot be right before confirming.'
+                : missingKeys.size > 0
+                ? 'Complete every required field before confirming this line.'
+                : undefined
+            }
+          >
             Confirm Item
           </Button>
         </>

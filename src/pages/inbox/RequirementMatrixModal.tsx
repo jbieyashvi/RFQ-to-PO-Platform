@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCheck, Columns2, Layers, X } from 'lucide-react';
+import { AlertTriangle, CheckCheck, Columns2, Layers, X } from 'lucide-react';
 import type { InboxEmail } from '@/types';
 import type { RequirementExtraction } from '@/lib/requirementExtraction';
 import { MatrixStat, RequirementMatrixGrid } from '@/pages/inbox/RequirementMatrixGrid';
@@ -70,18 +70,39 @@ export function RequirementMatrixModal({
   // first — so confirming in bulk can never wave an error past.
   const reviewable = useMemo(() => items.filter((it) => it.status === 'needs_review'), [items]);
 
+  // Bulk confirmation is a shortcut for lines that are already complete and
+  // merely await a human's word — never a way to wave an incomplete datasheet
+  // through. So it stays shut while ANY line on the matrix still has a required
+  // field unstated or a value that cannot be true: those have to be opened and
+  // completed one at a time, which is the only place the datasheet is editable.
+  // Counted as LINES to open, not as faults: one line missing a field and
+  // carrying a contradiction is still one trip into the drawer, and saying "2"
+  // would send the reader looking for a second line that does not exist.
+  const blockers = useMemo(
+    () => items.filter((it) => it.missingKeys.length > 0 || it.status === 'error'),
+    [items]
+  );
+  const bulkBlocked = blockers.length > 0;
+
+  const blockReason = bulkBlocked
+    ? `${blockers.length} ${blockers.length === 1 ? 'line is' : 'lines are'} not ready — ${[
+        blockers.some((it) => it.missingKeys.length > 0) ? 'required fields unstated' : null,
+        blockers.some((it) => it.status === 'error') ? 'values that cannot be right' : null,
+      ]
+        .filter(Boolean)
+        .join(' and ')}. Open each and complete it before confirming in bulk.`
+    : null;
+
   const confirmAll = () => {
+    if (bulkBlocked) return;
     const confirmed = new Set(email.requirementConfirmed ?? []);
     reviewable.forEach((it) => confirmed.add(it.id));
     updateEmail(email.id, { requirementConfirmed: Array.from(confirmed) });
 
-    const stillOpen = reviewable.reduce((n, it) => n + it.missingKeys.length, 0);
     addToast({
       type: 'success',
       title: `${reviewable.length} ${reviewable.length === 1 ? 'line' : 'lines'} confirmed`,
-      message: stillOpen
-        ? `${stillOpen} required ${stillOpen === 1 ? 'field is' : 'fields are'} still to be chased with the customer.`
-        : 'Every confirmed line states the fields a quotation needs.',
+      message: 'Every confirmed line states the fields a quotation needs.',
     });
   };
 
@@ -145,9 +166,16 @@ export function RequirementMatrixModal({
         <RequirementMatrixGrid items={items} focusId={focusId} onOpenItem={onOpenItem} />
 
         <div className="flex flex-none flex-wrap items-center justify-between gap-3 border-t border-surface-100 bg-surface-50/60 px-5 py-3">
-          <p className="text-[12px] text-surface-500">
-            Click any item header or value to open its datasheet. Edits and confirmations are kept when this closes.
-          </p>
+          {blockReason ? (
+            <p className="flex items-start gap-1.5 text-[12px] font-medium text-amber-700">
+              <AlertTriangle className="mt-px h-3.5 w-3.5 flex-none" />
+              <span>{blockReason}</span>
+            </p>
+          ) : (
+            <p className="text-[12px] text-surface-500">
+              Click any item header or value to open its datasheet. Edits and confirmations are kept when this closes.
+            </p>
+          )}
           <div className="flex items-center gap-2">
             <Button variant="ghost" onClick={onClose}>
               Close
@@ -155,8 +183,9 @@ export function RequirementMatrixModal({
             <Button
               variant="primary"
               leftIcon={<CheckCheck className="h-4 w-4" />}
-              disabled={reviewable.length === 0}
+              disabled={reviewable.length === 0 || bulkBlocked}
               onClick={confirmAll}
+              title={blockReason ?? undefined}
             >
               Confirm All Reviewed Items
               {reviewable.length > 0 && ` (${reviewable.length})`}

@@ -576,11 +576,17 @@ export function requirementExtraction(
         // A stated value that cannot be true outranks a confirmation.
         status = 'error';
         errorNote = Object.values(invalid)[0];
+      } else if (missingKeys.length > 0) {
+        // A line is only Confirmed when it reads cleanly AND states every field
+        // a quotation needs — an incomplete line still has to be chased. This
+        // outranks the confirmation too: saying "reviewed" over a blank required
+        // field does not fill it in, and Generate Quote reads Confirmed as
+        // "quotable". So a confirmed line that is later edited back to a gap
+        // drops out of Confirmed on its own.
+        status = 'needs_review';
       } else if (confirmedByUser) {
         status = 'confirmed';
-      } else if (confidence < 80 || missingKeys.length > 0) {
-        // A line is only Confirmed when it reads cleanly AND states every field
-        // a quotation needs — an incomplete line still has to be chased.
+      } else if (confidence < 80) {
         status = 'needs_review';
       } else {
         status = 'confirmed';
