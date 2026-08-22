@@ -16,8 +16,8 @@ import { SalesOrderDetailsDrawer } from '@/components/SalesOrderDetails';
 import { NoOfficeAssigned } from '@/components/NoOfficeAssigned';
 import { useApp, useOfficeScope, useNoOfficeAssigned } from '@/context/AppContext';
 import { OFFICES, officeName } from '@/data/offices';
-import type { SalesOrder } from '@/types';
-import { ERP_HANDOFF_STATE } from '@/lib/labels';
+import type { ErpHandoffSource, SalesOrder } from '@/types';
+import { ERP_HANDOFF_STATE, ERP_HANDOFF_SOURCE } from '@/lib/labels';
 import { downloadText, formatDate, formatINR } from '@/lib/format';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 
@@ -33,6 +33,7 @@ export default function ErpHandoff() {
   const [search, setSearch] = useState('');
   const [office, setOffice] = useState('');
   const [owner, setOwner] = useState('');
+  const [source, setSource] = useState('');
 
   const [active, setActive] = useState<SalesOrder | null>(null);
   const loading = useSimulatedLoading([]);
@@ -49,8 +50,13 @@ export default function ErpHandoff() {
   const canDownload = can('erp_handoff', 'download');
 
   // Every SO ever submitted to the ERP — records stay permanently visible.
+  // Submitted is the only handoff state there is: nothing that has not been
+  // submitted (and no downstream ERP outcome) belongs on this screen.
   const records = useMemo(
-    () => salesOrders.filter((so) => so.erpHandoff && inScope(so.officeId)),
+    () =>
+      salesOrders
+        .filter((so) => so.erpHandoff?.state === 'submitted' && inScope(so.officeId))
+        .sort((a, b) => b.erpHandoff!.submittedAt.localeCompare(a.erpHandoff!.submittedAt)),
     [salesOrders, inScope]
   );
 
@@ -64,25 +70,28 @@ export default function ErpHandoff() {
     return records.filter((so) => {
       if (office && so.officeId !== office) return false;
       if (owner && so.owner !== owner) return false;
-      // Search by SO number, PO number and customer.
-      if (s && !`${so.number} ${so.poNumber} ${so.customerName}`.toLowerCase().includes(s)) return false;
+      if (source && so.erpHandoff!.source !== source) return false;
+      // Search by SO number, PO number, customer and where it came from.
+      const hay = `${so.number} ${so.poNumber} ${so.customerName} ${ERP_HANDOFF_SOURCE[so.erpHandoff!.source]}`;
+      if (s && !hay.toLowerCase().includes(s)) return false;
       return true;
     });
-  }, [records, search, office, owner]);
+  }, [records, search, office, owner, source]);
 
   const { page, pageSize, setPage, setPageSize, pageRows, total } = usePaginated(filtered, 10);
 
   const chips: FilterChip[] = [];
   if (office) chips.push({ key: 'o', label: `Office: ${officeName(office)}`, onRemove: () => setOffice('') });
   if (owner) chips.push({ key: 'w', label: `Owner: ${owner}`, onRemove: () => setOwner('') });
+  if (source) chips.push({ key: 's', label: `Source: ${ERP_HANDOFF_SOURCE[source as ErpHandoffSource]}`, onRemove: () => setSource('') });
   if (search) chips.push({ key: 'q', label: `Search: "${search}"`, onRemove: () => setSearch('') });
 
-  const clearAll = () => { setSearch(''); setOffice(''); setOwner(''); };
+  const clearAll = () => { setSearch(''); setOffice(''); setOwner(''); setSource(''); };
 
   const downloadOne = (so: SalesOrder) => {
     downloadText(
       `${so.number.replace(/\//g, '-')}.txt`,
-      `SALES ORDER ${so.number}${so.revisionNumber > 0 ? ` (Rev ${so.revisionNumber})` : ''}\nPO ${so.poNumber} (${formatDate(so.poDate)})\nCustomer ${so.customerName}\nSales Office ${officeName(so.officeId)}\nOwner ${so.owner}\nValue ${formatINR(so.value)}\nHandoff Status ${ERP_HANDOFF_STATE[so.erpHandoff!.state].label}`
+      `SALES ORDER ${so.number}${so.revisionNumber > 0 ? ` (Rev ${so.revisionNumber})` : ''}\nPO ${so.poNumber} (${formatDate(so.poDate)})\nCustomer ${so.customerName}\nSales Office ${officeName(so.officeId)}\nOwner ${so.owner}\nValue ${formatINR(so.value)}\nSource ${ERP_HANDOFF_SOURCE[so.erpHandoff!.source]}\nRevision ${so.revisionNumber > 0 ? `Rev ${so.revisionNumber}` : 'Original'}\nHandoff Status ${ERP_HANDOFF_STATE[so.erpHandoff!.state].label}`
     );
     addToast({ type: 'info', title: 'Download started', message: so.number });
   };
@@ -91,15 +100,22 @@ export default function ErpHandoff() {
     {
       key: 'so',
       header: 'SO Number',
-      width: '168px',
+      width: '156px',
       sticky: 'left',
       sortValue: (r) => r.number,
       render: (r) => (
         <span className="flex items-center gap-1.5">
           <span className="font-medium text-surface-800">{r.number}</span>
-          {r.revisionNumber > 0 && (
-            <span className="rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-semibold text-brand-700">Rev {r.revisionNumber}</span>
-          )}
+          {/* The revision lives beside the number, not in a column of its own. */}
+          <span
+            className={
+              r.revisionNumber > 0
+                ? 'rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-semibold text-brand-700'
+                : 'rounded bg-surface-100 px-1.5 py-0.5 text-[10px] font-semibold text-surface-500'
+            }
+          >
+            {r.revisionNumber > 0 ? `Rev ${r.revisionNumber}` : 'Original'}
+          </span>
           {r.id === highlight && (
             <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">New</span>
           )}
@@ -107,43 +123,37 @@ export default function ErpHandoff() {
       ),
     },
     { key: 'customer', header: 'Customer', truncate: true, title: (r) => r.customerName, sortValue: (r) => r.customerName, render: (r) => <span className="font-medium text-surface-800">{r.customerName}</span> },
-    { key: 'po', header: 'Customer PO No.', width: '150px', truncate: true, title: (r) => r.poNumber, sortValue: (r) => r.poNumber, render: (r) => <span className="text-surface-600">{r.poNumber}</span> },
-    { key: 'poDate', header: 'PO Date', width: '112px', sortValue: (r) => r.poDate, render: (r) => <span className="text-surface-600">{formatDate(r.poDate)}</span> },
-    { key: 'office', header: 'Sales Office', truncate: true, title: (r) => officeName(r.officeId), render: (r) => <span className="text-surface-600">{officeName(r.officeId)}</span> },
-    { key: 'owner', header: 'Owner', truncate: true, title: (r) => r.owner, sortValue: (r) => r.owner, render: (r) => <span className="text-surface-600">{r.owner}</span> },
-    { key: 'value', header: 'Order Value', width: '120px', align: 'right', sortValue: (r) => r.value, render: (r) => <span className="font-medium text-surface-800">{formatINR(r.value)}</span> },
+    { key: 'po', header: 'Customer PO No.', width: '112px', truncate: true, title: (r) => r.poNumber, sortValue: (r) => r.poNumber, render: (r) => <span className="text-surface-600">{r.poNumber}</span> },
     {
-      key: 'submitted',
-      header: 'Submitted Date',
-      width: '124px',
-      sortValue: (r) => r.erpHandoff!.submittedAt,
-      render: (r) => <span className="text-surface-600">{formatDate(r.erpHandoff!.submittedAt)}</span>,
-    },
-    {
-      key: 'revision',
-      header: 'Revision',
-      width: '96px',
-      sortValue: (r) => r.revisionNumber,
+      key: 'source',
+      header: 'Source',
+      width: '108px',
+      sortValue: (r) => ERP_HANDOFF_SOURCE[r.erpHandoff!.source],
       render: (r) => (
-        <span className="text-surface-600">{r.revisionNumber > 0 ? `Rev ${r.revisionNumber}` : 'Original'}</span>
+        <span className="inline-flex items-center rounded-full border border-surface-200 bg-surface-50 px-2 py-0.5 text-[11px] font-medium text-surface-600">
+          {ERP_HANDOFF_SOURCE[r.erpHandoff!.source]}
+        </span>
       ),
     },
+    { key: 'office', header: 'Sales Office', width: '88px', truncate: true, title: (r) => officeName(r.officeId), render: (r) => <span className="text-surface-600">{officeName(r.officeId)}</span> },
+    { key: 'owner', header: 'Owner', width: '96px', truncate: true, title: (r) => r.owner, sortValue: (r) => r.owner, render: (r) => <span className="text-surface-600">{r.owner}</span> },
+    { key: 'value', header: 'Order Value', width: '96px', align: 'right', sortValue: (r) => r.value, render: (r) => <span className="font-medium text-surface-800">{formatINR(r.value)}</span> },
     {
-      key: 'state',
-      header: 'Handoff Status',
-      width: '148px',
-      sortValue: (r) => r.erpHandoff!.state,
+      key: 'submitted',
+      header: 'Submitted',
+      width: '104px',
+      sortValue: (r) => r.erpHandoff!.submittedAt,
       render: (r) => (
         <div className="flex flex-col gap-0.5">
           <StatusBadge tone={ERP_HANDOFF_STATE[r.erpHandoff!.state].tone} label={ERP_HANDOFF_STATE[r.erpHandoff!.state].label} />
-          <span className="text-[11px] text-surface-400">Updated {formatDate(r.erpHandoff!.updatedAt)}</span>
+          <span className="text-[11px] text-surface-400">{formatDate(r.erpHandoff!.submittedAt)}</span>
         </div>
       ),
     },
     {
       key: 'actions',
       header: 'Actions',
-      width: '124px',
+      width: '76px',
       align: 'right',
       sticky: 'right',
       render: (r) => (
@@ -186,6 +196,7 @@ export default function ErpHandoff() {
             <SearchInput value={search} onChange={setSearch} placeholder="Search SO, PO or customer…" className="w-full sm:w-72" />
             {role === 'super_admin' && <FilterSelect value={office} onChange={setOffice} placeholder="All offices" options={OFFICES.map((o) => ({ value: o.id, label: o.name }))} />}
             <FilterSelect value={owner} onChange={setOwner} placeholder="All owners" options={owners.map((o) => ({ value: o, label: o }))} />
+            <FilterSelect value={source} onChange={setSource} placeholder="All sources" options={[{ value: 'po_verification', label: ERP_HANDOFF_SOURCE.po_verification }, { value: 'manual', label: ERP_HANDOFF_SOURCE.manual }]} />
           </FilterBar>
         </div>
         <DataTable
@@ -196,7 +207,7 @@ export default function ErpHandoff() {
           onRowClick={(r) => setActive(r)}
           rowClassName={(r) => (r.id === highlight ? 'bg-emerald-50/70' : undefined)}
           emptyTitle="No Sales Orders are currently in the ERP Handoff queue."
-          emptyMessage="Approved Sales Orders from Global Inbox and Create SO Manually appear here for ERP handoff."
+          emptyMessage="Sales Orders submitted from the Global Inbox or entered through Create SO Manually appear here for ERP handoff."
         />
         {!loading && total > 0 && <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={setPageSize} />}
       </div>

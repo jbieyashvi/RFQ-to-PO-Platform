@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Download, Building2, User, CalendarDays, ExternalLink } from 'lucide-react';
 import type { SalesOrder } from '@/types';
 import { Drawer, Button } from '@/components/ui';
@@ -19,10 +19,14 @@ export function SalesOrderDetailsDrawer({
 }) {
   const { addToast, parties } = useApp();
   const navigate = useNavigate();
+  const location = useLocation();
   if (!order) return null;
   const so = order;
   const resolved = resolveSalesOrder(so, { parties, catalog: ITEMS });
-  const inHandoff = !!so.erpHandoff;
+  // The cross-link is only useful from somewhere else. Opened from the ERP
+  // Handoff screen itself it is redundant, so that popup keeps just Close and
+  // Download SO.
+  const showHandoffLink = !!so.erpHandoff && !location.pathname.startsWith('/erp-handoff');
 
   const download = () => {
     downloadText(`${so.number.replace(/\//g, '-')}.txt`, salesOrderText(resolved));
@@ -46,7 +50,7 @@ export function SalesOrderDetailsDrawer({
       footer={
         <div className="flex items-center justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>Close</Button>
-          {inHandoff && (
+          {showHandoffLink && (
             <Button variant="secondary" leftIcon={<ExternalLink className="h-4 w-4" />} onClick={() => navigate('/erp-handoff')}>
               View in ERP Handoff
             </Button>

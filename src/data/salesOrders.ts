@@ -6,6 +6,7 @@ import type {
   RevisionState,
   SalesOrder,
   SORevisionSnapshot,
+  PoProofType,
   SORevisionVersion,
   SOStatus,
   VerificationField,
@@ -14,7 +15,8 @@ import { computeTotals, formatINR } from '@/lib/format';
 import { hoursBeforeNow } from '@/lib/sla';
 import { deriveVerificationStatus } from '@/lib/verification';
 import { QUOTATIONS } from './quotations';
-import { PARTIES } from './masters';
+import { ITEMS, PARTIES } from './masters';
+import { USERS } from './users';
 
 const PARTY_MAP = new Map(PARTIES.map((p) => [p.id, p]));
 
@@ -450,12 +452,15 @@ function seedRevisionSubStates(list: SalesOrder[]) {
 /**
  * One year of completed sales-order history, built from the historical
  * quotation seed (qtn-h-*). All are verified, finalised and handed off — they
- * exist so customer timelines show a realistic year of activity and so the
- * inbox carries matching historical PO emails (generated in poEmails.ts).
+ * exist so customer timelines show a realistic year of activity, so the ERP
+ * Handoff queue covers the previous twelve months, and so the inbox carries
+ * matching historical PO emails (generated in poEmails.ts).
  */
 function generateHistoricalSos(): SalesOrder[] {
   const list: SalesOrder[] = [];
-  const source = QUOTATIONS.filter((q) => q.id.startsWith('qtn-h-')).filter((_, idx) => idx % 2 === 0).slice(0, 8);
+  // Every historical quotation converts, so the handoff history runs
+  // continuously from ~7 weeks back to a full twelve months back.
+  const source = QUOTATIONS.filter((q) => q.id.startsWith('qtn-h-'));
 
   source.forEach((q, i) => {
     const rand = rng(7000 + i * 61);
@@ -559,4 +564,190 @@ function generateHistoricalSos(): SalesOrder[] {
   return list;
 }
 
-export const SALES_ORDERS: SalesOrder[] = [...generate(), ...generateHistoricalSos()];
+/**
+ * Sales Orders keyed in through "Create SO Manually" — no inbound PO email and
+ * no quotation to verify against, exactly like the records the Create SO form
+ * produces at runtime. They exist so the ERP Handoff queue always carries both
+ * of its sources (Global Inbox and Manual Entry) out of the box.
+ */
+const MANUAL_SEEDS: {
+  partyId: string;
+  owner: string;
+  createdDate: string;
+  poNumber: string;
+  poProofType: PoProofType;
+  lines: { itemId: string; quantity: number }[];
+}[] = [
+  {
+    partyId: 'pty-07',
+    owner: 'Arjun Reddy',
+    createdDate: '2026-08-06',
+    poNumber: 'BBL/PO/2026/0417',
+    poProofType: 'uploaded',
+    lines: [
+      { itemId: 'itm-05', quantity: 24 },
+      { itemId: 'itm-11', quantity: 6 },
+      { itemId: 'itm-04', quantity: 320 },
+    ],
+  },
+  {
+    partyId: 'pty-11',
+    owner: 'Divya Shah',
+    createdDate: '2026-06-18',
+    poNumber: 'TPL/PUR/26-27/0092',
+    poProofType: 'phone_call',
+    lines: [
+      { itemId: 'itm-03', quantity: 3 },
+      { itemId: 'itm-01', quantity: 18 },
+    ],
+  },
+  {
+    partyId: 'pty-02',
+    owner: 'Rohan Deshpande',
+    createdDate: '2026-01-22',
+    poNumber: 'TCL/MTP/PO/25-26/1184',
+    poProofType: 'message',
+    lines: [
+      { itemId: 'itm-06', quantity: 40 },
+      { itemId: 'itm-08', quantity: 12 },
+      { itemId: 'itm-02', quantity: 10 },
+    ],
+  },
+];
+
+function generateManualSos(): SalesOrder[] {
+  return MANUAL_SEEDS.map((seed, i) => {
+    const rand = rng(8100 + i * 37);
+    const party = PARTY_MAP.get(seed.partyId);
+    const owner = USERS.find((u) => u.fullName === seed.owner);
+    const ownerName = owner?.fullName ?? seed.owner;
+    const officeId = owner?.officeId ?? party?.officeId ?? 'off-mum';
+
+    const items: LineItem[] = seed.lines.map((l, n) => {
+      const item = ITEMS.find((it) => it.id === l.itemId)!;
+      return {
+        id: `so-m-${pad(i + 1, 3)}-${n + 1}`,
+        itemId: item.id,
+        itemCode: item.code,
+        itemName: item.name,
+        description: item.name,
+        hsnCode: item.hsnCode,
+        quantity: l.quantity,
+        unit: item.unit,
+        unitPrice: item.unitPrice,
+        discountPct: n === 0 ? 3 : 0,
+        taxPct: 18,
+      };
+    });
+    const packingCharges = Math.round(computeTotals(items, 0).taxable * 0.02);
+    const { grandTotal } = computeTotals(items, packingCharges);
+
+    const createdDate = seed.createdDate;
+    const poDate = addDays(createdDate, -(2 + Math.floor(rand() * 4)));
+    const deliveryDate = addDays(createdDate, 30 + Math.floor(rand() * 20));
+    const submittedAt = `${createdDate}T11:20:00`;
+    const year = createdDate.slice(0, 4);
+    const number = `SO/${year}/${pad(600 + i + 1, 4)}`;
+
+    const billingAddress = party?.billingAddress ?? 'Corporate Office, India';
+    const shippingAddress = party?.shippingAddress ?? billingAddress;
+
+    return {
+      id: `so-m-${pad(i + 1, 3)}`,
+      number,
+      poNumber: seed.poNumber,
+      poDate,
+      // Keyed in by hand — there is no quotation behind it to verify against.
+      partyId: seed.partyId,
+      customerName: party?.companyName ?? 'Customer',
+      customerCode: party?.code ?? 'NEW',
+      officeId,
+      owner: ownerName,
+      value: grandTotal,
+      poValue: grandTotal,
+      quoteValue: grandTotal,
+      status: 'so_sent',
+      verificationStatus: 'mismatch',
+      receivedDate: poDate,
+      createdDate,
+      deliveryDate,
+      revisionNumber: 0,
+      sentAt: submittedAt,
+      billingAddress,
+      shippingAddress,
+      customerPhone: party?.phone,
+      customerEmail: party?.email,
+      poProofType: seed.poProofType,
+      poProofNotes:
+        seed.poProofType === 'uploaded'
+          ? 'Signed customer PO copy attached at creation.'
+          : seed.poProofType === 'phone_call'
+            ? `Order confirmed over call with ${party?.contactPerson ?? 'the buyer'}; written PO to follow.`
+            : `Order confirmed on WhatsApp by ${party?.contactPerson ?? 'the buyer'}.`,
+      kindAttentionName: party?.contactPerson,
+      kindAttentionEmail: party?.email,
+      commercials: {
+        packingPct: 2,
+        payment: { advance: 30, beforeDispatch: 70, creditDays: 0, afterInstall: 0 },
+        creditDays: 0,
+      },
+      buyer: {
+        name: party?.companyName,
+        code: party?.code,
+        address: billingAddress,
+        country: 'India',
+        phone: party?.phone,
+        email: party?.email,
+        gstin: party?.gstin,
+      },
+      consigneeSameAsBuyer: false,
+      salesperson: {
+        name: ownerName,
+        phone: owner?.phone,
+        email: owner?.email,
+        officeId,
+        owner: ownerName,
+      },
+      erpHandoff: {
+        state: 'submitted',
+        source: 'manual',
+        submittedAt,
+        submittedBy: ownerName,
+        updatedAt: submittedAt,
+        revisionNumber: 0,
+        reference: `ERP-${year}-M${pad(i + 1, 3)}`,
+      },
+      versions: [
+        {
+          id: `ver-m-${i}-0`,
+          label: 'Original',
+          version: 0,
+          createdAt: `${createdDate}T11:05:00`,
+          by: ownerName,
+          reason: 'Initial sales order',
+          snapshot: snap({
+            items,
+            paymentTerms: '30% advance, 70% before dispatch',
+            deliveryTerms: '4-6 weeks Ex-Works',
+            deliveryDate,
+            billingAddress,
+            shippingAddress,
+          }),
+        },
+      ],
+      items,
+      paymentTerms: '30% advance, 70% before dispatch',
+      deliveryTerms: '4-6 weeks Ex-Works',
+      warranty: '12 months against manufacturing defects',
+      packingCharges,
+      internalNotes: [],
+      activity: [
+        { id: `act-m-${i}-created`, date: `${createdDate}T11:05:00`, actor: ownerName, action: 'Sales Order created', detail: 'Created manually' },
+        { id: `act-m-${i}-erp`, date: submittedAt, actor: ownerName, action: 'Submitted to ERP Handoff', detail: 'Submitted for manufacturing handover' },
+      ],
+      verificationFields: [],
+    } satisfies SalesOrder;
+  });
+}
+
+export const SALES_ORDERS: SalesOrder[] = [...generate(), ...generateHistoricalSos(), ...generateManualSos()];

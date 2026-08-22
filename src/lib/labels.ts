@@ -111,9 +111,12 @@ export const ERP_HANDOFF_STATE: Record<ErpHandoffState, { label: string; tone: B
   submitted: { label: 'Submitted', tone: 'blue' },
 };
 
+// Where the Sales Order entered the ERP Handoff queue from. `manual` reads
+// "Manual Entry" — the Create SO Manually form is how it gets there, but the
+// column and the detail popup label the SOURCE, not the screen.
 export const ERP_HANDOFF_SOURCE: Record<ErpHandoffSource, string> = {
   po_verification: 'Global Inbox',
-  manual: 'Create SO Manually',
+  manual: 'Manual Entry',
 };
 
 export const REVISION_STATE: Record<

@@ -40,12 +40,44 @@ const GST_STATE_CODES: Record<string, string> = {
   '34': 'Puducherry', '35': 'Andaman & Nicobar', '36': 'Telangana', '37': 'Andhra Pradesh',
 };
 
+const nonEmpty = (v?: string): v is string => typeof v === 'string' && v.trim() !== '';
+
 function stateFromGstin(gstin?: string): string | undefined {
   if (!gstin || gstin.length < 2) return undefined;
   return GST_STATE_CODES[gstin.slice(0, 2)];
 }
 
-const nonEmpty = (v?: string): v is string => typeof v === 'string' && v.trim() !== '';
+// First two digits of an Indian PIN code → state, used when an address does not
+// spell its state out. Covers the whole numbering plan, coarse where a range is
+// shared (e.g. 78–79 for the north-east).
+const PIN_PREFIX_STATE: [number, number, string][] = [
+  [11, 11, 'Delhi'], [12, 13, 'Haryana'], [14, 16, 'Punjab'], [17, 17, 'Himachal Pradesh'],
+  [18, 19, 'Jammu & Kashmir'], [20, 28, 'Uttar Pradesh'], [30, 34, 'Rajasthan'], [36, 39, 'Gujarat'],
+  [40, 44, 'Maharashtra'], [45, 48, 'Madhya Pradesh'], [49, 49, 'Chhattisgarh'], [50, 50, 'Telangana'],
+  [51, 53, 'Andhra Pradesh'], [56, 59, 'Karnataka'], [60, 64, 'Tamil Nadu'], [67, 69, 'Kerala'],
+  [70, 74, 'West Bengal'], [75, 77, 'Odisha'], [78, 79, 'Assam'], [80, 85, 'Bihar'],
+];
+
+// Every state the GSTIN table knows, longest first so "Andhra Pradesh" is not
+// shadowed by a shorter name that happens to be a substring.
+const STATE_NAMES = Array.from(new Set(Object.values(GST_STATE_CODES))).sort((a, b) => b.length - a.length);
+
+/**
+ * The state an address actually sits in. The address text wins (it is what the
+ * customer wrote); a PIN code is the fallback. Returns undefined when neither
+ * is conclusive, so callers can fall back to the party's registered state.
+ */
+export function stateFromAddress(address?: string): string | undefined {
+  if (!nonEmpty(address)) return undefined;
+  const named = STATE_NAMES.find((name) => new RegExp(`\\b${name}\\b`, 'i').test(address));
+  if (named) return named;
+  const pin = address.match(/\b(\d{6})\b/);
+  if (!pin) return undefined;
+  const prefix = parseInt(pin[1].slice(0, 2), 10);
+  return PIN_PREFIX_STATE.find(([lo, hi]) => prefix >= lo && prefix <= hi)?.[2];
+}
+
+
 
 export interface ResolvedItem extends LineItem {
   no: number;
@@ -97,6 +129,9 @@ export interface ResolvedSalesOrder {
   buyer: SoPartyDetails;
   consignee: SoPartyDetails;
   consigneeSameAsBuyer: boolean;
+  // True when the consignee row is showing the BUYER's GSTIN because the
+  // delivery address sits in a different state and has no GSTIN of its own.
+  consigneeGstinIsBuyers: boolean;
   kindAttention?: SoContact;
   salesperson: SoSalesperson;
   officeName: string;
@@ -146,8 +181,12 @@ function scheduleForLine(line: LineItem, deliveryDate: string): DeliverySchedule
 }
 
 function resolveBuyer(so: SalesOrder, party?: Party): SoPartyDetails {
-  if (so.buyer) return so.buyer;
-  const gstin = party?.gstin;
+  const gstin = so.buyer?.gstin ?? party?.gstin;
+  if (so.buyer) {
+    // A stored buyer block wins, but a missing state is derived rather than
+    // left blank — the registered GSTIN is authoritative for the buyer.
+    return { ...so.buyer, state: so.buyer.state ?? stateFromGstin(gstin) ?? stateFromAddress(so.buyer.address) };
+  }
   return {
     name: so.customerName,
     code: so.customerCode,
@@ -164,25 +203,44 @@ function resolveBuyer(so: SalesOrder, party?: Party): SoPartyDetails {
 function resolveConsignee(so: SalesOrder, buyer: SoPartyDetails, party?: Party): {
   consignee: SoPartyDetails;
   same: boolean;
+  gstinIsBuyers: boolean;
 } {
-  if (so.consignee) {
-    return { consignee: so.consignee, same: !!so.consigneeSameAsBuyer };
-  }
-  const shipping = so.shippingAddress || party?.shippingAddress || '';
+  const stored = so.consignee;
+  const shipping = stored?.address || so.shippingAddress || party?.shippingAddress || '';
   const same =
     so.consigneeSameAsBuyer === true ||
     !nonEmpty(shipping) ||
     shipping.trim() === buyer.address.trim();
-  if (same) return { consignee: { ...buyer }, same: true };
+
+  if (same) {
+    const consignee = stored ? { ...buyer, ...stored } : { ...buyer };
+    return { consignee, same: true, gstinIsBuyers: false };
+  }
+
+  // The state comes from the delivery address itself, so "…, Gujarat 361345"
+  // shows Gujarat instead of the buyer's registered state. A consignee with no
+  // GSTIN of its own falls back to the buyer's — labelled as such, never passed
+  // off as the delivery location's own registration.
+  const state = stored?.state ?? stateFromAddress(shipping) ?? buyer.state;
+  const ownGstin = stored?.gstin;
+  const gstin = ownGstin ?? buyer.gstin;
+  const gstinIsBuyers = !ownGstin && nonEmpty(gstin);
+
   return {
     consignee: {
-      name: buyer.name,
+      name: stored?.name ?? buyer.name,
+      code: stored?.code,
       address: shipping,
-      country: 'India',
-      state: buyer.state,
-      gstin: buyer.gstin,
+      city: stored?.city,
+      state,
+      pincode: stored?.pincode,
+      country: stored?.country ?? 'India',
+      phone: stored?.phone,
+      email: stored?.email,
+      gstin,
     },
     same: false,
+    gstinIsBuyers,
   };
 }
 
@@ -263,7 +321,7 @@ function resolveAmount(so: SalesOrder, buyer: SoPartyDetails): ResolvedAmountSum
 export function resolveSalesOrder(so: SalesOrder, ctx: ResolveContext): ResolvedSalesOrder {
   const party = ctx.parties.find((p) => p.id === so.partyId);
   const buyer = resolveBuyer(so, party);
-  const { consignee, same } = resolveConsignee(so, buyer, party);
+  const { consignee, same, gstinIsBuyers } = resolveConsignee(so, buyer, party);
   const totals = computeTotals(so.items, so.packingCharges);
 
   const items: ResolvedItem[] = so.items.map((line, idx) => {
@@ -294,6 +352,7 @@ export function resolveSalesOrder(so: SalesOrder, ctx: ResolveContext): Resolved
     buyer,
     consignee,
     consigneeSameAsBuyer: same,
+    consigneeGstinIsBuyers: gstinIsBuyers,
     kindAttention: resolveKindAttention(so),
     salesperson: resolveSalesperson(so),
     officeName: officeName(so.officeId),

@@ -50,7 +50,7 @@ export function SoSection({
   );
 }
 
-function partyRows(p: SoPartyDetails): Row[] {
+function partyRows(p: SoPartyDetails, gstinLabel = 'GSTIN'): Row[] {
   return present([
     p.name && { label: 'Name', value: p.name },
     p.code && { label: 'Code', value: p.code },
@@ -61,7 +61,7 @@ function partyRows(p: SoPartyDetails): Row[] {
     p.country && { label: 'Country', value: p.country },
     p.phone && { label: 'Phone', value: p.phone },
     p.email && { label: 'Email', value: p.email },
-    p.gstin && { label: 'GSTIN', value: p.gstin },
+    p.gstin && { label: gstinLabel, value: p.gstin },
   ]);
 }
 
@@ -246,7 +246,7 @@ export function SalesOrderDocument({
           ) : undefined
         }
       >
-        <DescList items={partyRows(r.consignee)} />
+        <DescList items={partyRows(r.consignee, r.consigneeGstinIsBuyers ? "Buyer's GSTIN" : 'GSTIN')} />
       </SoSection>
 
       <SoSection index={next()} title="Contact Details">

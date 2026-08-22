@@ -205,7 +205,7 @@ function generate(): Quotation[] {
 }
 
 // ---------------------------------------------------------------------------
-// One year of quotation history (75–360 days before 2026-08-13). These feed the
+// One year of quotation history (60–364 days before 2026-08-13). These feed the
 // "Associate Quotation" drawer in the inbox (customer's quotations from the
 // last one year) and the historical sales-order seed. All were sent to the
 // customer; ids are prefixed `qtn-h-` so the current-period sales-order
@@ -227,8 +227,9 @@ function generateHistorical(): Quotation[] {
     const items = buildLines(rand, 2 + Math.floor(rand() * 4));
     const { grandTotal } = computeTotals(items, 0);
 
-    // created between 75 and ~341 days before today (2026-08-13)
-    const createdOffset = 75 + i * 14;
+    // created between 60 and 364 days before today (2026-08-13) — a full year
+    // of cover so the ERP Handoff history spans the previous twelve months
+    const createdOffset = 60 + i * 16;
     const createdDate = addDays('2026-08-13', -createdOffset);
     const quoteDate = addDays(createdDate, 1);
     const year = quoteDate.slice(0, 4);
