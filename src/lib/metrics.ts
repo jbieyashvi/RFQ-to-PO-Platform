@@ -173,9 +173,10 @@ export interface ActionRow {
   count: number;
   /**
    * Semantic tone (drives the left-border + count colour):
-   *  red = urgent/escalation · purple = PO/Quote mismatch · orange = revision.
+   *  red = urgent/escalation · purple = PO/Quote mismatch · orange = revision ·
+   *  blue = queued work not yet out the door.
    */
-  tone: 'red' | 'orange' | 'purple';
+  tone: 'red' | 'orange' | 'purple' | 'blue';
   to: string;
   description: string;
 }
@@ -293,10 +294,18 @@ export function conversionFunnel(): FunnelStage[] {
 /**
  * Client-approved Action Required list (exact content, order and counts as
  * signed off — approved sample numbers for the demo dataset). Semantic tones:
- * red = urgent · purple = mismatch · orange = revision. Every row deep-links to
- * its operational list.
+ * red = urgent · purple = mismatch · orange = revision · blue = queued. Every
+ * row deep-links to its operational list.
+ *
+ * The last row is the exception: "Quotes Pending to be Sent" is counted off
+ * the live dataset rather than pinned to a sample number, because it is a
+ * queue that drains — a frozen count would be wrong the moment a quote goes
+ * out. It counts both shapes that screen lists — a quotation still in
+ * `pending_send`, and a brand-new enquiry with no quotation yet (passed in as
+ * `unquotedInquiries`, since those live on the emails, not the quotations) — so
+ * the card and the list can never disagree.
  */
-export function actionRequired(): ActionRow[] {
+export function actionRequired(quotations: Quotation[], unquotedInquiries = 0): ActionRow[] {
   return [
     {
       key: 'client_so_escalation',
@@ -321,6 +330,14 @@ export function actionRequired(): ActionRow[] {
       tone: 'orange',
       to: '/quotations/revisions',
       description: 'Client requested changes — quotation must be revised and re-sent.',
+    },
+    {
+      key: 'quotes_pending_send',
+      label: 'Quotes Pending to be Sent',
+      count: quotations.filter(isQuotePending).length + unquotedInquiries,
+      tone: 'blue',
+      to: '/quotations/pending',
+      description: 'Enquiry received but the quotation has not gone out yet.',
     },
   ];
 }

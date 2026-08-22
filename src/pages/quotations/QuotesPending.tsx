@@ -15,7 +15,12 @@ import { useApp, useOfficeScope, useNoOfficeAssigned } from '@/context/AppContex
 import { officeName, officeCode } from '@/data/offices';
 import type { InboxEmail, Quotation } from '@/types';
 import { classNames } from '@/lib/format';
-import { inquiryIdOfEmail, inquiryNumberFor, inquiryNumberForEmail } from '@/lib/inquiry';
+import {
+  inquiryIdOfEmail,
+  inquiryNumberFor,
+  inquiryNumberForEmail,
+  isUnquotedInquiry,
+} from '@/lib/inquiry';
 import { inboxUrl } from '@/lib/inboxContext';
 import { usePaginated, useSimulatedLoading } from '@/lib/hooks';
 
@@ -182,14 +187,7 @@ export default function QuotesPending() {
   // to exist would hide exactly the work this page is meant to surface.
   const unquoted = useMemo(
     () =>
-      emails.filter(
-        (e) =>
-          !e.sent &&
-          e.classification === 'inquiry' &&
-          !!e.partyId &&
-          inScope(e.officeId) &&
-          inquiryIdOfEmail(e, quotations, salesOrders) === null
-      ),
+      emails.filter((e) => inScope(e.officeId) && isUnquotedInquiry(e, quotations, salesOrders)),
     [emails, quotations, salesOrders, inScope]
   );
 

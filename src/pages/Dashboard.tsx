@@ -13,6 +13,7 @@ import { PageHeader } from '@/layout/PageHeader';
 import { FilterSelect } from '@/components/ui';
 import { NoOfficeAssigned } from '@/components/NoOfficeAssigned';
 import { useApp, useOfficeScope, useNoOfficeAssigned } from '@/context/AppContext';
+import { isUnquotedInquiry } from '@/lib/inquiry';
 import { OFFICES } from '@/data/offices';
 import {
   conversionFunnel,
@@ -260,6 +261,7 @@ const ACTION_TONE: Record<ActionRow['tone'], { edge: string; count: string }> = 
   red: { edge: 'border-l-rose-500', count: 'text-rose-600' },
   orange: { edge: 'border-l-amber-500', count: 'text-amber-600' },
   purple: { edge: 'border-l-violet-500', count: 'text-violet-600' },
+  blue: { edge: 'border-l-sky-500', count: 'text-sky-600' },
 };
 
 function ActionRowItem({ row, onOpen }: { row: ActionRow; onOpen: (to: string) => void }) {
@@ -368,7 +370,7 @@ function OverdueColumn({
 }
 
 export default function Dashboard() {
-  const { quotations, salesOrders, role, visibleOffices } = useApp();
+  const { quotations, salesOrders, emails, role, visibleOffices } = useApp();
   const inScope = useOfficeScope();
   const noOffice = useNoOfficeAssigned();
   const navigate = useNavigate();
@@ -394,6 +396,13 @@ export default function Dashboard() {
     () => salesOrders.filter((s) => inScope(s.officeId)),
     [salesOrders, inScope]
   );
+  // Enquiries that have not been quoted at all. They are half of the Quotes
+  // Pending to be Sent queue and they live on the emails, not the quotations,
+  // so they are scoped separately and counted alongside them.
+  const baseUnquoted = useMemo(
+    () => emails.filter((e) => inScope(e.officeId) && isUnquotedInquiry(e, quotations, salesOrders)),
+    [emails, quotations, salesOrders, inScope]
+  );
 
   // One independent filter per section.
   const pipelineF = useSectionFilter();
@@ -402,11 +411,25 @@ export default function Dashboard() {
 
   const qBy = (q: (typeof baseQuotations)[number]) => ({ officeId: q.officeId, date: q.createdDate });
   const soBy = (s: (typeof baseSalesOrders)[number]) => ({ officeId: s.officeId, date: s.createdDate });
+  const mailBy = (e: (typeof baseUnquoted)[number]) => ({
+    officeId: e.officeId,
+    date: e.receivedAt.slice(0, 10),
+  });
 
-  // Funnel + Action Required show the client-approved counts (fixed sample
-  // numbers, not derived from the seed dataset).
+  // The funnel shows the client-approved counts (fixed sample numbers, not
+  // derived from the seed dataset). So do the first three Action Required rows
+  // — but Quotes Pending to be Sent is counted live, so this section is scoped
+  // by its own Branch + date filter like every other one.
   const funnel = useMemo(() => conversionFunnel(), []);
-  const actions = useMemo(() => actionRequired(), []);
+  const actions = useMemo(
+    () =>
+      actionRequired(
+        scopeRecords(baseQuotations, actionF.filter, qBy),
+        scopeRecords(baseUnquoted, actionF.filter, mailBy).length
+      ),
+    [baseQuotations, baseUnquoted, actionF.filter]
+  );
+  const actionTotal = useMemo(() => actions.reduce((n, r) => n + r.count, 0), [actions]);
 
   const overdue = useMemo(() => {
     const q = scopeRecords(baseQuotations, overdueF.filter, qBy);
@@ -440,6 +463,7 @@ export default function Dashboard() {
         {/* 2 — ACTION REQUIRED */}
         <DashSection
           title="Action Required"
+          subtitle={`${actionTotal} ${actionTotal === 1 ? 'item needs' : 'items need'} attention`}
           icon={<ListChecks className="h-4 w-4 text-amber-500" />}
           filters={<SectionFilters state={actionF} branchOptions={branchOptions} />}
         >

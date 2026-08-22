@@ -210,3 +210,27 @@ export function draftQuotationForEnquiry(
     ],
   };
 }
+
+/**
+ * An enquiry that has arrived but has not been quoted at all — no quotation
+ * record exists for it yet. These belong in the "Quotes Pending to be Sent"
+ * queue alongside quotations still in `pending_send`: from the customer's point
+ * of view both are the same wait, and holding a new enquiry back until someone
+ * generates a quotation would hide exactly the work that queue exists to show.
+ *
+ * Shared by the queue itself and by the Dashboard card that links to it, so the
+ * card's count and the list's row count can never disagree. Callers apply their
+ * own office / date scoping.
+ */
+export function isUnquotedInquiry(
+  email: InboxEmail,
+  quotations: Quotation[],
+  salesOrders: SalesOrder[]
+): boolean {
+  return (
+    !email.sent &&
+    email.classification === 'inquiry' &&
+    !!email.partyId &&
+    inquiryIdOfEmail(email, quotations, salesOrders) === null
+  );
+}
